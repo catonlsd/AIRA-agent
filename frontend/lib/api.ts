@@ -61,3 +61,19 @@ export async function summarizeDocument(documentId: number): Promise<{ summary: 
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
+
+export async function runAiraX(goal: string) {
+  const response = await fetch(`${API_URL}/aira-x/run`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ goal }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to run AIRA-X workflow");
+  }
+
+  return response.json();
+}

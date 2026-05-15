@@ -1,17 +1,36 @@
 "use client";
 
 import { useState } from "react";
-import { Globe2, Cpu, Send, Sparkles } from "lucide-react";
+import { Globe2, Cpu, Send, Sparkles, Workflow } from "lucide-react";
 import { CitationList } from "@/components/citation-list";
-import { type ChatResponse, sendChat } from "@/lib/api";
+import { type ChatResponse, sendChat, runAiraX } from "@/lib/api";
 
 type Turn = { question: string; response?: ChatResponse; error?: string };
+
+type AiraXResponse = {
+  status: string;
+  decision: string;
+  final_answer: string;
+  plan: {
+    id: number;
+    title: string;
+    description: string;
+    status: string;
+    assigned_agent: string;
+    result?: string;
+    error?: string;
+  }[];
+  execution_outputs: any[];
+  memory: any;
+};
 
 export default function ChatPage() {
   const [question, setQuestion] = useState("");
   const [forceWeb, setForceWeb] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [airaXLoading, setAiraXLoading] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [airaXResponse, setAiraXResponse] = useState<AiraXResponse | null>(null);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -44,6 +63,23 @@ export default function ChatPage() {
     }
   }
 
+  async function handleRunAiraX() {
+    const trimmed = question.trim();
+    if (!trimmed) return;
+
+    setAiraXLoading(true);
+    setAiraXResponse(null);
+
+    try {
+      const result = await runAiraX(trimmed);
+      setAiraXResponse(result);
+    } catch (error) {
+      console.error("AIRA-X Error:", error);
+    } finally {
+      setAiraXLoading(false);
+    }
+  }
+
   return (
     <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-6xl flex-col gap-6">
       <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-6">
@@ -53,15 +89,15 @@ export default function ChatPage() {
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-accent">
               <Cpu className="h-3.5 w-3.5" />
-              AI-powered research workspace
+              AI-powered research + execution workspace
             </div>
 
             <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
-              AIRA Workspace
+              AIRA-X Workspace
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-              Ask questions across your documents and receive answers enhanced by semantic retrieval and web intelligence.
+              Ask questions with AIRA or execute workflows with AIRA-X.
             </p>
           </div>
 
@@ -72,27 +108,24 @@ export default function ChatPage() {
       </section>
 
       <div className="flex-1 space-y-5">
-        {turns.length === 0 && (
+        {turns.length === 0 && !airaXResponse && (
           <div className="fade-up rounded-[2rem] border border-dashed border-blue-200 bg-white/80 p-10 text-center shadow-sm">
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-accent">
               <Sparkles className="h-5 w-5" />
             </div>
 
             <h2 className="text-xl font-semibold text-slate-950">
-              Start your research
+              Start with research or execution
             </h2>
 
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-              Upload documents, enable web search if needed, and ask questions.
+              Use Send for normal AIRA research. Use Run AIRA-X for autonomous workflow execution.
             </p>
           </div>
         )}
 
         {turns.map((turn, index) => (
-          <div
-            key={`${turn.question}-${index}`}
-            className="fade-up space-y-4"
-          >
+          <div key={`${turn.question}-${index}`} className="fade-up space-y-4">
             <div className="ml-auto max-w-2xl rounded-[1.5rem] rounded-tr-md bg-accent px-5 py-3 text-sm leading-6 text-white shadow-lg shadow-blue-600/20">
               {turn.question}
             </div>
@@ -114,14 +147,13 @@ export default function ChatPage() {
 
                 <div className="whitespace-pre-wrap text-sm leading-7 text-ink">
                   {turn.response.answer
-                  .replace(/^###\s?/gm, "")
-                  .replace(/^##\s?/gm, "")
-                  .replace(/^#\s?/gm, "")
-                  .replace(/\*\*/g, "")
-                  .replace(/Sources[\s\S]*/i, "")
-                  .trim()
-                  }
-                  </div>
+                    .replace(/^###\s?/gm, "")
+                    .replace(/^##\s?/gm, "")
+                    .replace(/^#\s?/gm, "")
+                    .replace(/\*\*/g, "")
+                    .replace(/Sources[\s\S]*/i, "")
+                    .trim()}
+                </div>
 
                 {turn.response.citations.length > 0 && (
                   <div className="mt-5 rounded-[1.25rem] border border-blue-100 bg-blue-50/40 p-4">
@@ -136,9 +168,67 @@ export default function ChatPage() {
           </div>
         ))}
 
+        {airaXResponse && (
+          <div className="sarvam-card fade-up rounded-[1.75rem] p-5">
+            <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
+              <div className="rounded-xl bg-purple-50 p-2 text-purple-600">
+                <Workflow className="h-4 w-4" />
+              </div>
+              AIRA-X Workflow Result
+            </div>
+
+            <div className="space-y-2 text-sm text-slate-700">
+              <p>
+                <strong>Status:</strong> {airaXResponse.status}
+              </p>
+              <p>
+                <strong>Decision:</strong> {airaXResponse.decision}
+              </p>
+              <p>
+                <strong>Final Answer:</strong> {airaXResponse.final_answer}
+              </p>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              <h3 className="text-sm font-semibold text-slate-900">
+                Execution Plan
+              </h3>
+
+              {airaXResponse.plan.map((step) => (
+                <div
+                  key={step.id}
+                  className="rounded-2xl border border-blue-100 bg-blue-50/30 p-4 text-sm"
+                >
+                  <p className="font-semibold text-slate-900">
+                    {step.id}. {step.title}
+                  </p>
+                  <p className="mt-1 text-slate-600">{step.description}</p>
+                  <div className="mt-2 grid gap-1 text-xs text-slate-600 sm:grid-cols-3">
+                    <p>
+                      <strong>Status:</strong> {step.status}
+                    </p>
+                    <p>
+                      <strong>Agent:</strong> {step.assigned_agent}
+                    </p>
+                    <p>
+                      <strong>Result:</strong> {step.result || "Pending"}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {loading && (
           <div className="fade-up w-fit rounded-full border border-blue-100 bg-white px-5 py-3 text-sm font-medium text-slate-600 shadow-sm">
             Researching sources...
+          </div>
+        )}
+
+        {airaXLoading && (
+          <div className="fade-up w-fit rounded-full border border-purple-100 bg-white px-5 py-3 text-sm font-medium text-purple-700 shadow-sm">
+            Running AIRA-X workflow...
           </div>
         )}
       </div>
@@ -150,7 +240,7 @@ export default function ChatPage() {
         <textarea
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
-          placeholder="Ask a question..."
+          placeholder="Ask a question or give AIRA-X a task..."
           className="h-24 w-full resize-none rounded-[1.25rem] border border-blue-100 bg-[#f8fbff] p-4 text-sm text-slate-800 caret-blue-600 outline-none transition-all duration-300 placeholder:text-slate-400 focus:border-accent focus:bg-white focus:shadow-sm"
         />
 
@@ -166,13 +256,25 @@ export default function ChatPage() {
             Include web search
           </label>
 
-          <button
-            disabled={loading}
-            className="group inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-600/25 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Send className="h-4 w-4 transition-all duration-700 ease-out group-hover:-translate-y-2 group-hover:translate-x-3 group-hover:rotate-12 group-hover:opacity-0" />
-            Send
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRunAiraX}
+              disabled={airaXLoading || loading}
+              className="inline-flex items-center gap-2 rounded-full bg-purple-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-600/20 transition-all duration-300 hover:-translate-y-0.5 hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Workflow className="h-4 w-4" />
+              {airaXLoading ? "Running..." : "Run AIRA-X"}
+            </button>
+
+            <button
+              disabled={loading || airaXLoading}
+              className="group inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-600/25 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Send className="h-4 w-4 transition-all duration-700 ease-out group-hover:-translate-y-2 group-hover:translate-x-3 group-hover:rotate-12 group-hover:opacity-0" />
+              Send
+            </button>
+          </div>
         </div>
       </form>
     </div>

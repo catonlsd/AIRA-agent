@@ -3,6 +3,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.routes.aira_x import router as aira_x_router
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
@@ -17,6 +18,8 @@ app = FastAPI(
     description="Production-style multi-document RAG API with web research, citations, memory, and summarization.",
     version="1.0.0",
 )
+
+app.include_router(aira_x_router)
 
 app.add_middleware(
     CORSMiddleware,
