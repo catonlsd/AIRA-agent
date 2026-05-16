@@ -3,6 +3,7 @@ from typing import Dict, Any
 from tools.shell.shell_tool import ShellTool
 from tools.filesystem.file_tool import FileTool
 from tools.python.python_tool import PythonTool
+from tools.tool_registry import ToolRegistry
 
 
 class ToolRouter:
@@ -10,12 +11,33 @@ class ToolRouter:
 
     @staticmethod
     def run(tool_name: str, action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        if not ToolRegistry.is_tool_available(tool_name):
+            return {
+                "success": False,
+                "tool_name": tool_name,
+                "action": action,
+                "output": "",
+                "error": f"Unknown tool: {tool_name}",
+            }
+
+        if not ToolRegistry.is_action_allowed(tool_name, action):
+            return {
+                "success": False,
+                "tool_name": tool_name,
+                "action": action,
+                "output": "",
+                "error": f"Action '{action}' is not allowed for tool '{tool_name}'.",
+            }
+
         if tool_name == "shell_tool":
             command = payload.get("command")
 
             if not command:
                 return {
                     "success": False,
+                    "tool_name": tool_name,
+                    "action": action,
+                    "output": "",
                     "error": "Missing command for shell_tool.",
                 }
 
@@ -34,11 +56,6 @@ class ToolRouter:
             if action == "list_files":
                 return FileTool.list_files(payload.get("path", "."))
 
-            return {
-                "success": False,
-                "error": f"Unknown file_tool action: {action}",
-            }
-
         if tool_name == "python_tool":
             if action == "run_code":
                 code = payload.get("code")
@@ -46,17 +63,18 @@ class ToolRouter:
                 if not code:
                     return {
                         "success": False,
+                        "tool_name": tool_name,
+                        "action": action,
+                        "output": "",
                         "error": "Missing code for python_tool.",
                     }
 
                 return PythonTool.run_code(code)
 
-            return {
-                "success": False,
-                "error": f"Unknown python_tool action: {action}",
-            }
-
         return {
             "success": False,
-            "error": f"Unknown tool: {tool_name}",
+            "tool_name": tool_name,
+            "action": action,
+            "output": "",
+            "error": f"No execution handler found for {tool_name}:{action}.",
         }
