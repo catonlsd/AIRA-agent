@@ -4,6 +4,7 @@ from agents.decision.decision_agent import DecisionAgent
 from agents.execution.execution_agent import ExecutionAgent
 from agents.validation.validation_agent import ValidationAgent
 from agents.reflection.reflection_agent import ReflectionAgent
+from agents.memory.memory_agent import MemoryAgent
 from memory.workflow_memory import WorkflowMemory
 
 
@@ -14,6 +15,7 @@ class AiraXWorkflow:
         self.execution = ExecutionAgent()
         self.validation = ValidationAgent()
         self.reflection = ReflectionAgent()
+        self.memory = MemoryAgent()
 
     async def run(self, user_goal: str) -> AiraXState:
         state = AiraXState(user_goal=user_goal)
@@ -62,24 +64,7 @@ class AiraXWorkflow:
                 continue
 
             elif state.decision == "run_validation":
-                current_step = self._get_current_step(state)
-
-                execution_success = any(
-                    output.get("agent") == "execution_agent"
-                    and output.get("tool_result", {}).get("success")
-                    for output in state.execution_outputs
-                )
-
-                if current_step and execution_success:
-                    current_step.status = "completed"
-                    current_step.result = "Validation passed. Execution output exists."
-                    state.status = "validated"
-                    state.decision = "validation_success"
-                elif current_step:
-                    current_step.status = "failed"
-                    current_step.error = "No successful execution output found to validate."
-                    state.status = "failed"
-                    state.decision = "validation_failed"
+                state = await self.validation.run(state)
 
             elif state.decision == "run_tool":
                 current_step = self._get_current_step(state)
@@ -101,11 +86,15 @@ class AiraXWorkflow:
                     event="workflow_completed",
                     details={"final_answer": state.final_answer},
                 )
+
+                state = await self.memory.run(state)
                 break
 
             elif state.decision == "finish":
                 state.status = "completed"
                 state.final_answer = "Workflow finished."
+
+                state = await self.memory.run(state)
                 break
 
             elif state.decision == "stop_max_retries":
@@ -118,6 +107,8 @@ class AiraXWorkflow:
                     event="workflow_failed_max_retries",
                     details={"retry_count": state.retry_count},
                 )
+
+                state = await self.memory.run(state)
                 break
 
             else:
@@ -130,6 +121,8 @@ class AiraXWorkflow:
                     event="workflow_failed_unknown_decision",
                     details={"decision": state.decision},
                 )
+
+                state = await self.memory.run(state)
                 break
 
         return state

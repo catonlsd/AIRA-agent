@@ -16,6 +16,10 @@ class DecisionAgent(BaseAgent):
             state.decision = "run_execution"
             return state
 
+        if state.decision == "validation_success" or state.status == "validated":
+            state.decision = "validate_final_result"
+            return state
+
         current_step = next(
             (
                 step
@@ -44,6 +48,10 @@ class DecisionAgent(BaseAgent):
                 state.decision = "run_tool"
 
         elif current_step.status == "completed":
+
+            if current_step.assigned_agent == "execution_agent":
+                state.decision = "run_validation"
+                return state
 
             next_step = next(
                 (

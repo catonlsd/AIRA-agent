@@ -1,5 +1,6 @@
 from agents.base_agent import BaseAgent
 from schemas.aira_state import AiraXState
+from memory.workflow_memory import WorkflowMemory
 
 
 class ValidationAgent(BaseAgent):
@@ -10,6 +11,14 @@ class ValidationAgent(BaseAgent):
         if state.current_step is None:
             state.status = "failed"
             state.decision = "validation_failed_no_step"
+
+            WorkflowMemory.add_log(
+                state,
+                agent=self.name,
+                event="validation_failed",
+                details={"reason": "No current step found."},
+            )
+
             return state
 
         current_step = next(
@@ -20,18 +29,64 @@ class ValidationAgent(BaseAgent):
         if current_step is None:
             state.status = "failed"
             state.decision = "validation_failed_step_missing"
+
+            WorkflowMemory.add_log(
+                state,
+                agent=self.name,
+                event="validation_failed",
+                details={"reason": "Current step does not exist in plan."},
+            )
+
             return state
 
-        if current_step.result:
+        WorkflowMemory.add_log(
+            state,
+            agent=self.name,
+            event="validation_started",
+            details={
+                "step_id": current_step.id,
+                "step_title": current_step.title,
+            },
+        )
+
+        execution_success = any(
+            output.get("agent") == "execution_agent"
+            and output.get("tool_result", {}).get("success")
+            for output in state.execution_outputs
+        )
+
+        if execution_success:
             current_step.status = "completed"
+            current_step.result = "Validation passed. Successful execution output exists."
 
             state.status = "validated"
             state.decision = "validation_success"
 
+            WorkflowMemory.add_log(
+                state,
+                agent=self.name,
+                event="validation_success",
+                details={
+                    "step_id": current_step.id,
+                    "result": current_step.result,
+                },
+            )
+
         else:
             current_step.status = "failed"
+            current_step.error = "No successful execution output found to validate."
 
             state.status = "failed"
             state.decision = "validation_failed"
+
+            WorkflowMemory.add_log(
+                state,
+                agent=self.name,
+                event="validation_failed",
+                details={
+                    "step_id": current_step.id,
+                    "error": current_step.error,
+                },
+            )
 
         return state
