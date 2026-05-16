@@ -9,6 +9,7 @@ import {
   Home,
   MessageSquare,
   Sparkles,
+  Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,10 +18,11 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const links = [
   { href: "/", label: "Home", animation: "home" },
   { href: "/upload", label: "Ingest Documents", animation: "upload" },
-  { href: "/chat", label: "Ask AIRA", animation: "chat" },
+  { href: "/chat", label: "Ask AIRA-X", animation: "chat" },
   { href: "/documents", label: "Knowledge Base", animation: "book" },
   { href: "/history", label: "Interactions", animation: "handshake" },
-  { href: "/settings", label: "About AIRA", animation: "spark" },
+  { href: "/tools", label: "Tools Registry", animation: "tools" },
+  { href: "/settings", label: "About AIRA-X", animation: "spark" },
 ];
 
 function UploadAnimatedIcon({ active }: { active: boolean }) {
@@ -81,16 +83,17 @@ export function Nav() {
 
           <div>
             <div className="text-lg font-bold tracking-tight text-slate-950">
-              AIRA
+              AIRA-X
             </div>
             <div className="text-sm font-semibold text-accent">
-              AI Research Assistant
+              Research + Execution Platform
             </div>
           </div>
         </div>
 
         <p className="mt-4 text-sm leading-6 text-slate-500">
-          Research assistant for documents, web, and cited AI answers.
+          Execution-focused AI platform for research, tool use, workflow
+          automation, validation, and self-correction.
         </p>
       </div>
 
@@ -107,6 +110,8 @@ export function Nav() {
               ? "group-hover:scale-x-125 group-hover:scale-y-110 duration-500"
               : item.animation === "handshake"
               ? "group-hover:animate-[handshake_0.55s_ease-in-out] duration-500"
+              : item.animation === "tools"
+              ? "group-hover:rotate-12 group-hover:scale-125 duration-500"
               : "group-hover:rotate-6 group-hover:scale-125 duration-500";
 
           const Icon =
@@ -118,6 +123,8 @@ export function Nav() {
               ? BookOpen
               : item.animation === "handshake"
               ? Handshake
+              : item.animation === "tools"
+              ? Wrench
               : item.animation === "spark"
               ? Sparkles
               : null;
@@ -193,10 +200,10 @@ export function Nav() {
 
           <span className="text-sm font-semibold text-slate-800">
             {backendOnline === null
-              ? "Checking AIRA"
+              ? "Checking AIRA-X"
               : backendOnline
-              ? "AIRA Online"
-              : "AIRA Offline"}
+              ? "AIRA-X Online"
+              : "AIRA-X Offline"}
           </span>
         </div>
       </div>
