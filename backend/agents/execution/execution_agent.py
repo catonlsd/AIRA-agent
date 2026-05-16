@@ -3,6 +3,7 @@ from datetime import datetime
 from agents.base_agent import BaseAgent
 from schemas.aira_state import AiraXState
 from tools.tool_router import ToolRouter
+from agents.safety.safety_agent import SafetyAgent
 
 
 class ExecutionAgent(BaseAgent):
@@ -27,17 +28,38 @@ class ExecutionAgent(BaseAgent):
 
         current_step.status = "running"
 
+        safety = SafetyAgent()
         tool_used = "shell_tool"
 
         if "list project files" in current_step.title.lower():
+            pending_action = "dir"
+            state.memory["pending_action"] = pending_action
+
+            state = await safety.run(state)
+
+            if state.decision == "blocked_by_safety_agent":
+                current_step.status = "failed"
+                current_step.error = state.final_answer
+                return state
+
             tool_used = "shell_tool"
             tool_result = ToolRouter.run(
                 tool_name="shell_tool",
                 action="run",
-                payload={"command": "dir"},
+                payload={"command": pending_action},
             )
 
         elif "create a test file" in current_step.title.lower():
+            pending_action = "write_file: tmp/aira_x_generated.txt"
+            state.memory["pending_action"] = pending_action
+
+            state = await safety.run(state)
+
+            if state.decision == "blocked_by_safety_agent":
+                current_step.status = "failed"
+                current_step.error = state.final_answer
+                return state
+
             tool_used = "file_tool"
             tool_result = ToolRouter.run(
                 tool_name="file_tool",
@@ -49,6 +71,16 @@ class ExecutionAgent(BaseAgent):
             )
 
         elif "run python code" in current_step.title.lower():
+            pending_action = "python_code: print('AIRA-X executed Python code successfully')"
+            state.memory["pending_action"] = pending_action
+
+            state = await safety.run(state)
+
+            if state.decision == "blocked_by_safety_agent":
+                current_step.status = "failed"
+                current_step.error = state.final_answer
+                return state
+
             tool_used = "python_tool"
             tool_result = ToolRouter.run(
                 tool_name="python_tool",
@@ -59,11 +91,21 @@ class ExecutionAgent(BaseAgent):
             )
 
         else:
+            pending_action = "echo AIRA-X dynamic execution working"
+            state.memory["pending_action"] = pending_action
+
+            state = await safety.run(state)
+
+            if state.decision == "blocked_by_safety_agent":
+                current_step.status = "failed"
+                current_step.error = state.final_answer
+                return state
+
             tool_used = "shell_tool"
             tool_result = ToolRouter.run(
                 tool_name="shell_tool",
                 action="run",
-                payload={"command": "echo AIRA-X dynamic execution working"},
+                payload={"command": pending_action},
             )
 
         output = {
@@ -71,6 +113,7 @@ class ExecutionAgent(BaseAgent):
             "agent": self.name,
             "timestamp": datetime.utcnow().isoformat(),
             "tool_used": tool_used,
+            "safety_decision": "approved",
             "tool_result": tool_result,
         }
 
