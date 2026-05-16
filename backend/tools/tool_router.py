@@ -3,6 +3,7 @@ from typing import Dict, Any
 from tools.shell.shell_tool import ShellTool
 from tools.filesystem.file_tool import FileTool
 from tools.python.python_tool import PythonTool
+from tools.git.git_tool import GitTool
 from tools.tool_registry import ToolRegistry
 
 
@@ -70,6 +71,17 @@ class ToolRouter:
                     }
 
                 return PythonTool.run_code(code)
+
+        if tool_name == "git_tool":
+            if action == "status":
+                return GitTool.status()
+
+            if action == "branch":
+                return GitTool.branch()
+
+            if action == "recent_commits":
+                limit = payload.get("limit", 5)
+                return GitTool.recent_commits(limit=limit)
 
         return {
             "success": False,

@@ -31,6 +31,15 @@ class ToolRegistry:
                 "import math; print(math.sqrt(16))",
             ],
         },
+        "git_tool": {
+            "description": "Reads Git repository status, branch, and recent commits.",
+            "actions": ["status", "branch", "recent_commits"],
+            "examples": [
+                "git status --short",
+                "git branch --show-current",
+                "git log --oneline -5",
+            ],
+        },
     }
 
     @classmethod

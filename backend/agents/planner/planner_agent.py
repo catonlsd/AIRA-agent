@@ -64,6 +64,45 @@ class PlannerAgent(BaseAgent):
                 )
             )
 
+        elif "git status" in goal:
+            plan.append(
+                AiraXStep(
+                    id=1,
+                    title="Check Git status",
+                    description="Check current repository status using the Git tool.",
+                    assigned_agent="execution_agent",
+                    tool_name="git_tool",
+                    tool_action="status",
+                    tool_payload={},
+                )
+            )
+
+        elif "git branch" in goal:
+            plan.append(
+                AiraXStep(
+                    id=1,
+                    title="Check Git branch",
+                    description="Check current Git branch using the Git tool.",
+                    assigned_agent="execution_agent",
+                    tool_name="git_tool",
+                    tool_action="branch",
+                    tool_payload={},
+                )
+            )
+
+        elif "git log" in goal or "recent commits" in goal:
+            plan.append(
+                AiraXStep(
+                    id=1,
+                    title="Show recent Git commits",
+                    description="Show recent commits using the Git tool.",
+                    assigned_agent="execution_agent",
+                    tool_name="git_tool",
+                    tool_action="recent_commits",
+                    tool_payload={"limit": 5},
+                )
+            )
+
         elif "rm -rf" in goal or "delete system32" in goal or "format disk" in goal:
             plan.append(
                 AiraXStep(
