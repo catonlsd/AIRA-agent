@@ -77,3 +77,13 @@ export async function runAiraX(goal: string) {
 
   return response.json();
 }
+
+export async function getAiraXTools() {
+  const response = await fetch(`${API_URL}/aira-x/tools`);
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch AIRA-X tools");
+  }
+
+  return response.json();
+}
