@@ -252,9 +252,125 @@ export default function ChatPage() {
                         <strong>Event:</strong> {log.event}
                       </p>
 
-                      <pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">
-                        {JSON.stringify(log.details, null, 2)}
-                      </pre>
+                      <div className="mt-2 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+                        {log.event === "workflow_started" && (
+                          <p>Workflow started for goal: {log.details.user_goal}</p>
+                        )}
+
+                        {log.event === "planning_started" && (
+                          <p>Planner started analyzing the user goal.</p>
+                        )}
+                        
+                        {log.event === "plan_created" && (
+                          <p>
+                            Planner created {log.details.steps?.length || 0} execution step(s).
+                          </p>
+                        )}
+
+                        {log.event === "decision_made" && (
+                          <p>
+                            Decision made: <strong>{log.details.decision}</strong>
+                            </p>
+                          )}
+
+                      <div className="mt-2 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+                        {log.event === "workflow_started" && (
+                          <p>Workflow started for goal: {log.details.user_goal}</p>
+                        )}
+
+                        {log.event === "planning_started" && (
+                          <p>Planner started analyzing the user goal.</p>
+                        )}
+
+                        {log.event === "plan_created" && (
+                          <p>
+                            Planner created {log.details.steps?.length || 0} execution step(s).
+                          </p>
+                        )}
+
+                        {log.event === "decision_made" && (
+                          <p>
+                            Decision made: <strong>{log.details.decision}</strong>
+                          </p>
+                        )}
+
+                        {log.event === "safety_check_started" && (
+                          <p>Safety check started for action: {log.details.action}</p>
+                        )}
+
+                        {log.event === "safety_approved" && (
+                          <p>Safety approved the action.</p>
+                        )}
+
+                        {log.event === "execution_started" && (
+                          <p>
+                            Execution started for step: {log.details.step_title}
+                          </p>
+                        )}
+
+                        {log.event === "execution_success" && (
+                          <p>Execution completed successfully.</p>
+                        )}
+
+                        {log.event === "execution_failed" && (
+                          <p>
+                            Execution failed. Error: {log.details.error || "Unknown error"}
+                          </p>
+                        )}
+
+                        {log.event === "reflection_completed" && (
+                          <p>
+                            Reflection analyzed the failure and prepared retry #{log.details.retry_count}.
+                          </p>
+                        )}
+
+                        {log.event === "workflow_completed" && (
+                          <p>Workflow completed successfully.</p>
+                        )}
+
+                        {![
+                          "workflow_started",
+                          "planning_started",
+                          "plan_created",
+                          "decision_made",
+                          "safety_check_started",
+                          "safety_approved",
+                          "execution_started",
+                          "execution_success",
+                          "execution_failed",
+                          "reflection_completed",
+                          "workflow_completed",
+                        ].includes(log.event) && (
+                          <p>{JSON.stringify(log.details)}</p>
+                        )}
+                      </div>
+
+  {log.event === "reflection_completed" && (
+    <p>
+      Reflection analyzed the failure and prepared retry #{log.details.retry_count}.
+    </p>
+  )}
+
+  {log.event === "workflow_completed" && (
+    <p>Workflow completed successfully.</p>
+  )}
+
+  {![
+    "workflow_started",
+    "planning_started",
+    "plan_created",
+    "decision_made",
+    "safety_check_started",
+    "safety_approved",
+    "execution_started",
+    "execution_success",
+    "execution_failed",
+    "reflection_completed",
+    "workflow_completed",
+  ].includes(log.event) && (
+    <p>{JSON.stringify(log.details)}</p>
+  )}
+</div>
                     </div>
                   ))}
                 </div>
