@@ -1,11 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { Globe2, Cpu, Send, Sparkles, Workflow } from "lucide-react";
+import { Globe2, Cpu, Send, Sparkles, Workflow, History } from "lucide-react";
 import { CitationList } from "@/components/citation-list";
 import { type ChatResponse, sendChat, runAiraX } from "@/lib/api";
 
 type Turn = { question: string; response?: ChatResponse; error?: string };
+
+type WorkflowLog = {
+  timestamp: string;
+  agent: string;
+  event: string;
+  details: any;
+};
 
 type AiraXResponse = {
   status: string;
@@ -22,6 +29,7 @@ type AiraXResponse = {
   }[];
   execution_outputs: any[];
   memory: any;
+  workflow_logs?: WorkflowLog[];
 };
 
 export default function ChatPage() {
@@ -217,6 +225,41 @@ export default function ChatPage() {
                 </div>
               ))}
             </div>
+
+            {airaXResponse.workflow_logs && airaXResponse.workflow_logs.length > 0 && (
+              <div className="mt-6 rounded-2xl border border-purple-100 bg-purple-50/30 p-4">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                  <History className="h-4 w-4 text-purple-600" />
+                  Workflow Logs
+                </div>
+
+                <div className="space-y-3">
+                  {airaXResponse.workflow_logs.map((log, index) => (
+                    <div
+                      key={`${log.timestamp}-${index}`}
+                      className="rounded-xl border border-purple-100 bg-white p-3 text-xs text-slate-700"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-semibold text-slate-900">
+                          {log.agent}
+                        </p>
+                        <p className="text-slate-400">
+                          {new Date(log.timestamp).toLocaleString()}
+                        </p>
+                      </div>
+
+                      <p className="mt-1">
+                        <strong>Event:</strong> {log.event}
+                      </p>
+
+                      <pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">
+                        {JSON.stringify(log.details, null, 2)}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

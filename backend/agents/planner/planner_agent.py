@@ -18,7 +18,6 @@ class PlannerAgent(BaseAgent):
         )
 
         goal = state.user_goal.lower()
-
         plan = []
 
         if "list files" in goal:
@@ -47,6 +46,16 @@ class PlannerAgent(BaseAgent):
                     id=1,
                     title="Run Python code",
                     description="Execute a simple Python code snippet using the Python tool.",
+                    assigned_agent="execution_agent",
+                )
+            )
+
+        elif "test retry" in goal or "retry demo" in goal:
+            plan.append(
+                AiraXStep(
+                    id=1,
+                    title="Run retry demo command",
+                    description="Intentionally fail once, then self-correct and retry.",
                     assigned_agent="execution_agent",
                 )
             )

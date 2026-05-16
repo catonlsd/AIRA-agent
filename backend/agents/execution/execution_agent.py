@@ -4,6 +4,7 @@ from agents.base_agent import BaseAgent
 from schemas.aira_state import AiraXState
 from tools.tool_router import ToolRouter
 from agents.safety.safety_agent import SafetyAgent
+from memory.workflow_memory import WorkflowMemory
 
 
 class ExecutionAgent(BaseAgent):
@@ -28,6 +29,17 @@ class ExecutionAgent(BaseAgent):
 
         current_step.status = "running"
 
+        WorkflowMemory.add_log(
+            state,
+            agent=self.name,
+            event="execution_started",
+            details={
+                "step_id": current_step.id,
+                "step_title": current_step.title,
+                "retry_count": state.retry_count,
+            },
+        )
+
         safety = SafetyAgent()
         tool_used = "shell_tool"
 
@@ -36,7 +48,6 @@ class ExecutionAgent(BaseAgent):
             state.memory["pending_action"] = pending_action
 
             state = await safety.run(state)
-
             if state.decision == "blocked_by_safety_agent":
                 current_step.status = "failed"
                 current_step.error = state.final_answer
@@ -54,7 +65,6 @@ class ExecutionAgent(BaseAgent):
             state.memory["pending_action"] = pending_action
 
             state = await safety.run(state)
-
             if state.decision == "blocked_by_safety_agent":
                 current_step.status = "failed"
                 current_step.error = state.final_answer
@@ -75,7 +85,6 @@ class ExecutionAgent(BaseAgent):
             state.memory["pending_action"] = pending_action
 
             state = await safety.run(state)
-
             if state.decision == "blocked_by_safety_agent":
                 current_step.status = "failed"
                 current_step.error = state.final_answer
@@ -90,12 +99,32 @@ class ExecutionAgent(BaseAgent):
                 },
             )
 
+        elif "run retry demo command" in current_step.title.lower():
+            if state.retry_count == 0:
+                pending_action = "non_existing_command_for_retry_demo"
+            else:
+                pending_action = "echo AIRA-X self-correction retry succeeded"
+
+            state.memory["pending_action"] = pending_action
+
+            state = await safety.run(state)
+            if state.decision == "blocked_by_safety_agent":
+                current_step.status = "failed"
+                current_step.error = state.final_answer
+                return state
+
+            tool_used = "shell_tool"
+            tool_result = ToolRouter.run(
+                tool_name="shell_tool",
+                action="run",
+                payload={"command": pending_action},
+            )
+
         else:
             pending_action = "echo AIRA-X dynamic execution working"
             state.memory["pending_action"] = pending_action
 
             state = await safety.run(state)
-
             if state.decision == "blocked_by_safety_agent":
                 current_step.status = "failed"
                 current_step.error = state.final_answer
@@ -133,10 +162,32 @@ class ExecutionAgent(BaseAgent):
             state.status = "executing"
             state.decision = "execution_completed"
 
+            WorkflowMemory.add_log(
+                state,
+                agent=self.name,
+                event="execution_success",
+                details={
+                    "step_id": current_step.id,
+                    "tool_used": tool_used,
+                    "result": current_step.result,
+                },
+            )
+
         else:
             current_step.error = tool_result.get("stderr") or tool_result.get("error")
             current_step.status = "failed"
             state.status = "failed"
             state.decision = "execution_failed"
+
+            WorkflowMemory.add_log(
+                state,
+                agent=self.name,
+                event="execution_failed",
+                details={
+                    "step_id": current_step.id,
+                    "tool_used": tool_used,
+                    "error": current_step.error,
+                },
+            )
 
         return state

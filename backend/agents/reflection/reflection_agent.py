@@ -1,5 +1,6 @@
 from agents.base_agent import BaseAgent
 from schemas.aira_state import AiraXState
+from memory.workflow_memory import WorkflowMemory
 
 
 class ReflectionAgent(BaseAgent):
@@ -29,11 +30,18 @@ class ReflectionAgent(BaseAgent):
             "failed_step": current_step.title,
             "error": current_step.error or "Unknown error",
             "retry_count": state.retry_count,
-            "suggested_fix": "Retry the step with improved execution strategy.",
+            "suggested_fix": "Retry with safer or corrected execution strategy.",
         }
 
         state.memory.setdefault("reflections", [])
         state.memory["reflections"].append(retry_note)
+
+        WorkflowMemory.add_log(
+            state,
+            agent=self.name,
+            event="reflection_completed",
+            details=retry_note,
+        )
 
         current_step.status = "pending"
         current_step.error = None
