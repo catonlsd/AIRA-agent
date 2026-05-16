@@ -97,6 +97,19 @@ class AiraXWorkflow:
                 state = await self.memory.run(state)
                 break
 
+            elif state.decision == "stop_safety_block":
+                state.status = "failed"
+
+                WorkflowMemory.add_log(
+                    state,
+                    agent="aira_x_workflow",
+                    event="workflow_blocked_by_safety",
+                    details={"final_answer": state.final_answer},
+                )
+
+                state = await self.memory.run(state)
+                break    
+
             elif state.decision == "stop_max_retries":
                 state.status = "failed"
                 state.final_answer = "Workflow failed after maximum retries."

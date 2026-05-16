@@ -45,7 +45,21 @@ class PlannerAgent(BaseAgent):
                 AiraXStep(
                     id=1,
                     title="Run Python code",
-                    description="Execute a simple Python code snippet using the Python tool.",
+                    description="Execute Python code using the Python tool.",
+                    assigned_agent="execution_agent",
+                )
+            )
+
+        elif (
+            "rm -rf" in goal
+            or "delete system32" in goal
+            or "format disk" in goal
+        ):
+            plan.append(
+                AiraXStep(
+                    id=1,
+                    title="Run dangerous command",
+                    description="Attempt dangerous command execution.",
                     assigned_agent="execution_agent",
                 )
             )

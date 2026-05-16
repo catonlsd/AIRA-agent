@@ -32,13 +32,106 @@ type AiraXResponse = {
   workflow_logs?: WorkflowLog[];
 };
 
+const knownLogEvents = [
+  "workflow_started",
+  "planning_started",
+  "plan_created",
+  "decision_made",
+  "safety_check_started",
+  "safety_approved",
+  "execution_started",
+  "execution_success",
+  "execution_failed",
+  "reflection_completed",
+  "validation_started",
+  "validation_success",
+  "validation_failed",
+  "workflow_completed",
+  "memory_summary_created",
+];
+
+function renderLogMessage(log: WorkflowLog) {
+  switch (log.event) {
+    case "workflow_started":
+      return <p>Workflow started for goal: {log.details.user_goal}</p>;
+
+    case "planning_started":
+      return <p>Planner started analyzing the user goal.</p>;
+
+    case "plan_created":
+      return (
+        <p>
+          Planner created {log.details.steps?.length || 0} execution step(s).
+        </p>
+      );
+
+    case "decision_made":
+      return (
+        <p>
+          Decision made: <strong>{log.details.decision}</strong>
+        </p>
+      );
+
+    case "safety_check_started":
+      return <p>Safety check started for action: {log.details.action}</p>;
+
+    case "safety_approved":
+      return <p>Safety approved the action.</p>;
+
+    case "execution_started":
+      return <p>Execution started for step: {log.details.step_title}</p>;
+
+    case "execution_success":
+      return <p>Execution completed successfully.</p>;
+
+    case "execution_failed":
+      return (
+        <p>
+          Execution failed. Error: {log.details.error || "Unknown error"}
+        </p>
+      );
+
+    case "reflection_completed":
+      return (
+        <p>
+          Reflection analyzed the failure and prepared retry #
+          {log.details.retry_count}.
+        </p>
+      );
+
+    case "validation_started":
+      return <p>Validation started for step: {log.details.step_title}</p>;
+
+    case "validation_success":
+      return <p>Validation passed successfully.</p>;
+
+    case "validation_failed":
+      return (
+        <p>
+          Validation failed. Error: {log.details.error || log.details.reason}
+        </p>
+      );
+
+    case "workflow_completed":
+      return <p>Workflow completed successfully.</p>;
+
+    case "memory_summary_created":
+      return <p>Memory Agent saved a workflow summary.</p>;
+
+    default:
+      return <p>{JSON.stringify(log.details)}</p>;
+  }
+}
+
 export default function ChatPage() {
   const [question, setQuestion] = useState("");
   const [forceWeb, setForceWeb] = useState(false);
   const [loading, setLoading] = useState(false);
   const [airaXLoading, setAiraXLoading] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [airaXResponse, setAiraXResponse] = useState<AiraXResponse | null>(null);
+  const [airaXResponse, setAiraXResponse] = useState<AiraXResponse | null>(
+    null
+  );
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -127,7 +220,8 @@ export default function ChatPage() {
             </h2>
 
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-              Use Send for normal AIRA research. Use Run AIRA-X for autonomous workflow execution.
+              Use Send for normal AIRA research. Use Run AIRA-X for autonomous
+              workflow execution.
             </p>
           </div>
         )}
@@ -205,177 +299,83 @@ export default function ChatPage() {
               {airaXResponse.plan.map((step) => (
                 <div
                   key={step.id}
-                  className="rounded-2xl border border-blue-100 bg-blue-50/30 p-4 text-sm"
+                  className={`rounded-2xl border p-4 text-sm ${
+                    step.status === "failed"
+                      ? "border-red-200 bg-red-50/60"
+                      : "border-blue-100 bg-blue-50/30"
+                  }`}
                 >
                   <p className="font-semibold text-slate-900">
                     {step.id}. {step.title}
                   </p>
+
                   <p className="mt-1 text-slate-600">{step.description}</p>
+
                   <div className="mt-2 grid gap-1 text-xs text-slate-600 sm:grid-cols-3">
                     <p>
                       <strong>Status:</strong> {step.status}
                     </p>
+
                     <p>
                       <strong>Agent:</strong> {step.assigned_agent}
                     </p>
+
                     <p>
-                      <strong>Result:</strong> {step.result || "Pending"}
+                      <strong>Result:</strong> {step.result || "No result yet"}
                     </p>
+
+                    {step.error && (
+                      <p className="text-red-600 sm:col-span-3">
+                        <strong>Error:</strong> {step.error}
+                      </p>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
 
-            {airaXResponse.workflow_logs && airaXResponse.workflow_logs.length > 0 && (
-              <div className="mt-6 rounded-2xl border border-purple-100 bg-purple-50/30 p-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                  <History className="h-4 w-4 text-purple-600" />
-                  Workflow Logs
-                </div>
+            {airaXResponse.workflow_logs &&
+              airaXResponse.workflow_logs.length > 0 && (
+                <div className="mt-6 rounded-2xl border border-purple-100 bg-purple-50/30 p-4">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                    <History className="h-4 w-4 text-purple-600" />
+                    Workflow Logs
+                  </div>
 
-                <div className="space-y-3">
-                  {airaXResponse.workflow_logs.map((log, index) => (
-                    <div
-                      key={`${log.timestamp}-${index}`}
-                      className="rounded-xl border border-purple-100 bg-white p-3 text-xs text-slate-700"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="font-semibold text-slate-900">
-                          {log.agent}
-                        </p>
-                        <p className="text-slate-400">
-                          {new Date(log.timestamp).toLocaleString()}
-                        </p>
-                      </div>
-
-                      <p className="mt-1">
-                        <strong>Event:</strong> {log.event}
-                      </p>
-
-                      <div className="mt-2 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-                        {log.event === "workflow_started" && (
-                          <p>Workflow started for goal: {log.details.user_goal}</p>
-                        )}
-
-                        {log.event === "planning_started" && (
-                          <p>Planner started analyzing the user goal.</p>
-                        )}
-                        
-                        {log.event === "plan_created" && (
-                          <p>
-                            Planner created {log.details.steps?.length || 0} execution step(s).
+                  <div className="space-y-3">
+                    {airaXResponse.workflow_logs.map((log, index) => (
+                      <div
+                        key={`${log.timestamp}-${index}`}
+                        className="rounded-xl border border-purple-100 bg-white p-3 text-xs text-slate-700"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-semibold text-slate-900">
+                            {log.agent}
                           </p>
-                        )}
 
-                        {log.event === "decision_made" && (
-                          <p>
-                            Decision made: <strong>{log.details.decision}</strong>
-                            </p>
+                          <p className="text-slate-400">
+                            {new Date(log.timestamp).toLocaleString()}
+                          </p>
+                        </div>
+
+                        <p className="mt-1">
+                          <strong>Event:</strong> {log.event}
+                        </p>
+
+                        <div className="mt-2 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+                          {renderLogMessage(log)}
+
+                          {!knownLogEvents.includes(log.event) && (
+                            <pre className="mt-2 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">
+                              {JSON.stringify(log.details, null, 2)}
+                            </pre>
                           )}
-
-                      <div className="mt-2 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-                        {log.event === "workflow_started" && (
-                          <p>Workflow started for goal: {log.details.user_goal}</p>
-                        )}
-
-                        {log.event === "planning_started" && (
-                          <p>Planner started analyzing the user goal.</p>
-                        )}
-
-                        {log.event === "plan_created" && (
-                          <p>
-                            Planner created {log.details.steps?.length || 0} execution step(s).
-                          </p>
-                        )}
-
-                        {log.event === "decision_made" && (
-                          <p>
-                            Decision made: <strong>{log.details.decision}</strong>
-                          </p>
-                        )}
-
-                        {log.event === "safety_check_started" && (
-                          <p>Safety check started for action: {log.details.action}</p>
-                        )}
-
-                        {log.event === "safety_approved" && (
-                          <p>Safety approved the action.</p>
-                        )}
-
-                        {log.event === "execution_started" && (
-                          <p>
-                            Execution started for step: {log.details.step_title}
-                          </p>
-                        )}
-
-                        {log.event === "execution_success" && (
-                          <p>Execution completed successfully.</p>
-                        )}
-
-                        {log.event === "execution_failed" && (
-                          <p>
-                            Execution failed. Error: {log.details.error || "Unknown error"}
-                          </p>
-                        )}
-
-                        {log.event === "reflection_completed" && (
-                          <p>
-                            Reflection analyzed the failure and prepared retry #{log.details.retry_count}.
-                          </p>
-                        )}
-
-                        {log.event === "workflow_completed" && (
-                          <p>Workflow completed successfully.</p>
-                        )}
-
-                        {![
-                          "workflow_started",
-                          "planning_started",
-                          "plan_created",
-                          "decision_made",
-                          "safety_check_started",
-                          "safety_approved",
-                          "execution_started",
-                          "execution_success",
-                          "execution_failed",
-                          "reflection_completed",
-                          "workflow_completed",
-                        ].includes(log.event) && (
-                          <p>{JSON.stringify(log.details)}</p>
-                        )}
+                        </div>
                       </div>
-
-  {log.event === "reflection_completed" && (
-    <p>
-      Reflection analyzed the failure and prepared retry #{log.details.retry_count}.
-    </p>
-  )}
-
-  {log.event === "workflow_completed" && (
-    <p>Workflow completed successfully.</p>
-  )}
-
-  {![
-    "workflow_started",
-    "planning_started",
-    "plan_created",
-    "decision_made",
-    "safety_check_started",
-    "safety_approved",
-    "execution_started",
-    "execution_success",
-    "execution_failed",
-    "reflection_completed",
-    "workflow_completed",
-  ].includes(log.event) && (
-    <p>{JSON.stringify(log.details)}</p>
-  )}
-</div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
           </div>
         )}
 
@@ -411,6 +411,7 @@ export default function ChatPage() {
               onChange={(event) => setForceWeb(event.target.checked)}
               className="accent-blue-600"
             />
+
             <Globe2 className="h-4 w-4 text-accent" />
             Include web search
           </label>

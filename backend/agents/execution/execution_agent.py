@@ -99,6 +99,30 @@ class ExecutionAgent(BaseAgent):
                 },
             )
 
+        elif "run dangerous command" in current_step.title.lower():
+
+            pending_action = "rm -rf /"
+
+            state.memory["pending_action"] = pending_action
+
+            state = await safety.run(state)
+
+            if state.decision == "blocked_by_safety_agent":
+                current_step.status = "failed"
+                current_step.error = state.final_answer
+
+                WorkflowMemory.add_log(
+                    state,
+                    agent=self.name,
+                    event="execution_blocked_by_safety",
+                    details={
+                        "step_id": current_step.id,
+                        "action": pending_action,
+                    },
+                )
+
+                return state    
+
         elif "run retry demo command" in current_step.title.lower():
             if state.retry_count == 0:
                 pending_action = "non_existing_command_for_retry_demo"
