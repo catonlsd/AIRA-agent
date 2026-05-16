@@ -9,7 +9,7 @@ from memory.workflow_memory import WorkflowMemory
 
 class ExecutionAgent(BaseAgent):
     name = "execution_agent"
-    description = "Executes workflow steps using available tools."
+    description = "Executes workflow steps using dynamically selected tools."
 
     async def run(self, state: AiraXState) -> AiraXState:
         if state.current_step is None:
@@ -37,135 +37,67 @@ class ExecutionAgent(BaseAgent):
                 "step_id": current_step.id,
                 "step_title": current_step.title,
                 "retry_count": state.retry_count,
+                "tool_name": current_step.tool_name,
+                "tool_action": current_step.tool_action,
             },
         )
 
-        safety = SafetyAgent()
-        tool_used = "shell_tool"
+        if not current_step.tool_name or not current_step.tool_action:
+            current_step.status = "failed"
+            current_step.error = "No tool assigned to this execution step."
+            state.status = "failed"
+            state.decision = "execution_failed"
+            return state
 
-        if "list project files" in current_step.title.lower():
-            pending_action = "dir"
-            state.memory["pending_action"] = pending_action
-
-            state = await safety.run(state)
-            if state.decision == "blocked_by_safety_agent":
-                current_step.status = "failed"
-                current_step.error = state.final_answer
-                return state
-
-            tool_used = "shell_tool"
-            tool_result = ToolRouter.run(
-                tool_name="shell_tool",
-                action="run",
-                payload={"command": pending_action},
-            )
-
-        elif "create a test file" in current_step.title.lower():
-            pending_action = "write_file: tmp/aira_x_generated.txt"
-            state.memory["pending_action"] = pending_action
-
-            state = await safety.run(state)
-            if state.decision == "blocked_by_safety_agent":
-                current_step.status = "failed"
-                current_step.error = state.final_answer
-                return state
-
-            tool_used = "file_tool"
-            tool_result = ToolRouter.run(
-                tool_name="file_tool",
-                action="write_file",
-                payload={
-                    "path": "tmp/aira_x_generated.txt",
-                    "content": "AIRA-X autonomously created this file.",
-                },
-            )
-
-        elif "run python code" in current_step.title.lower():
-            pending_action = "python_code: print('AIRA-X executed Python code successfully')"
-            state.memory["pending_action"] = pending_action
-
-            state = await safety.run(state)
-            if state.decision == "blocked_by_safety_agent":
-                current_step.status = "failed"
-                current_step.error = state.final_answer
-                return state
-
-            tool_used = "python_tool"
-            tool_result = ToolRouter.run(
-                tool_name="python_tool",
-                action="run_code",
-                payload={
-                    "code": "print('AIRA-X executed Python code successfully')"
-                },
-            )
-
-        elif "run dangerous command" in current_step.title.lower():
-
-            pending_action = "rm -rf /"
-
-            state.memory["pending_action"] = pending_action
-
-            state = await safety.run(state)
-
-            if state.decision == "blocked_by_safety_agent":
-                current_step.status = "failed"
-                current_step.error = state.final_answer
-
-                WorkflowMemory.add_log(
-                    state,
-                    agent=self.name,
-                    event="execution_blocked_by_safety",
-                    details={
-                        "step_id": current_step.id,
-                        "action": pending_action,
-                    },
-                )
-
-                return state    
-
-        elif "run retry demo command" in current_step.title.lower():
+        if "run retry demo command" in current_step.title.lower():
             if state.retry_count == 0:
-                pending_action = "non_existing_command_for_retry_demo"
+                current_step.tool_payload = {
+                    "command": "non_existing_command_for_retry_demo"
+                }
             else:
-                pending_action = "echo AIRA-X self-correction retry succeeded"
+                current_step.tool_payload = {
+                    "command": "echo AIRA-X self-correction retry succeeded"
+                }
 
-            state.memory["pending_action"] = pending_action
+        pending_action = self._build_pending_action(
+            current_step.tool_name,
+            current_step.tool_action,
+            current_step.tool_payload,
+        )
 
-            state = await safety.run(state)
-            if state.decision == "blocked_by_safety_agent":
-                current_step.status = "failed"
-                current_step.error = state.final_answer
-                return state
+        state.memory["pending_action"] = pending_action
 
-            tool_used = "shell_tool"
-            tool_result = ToolRouter.run(
-                tool_name="shell_tool",
-                action="run",
-                payload={"command": pending_action},
+        safety = SafetyAgent()
+        state = await safety.run(state)
+
+        if state.decision == "blocked_by_safety_agent":
+            current_step.status = "failed"
+            current_step.error = state.final_answer
+
+            WorkflowMemory.add_log(
+                state,
+                agent=self.name,
+                event="execution_blocked_by_safety",
+                details={
+                    "step_id": current_step.id,
+                    "action": pending_action,
+                },
             )
 
-        else:
-            pending_action = "echo AIRA-X dynamic execution working"
-            state.memory["pending_action"] = pending_action
+            return state
 
-            state = await safety.run(state)
-            if state.decision == "blocked_by_safety_agent":
-                current_step.status = "failed"
-                current_step.error = state.final_answer
-                return state
-
-            tool_used = "shell_tool"
-            tool_result = ToolRouter.run(
-                tool_name="shell_tool",
-                action="run",
-                payload={"command": pending_action},
-            )
+        tool_result = ToolRouter.run(
+            tool_name=current_step.tool_name,
+            action=current_step.tool_action,
+            payload=current_step.tool_payload,
+        )
 
         output = {
             "step_id": current_step.id,
             "agent": self.name,
             "timestamp": datetime.utcnow().isoformat(),
-            "tool_used": tool_used,
+            "tool_used": current_step.tool_name,
+            "tool_action": current_step.tool_action,
             "safety_decision": "approved",
             "tool_result": tool_result,
         }
@@ -192,7 +124,8 @@ class ExecutionAgent(BaseAgent):
                 event="execution_success",
                 details={
                     "step_id": current_step.id,
-                    "tool_used": tool_used,
+                    "tool_used": current_step.tool_name,
+                    "tool_action": current_step.tool_action,
                     "result": current_step.result,
                 },
             )
@@ -209,9 +142,22 @@ class ExecutionAgent(BaseAgent):
                 event="execution_failed",
                 details={
                     "step_id": current_step.id,
-                    "tool_used": tool_used,
+                    "tool_used": current_step.tool_name,
+                    "tool_action": current_step.tool_action,
                     "error": current_step.error,
                 },
             )
 
         return state
+
+    def _build_pending_action(self, tool_name: str, action: str, payload: dict) -> str:
+        if tool_name == "shell_tool":
+            return payload.get("command", "")
+
+        if tool_name == "python_tool":
+            return f"python_code: {payload.get('code', '')}"
+
+        if tool_name == "file_tool":
+            return f"{action}: {payload.get('path', '')}"
+
+        return f"{tool_name}:{action}"

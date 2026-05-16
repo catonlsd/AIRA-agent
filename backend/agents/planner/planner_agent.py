@@ -5,7 +5,7 @@ from memory.workflow_memory import WorkflowMemory
 
 class PlannerAgent(BaseAgent):
     name = "planner_agent"
-    description = "Breaks user goals into executable steps."
+    description = "Breaks user goals into executable tool-ready steps."
 
     async def run(self, state: AiraXState) -> AiraXState:
         state.status = "planning"
@@ -27,6 +27,9 @@ class PlannerAgent(BaseAgent):
                     title="List project files",
                     description="List files in the backend directory.",
                     assigned_agent="execution_agent",
+                    tool_name="shell_tool",
+                    tool_action="run",
+                    tool_payload={"command": "dir"},
                 )
             )
 
@@ -37,6 +40,12 @@ class PlannerAgent(BaseAgent):
                     title="Create a test file",
                     description="Create a new file using the filesystem tool.",
                     assigned_agent="execution_agent",
+                    tool_name="file_tool",
+                    tool_action="write_file",
+                    tool_payload={
+                        "path": "tmp/aira_x_generated.txt",
+                        "content": "AIRA-X autonomously created this file.",
+                    },
                 )
             )
 
@@ -47,20 +56,24 @@ class PlannerAgent(BaseAgent):
                     title="Run Python code",
                     description="Execute Python code using the Python tool.",
                     assigned_agent="execution_agent",
+                    tool_name="python_tool",
+                    tool_action="run_code",
+                    tool_payload={
+                        "code": "print('AIRA-X executed Python code successfully')"
+                    },
                 )
             )
 
-        elif (
-            "rm -rf" in goal
-            or "delete system32" in goal
-            or "format disk" in goal
-        ):
+        elif "rm -rf" in goal or "delete system32" in goal or "format disk" in goal:
             plan.append(
                 AiraXStep(
                     id=1,
                     title="Run dangerous command",
                     description="Attempt dangerous command execution.",
                     assigned_agent="execution_agent",
+                    tool_name="shell_tool",
+                    tool_action="run",
+                    tool_payload={"command": "rm -rf /"},
                 )
             )
 
@@ -71,6 +84,9 @@ class PlannerAgent(BaseAgent):
                     title="Run retry demo command",
                     description="Intentionally fail once, then self-correct and retry.",
                     assigned_agent="execution_agent",
+                    tool_name="shell_tool",
+                    tool_action="run",
+                    tool_payload={"command": "non_existing_command_for_retry_demo"},
                 )
             )
 
@@ -93,6 +109,9 @@ class PlannerAgent(BaseAgent):
                     title="Execute task",
                     description="Perform the required action using tools or execution.",
                     assigned_agent="execution_agent",
+                    tool_name="shell_tool",
+                    tool_action="run",
+                    tool_payload={"command": "echo AIRA-X dynamic execution working"},
                 ),
                 AiraXStep(
                     id=4,
@@ -116,6 +135,8 @@ class PlannerAgent(BaseAgent):
                         "id": step.id,
                         "title": step.title,
                         "assigned_agent": step.assigned_agent,
+                        "tool_name": step.tool_name,
+                        "tool_action": step.tool_action,
                     }
                     for step in state.plan
                 ]
