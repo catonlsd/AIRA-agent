@@ -1,5 +1,6 @@
 from agents.base_agent import BaseAgent
 from schemas.aira_state import AiraXState, AiraXStep
+from memory.workflow_memory import WorkflowMemory
 
 
 class PlannerAgent(BaseAgent):
@@ -8,6 +9,13 @@ class PlannerAgent(BaseAgent):
 
     async def run(self, state: AiraXState) -> AiraXState:
         state.status = "planning"
+
+        WorkflowMemory.add_log(
+            state,
+            agent=self.name,
+            event="planning_started",
+            details={"user_goal": state.user_goal},
+        )
 
         goal = state.user_goal.lower()
 
@@ -74,5 +82,21 @@ class PlannerAgent(BaseAgent):
         state.plan = plan
         state.current_step = 1
         state.decision = "plan_created"
+
+        WorkflowMemory.add_log(
+            state,
+            agent=self.name,
+            event="plan_created",
+            details={
+                "steps": [
+                    {
+                        "id": step.id,
+                        "title": step.title,
+                        "assigned_agent": step.assigned_agent,
+                    }
+                    for step in state.plan
+                ]
+            },
+        )
 
         return state

@@ -23,4 +23,5 @@ async def run_aira_x(request: AiraXRunRequest):
         "plan": [step.model_dump() for step in state.plan],
         "execution_outputs": state.execution_outputs,
         "memory": state.memory,
+        "workflow_logs": state.memory.get("workflow_logs", []),
     }
