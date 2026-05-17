@@ -7,6 +7,10 @@ class DecisionAgent(BaseAgent):
     description = "Determines the next workflow action."
 
     async def run(self, state: AiraXState) -> AiraXState:
+        if state.decision == "approval_required" or state.status == "requires_approval":
+            state.decision = "stop_approval_required"
+            return state
+
         current_step = next(
             (step for step in state.plan if step.id == state.current_step),
             None,

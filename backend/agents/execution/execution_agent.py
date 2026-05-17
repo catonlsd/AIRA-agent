@@ -4,6 +4,7 @@ from agents.base_agent import BaseAgent
 from schemas.aira_state import AiraXState
 from tools.tool_router import ToolRouter
 from agents.safety.safety_agent import SafetyAgent
+from agents.approval.approval_agent import ApprovalAgent
 from memory.workflow_memory import WorkflowMemory
 
 
@@ -86,6 +87,25 @@ class ExecutionAgent(BaseAgent):
 
             return state
 
+        approval = ApprovalAgent()
+        state = await approval.run(state)
+
+        if state.decision == "approval_required":
+            current_step.status = "blocked"
+            current_step.error = state.final_answer
+
+            WorkflowMemory.add_log(
+                state,
+                agent=self.name,
+                event="execution_waiting_for_approval",
+                details={
+                    "step_id": current_step.id,
+                    "action": pending_action,
+                },
+            )
+
+            return state
+
         tool_result = ToolRouter.run(
             tool_name=current_step.tool_name,
             action=current_step.tool_action,
@@ -99,6 +119,7 @@ class ExecutionAgent(BaseAgent):
             "tool_used": current_step.tool_name,
             "tool_action": current_step.tool_action,
             "safety_decision": "approved",
+            "approval_decision": "not_required",
             "tool_result": tool_result,
         }
 
@@ -159,5 +180,8 @@ class ExecutionAgent(BaseAgent):
 
         if tool_name == "file_tool":
             return f"{action}: {payload.get('path', '')}"
+
+        if tool_name == "git_tool":
+            return f"git_tool:{action}"
 
         return f"{tool_name}:{action}"

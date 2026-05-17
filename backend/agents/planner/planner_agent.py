@@ -64,6 +64,19 @@ class PlannerAgent(BaseAgent):
                 )
             )
 
+        elif "install package" in goal or "pip install" in goal:
+            plan.append(
+                AiraXStep(
+                    id=1,
+                    title="Install Python package",
+                    description="Attempt to install a Python package. This should require approval.",
+                    assigned_agent="execution_agent",
+                    tool_name="shell_tool",
+                    tool_action="run",
+                    tool_payload={"command": "pip install requests"},
+                )
+            )
+
         elif "git status" in goal:
             plan.append(
                 AiraXStep(
@@ -100,6 +113,34 @@ class PlannerAgent(BaseAgent):
                     tool_name="git_tool",
                     tool_action="recent_commits",
                     tool_payload={"limit": 5},
+                )
+            )
+
+        elif "git push" in goal:
+            plan.append(
+                AiraXStep(
+                    id=1,
+                    title="Push Git changes",
+                    description="Attempt to push Git changes. This should require approval.",
+                    assigned_agent="execution_agent",
+                    tool_name="shell_tool",
+                    tool_action="run",
+                    tool_payload={"command": "git push"},
+                )
+            )
+
+        elif "git commit" in goal:
+            plan.append(
+                AiraXStep(
+                    id=1,
+                    title="Commit Git changes",
+                    description="Attempt to create a Git commit. This should require approval.",
+                    assigned_agent="execution_agent",
+                    tool_name="shell_tool",
+                    tool_action="run",
+                    tool_payload={
+                        "command": 'git commit -m "AIRA-X automated commit"'
+                    },
                 )
             )
 

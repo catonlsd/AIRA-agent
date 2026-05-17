@@ -90,13 +90,6 @@ class AiraXWorkflow:
                 state = await self.memory.run(state)
                 break
 
-            elif state.decision == "finish":
-                state.status = "completed"
-                state.final_answer = "Workflow finished."
-
-                state = await self.memory.run(state)
-                break
-
             elif state.decision == "stop_safety_block":
                 state.status = "failed"
 
@@ -108,7 +101,27 @@ class AiraXWorkflow:
                 )
 
                 state = await self.memory.run(state)
-                break    
+                break
+
+            elif state.decision == "stop_approval_required":
+                state.status = "requires_approval"
+
+                WorkflowMemory.add_log(
+                    state,
+                    agent="aira_x_workflow",
+                    event="workflow_waiting_for_approval",
+                    details={"final_answer": state.final_answer},
+                )
+
+                state = await self.memory.run(state)
+                break
+
+            elif state.decision == "finish":
+                state.status = "completed"
+                state.final_answer = "Workflow finished."
+
+                state = await self.memory.run(state)
+                break
 
             elif state.decision == "stop_max_retries":
                 state.status = "failed"
