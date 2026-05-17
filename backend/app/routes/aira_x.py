@@ -48,8 +48,7 @@ async def run_aira_x(request: AiraXRunRequest):
     workflow = AiraXWorkflow()
     state = await workflow.run(request.goal, run_id=run_id)
 
-    if state.status == "requires_approval":
-        WorkflowStore.save(state)
+    WorkflowStore.save(state)
 
     return serialize_state(state)
 
@@ -61,7 +60,13 @@ async def approve_aira_x_action(request: AiraXApproveRequest):
     if not state:
         return {
             "success": False,
-            "error": f"No pending workflow found for run_id: {request.run_id}",
+            "error": f"No workflow found for run_id: {request.run_id}",
+        }
+
+    if state.status != "requires_approval":
+        return {
+            "success": False,
+            "error": f"Workflow is not waiting for approval. Current status: {state.status}",
         }
 
     pending_action = state.memory.get("pending_action")
@@ -101,10 +106,7 @@ async def approve_aira_x_action(request: AiraXApproveRequest):
     workflow = AiraXWorkflow()
     resumed_state = await workflow.resume(state)
 
-    if resumed_state.status != "requires_approval":
-        WorkflowStore.delete(request.run_id)
-    else:
-        WorkflowStore.save(resumed_state)
+    WorkflowStore.save(resumed_state)
 
     return serialize_state(resumed_state)
 
@@ -116,7 +118,13 @@ async def reject_aira_x_action(request: AiraXRejectRequest):
     if not state:
         return {
             "success": False,
-            "error": f"No pending workflow found for run_id: {request.run_id}",
+            "error": f"No workflow found for run_id: {request.run_id}",
+        }
+
+    if state.status != "requires_approval":
+        return {
+            "success": False,
+            "error": f"Workflow is not waiting for rejection. Current status: {state.status}",
         }
 
     pending_action = state.memory.get("pending_action")
@@ -164,9 +172,33 @@ async def reject_aira_x_action(request: AiraXRejectRequest):
     memory_agent = MemoryAgent()
     state = await memory_agent.run(state)
 
-    WorkflowStore.delete(request.run_id)
+    WorkflowStore.save(state)
 
     return serialize_state(state)
+
+
+@router.get("/runs")
+async def list_aira_x_runs():
+    return {
+        "run_count": len(WorkflowStore.list_runs()),
+        "runs": WorkflowStore.list_runs(),
+    }
+
+
+@router.get("/runs/{run_id}")
+async def get_aira_x_run(run_id: str):
+    state = WorkflowStore.get(run_id)
+
+    if not state:
+        return {
+            "success": False,
+            "error": f"No workflow found for run_id: {run_id}",
+        }
+
+    return {
+        "success": True,
+        "run": serialize_state(state),
+    }
 
 
 @router.get("/tools")
