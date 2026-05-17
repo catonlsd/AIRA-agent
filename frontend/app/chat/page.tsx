@@ -1,13 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { Globe2, Cpu, Send, Sparkles, Workflow, History, ShieldCheck } from "lucide-react";
+import {
+  Globe2,
+  Cpu,
+  Send,
+  Sparkles,
+  Workflow,
+  History,
+  ShieldCheck,
+  XCircle,
+} from "lucide-react";
 import { CitationList } from "@/components/citation-list";
 import {
   type ChatResponse,
   sendChat,
   runAiraX,
   approveAiraX,
+  rejectAiraX,
 } from "@/lib/api";
 
 type Turn = { question: string; response?: ChatResponse; error?: string };
@@ -23,7 +33,7 @@ type AiraXResponse = {
   run_id?: string;
   status: string;
   decision: string;
-  final_answer: string;
+  final_answer: string | null;
   requires_approval?: boolean;
   pending_action?: string;
   plan: {
@@ -52,6 +62,8 @@ const knownLogEvents = [
   "approval_required",
   "approval_not_required",
   "approval_already_granted",
+  "approval_granted_by_user",
+  "approval_rejected_by_user",
   "execution_started",
   "execution_success",
   "execution_failed",
@@ -64,6 +76,7 @@ const knownLogEvents = [
   "workflow_waiting_for_approval",
   "workflow_resumed_after_approval",
   "workflow_blocked_by_safety",
+  "workflow_stopped_after_rejection",
   "workflow_completed",
   "memory_summary_created",
 ];
@@ -119,6 +132,22 @@ function renderLogMessage(log: WorkflowLog) {
 
     case "approval_already_granted":
       return <p>User approval was already granted for this action.</p>;
+
+    case "approval_granted_by_user":
+      return (
+        <p>
+          User approved action:{" "}
+          <strong>{log.details.approved_action}</strong>
+        </p>
+      );
+
+    case "approval_rejected_by_user":
+      return (
+        <p>
+          User rejected action:{" "}
+          <strong>{log.details.rejected_action}</strong>
+        </p>
+      );
 
     case "execution_started":
       return <p>Execution started for step: {log.details.step_title}</p>;
@@ -179,6 +208,9 @@ function renderLogMessage(log: WorkflowLog) {
     case "workflow_blocked_by_safety":
       return <p>Workflow stopped because safety blocked the action.</p>;
 
+    case "workflow_stopped_after_rejection":
+      return <p>Workflow stopped because the user rejected the action.</p>;
+
     case "workflow_completed":
       return <p>Workflow completed successfully.</p>;
 
@@ -196,6 +228,7 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false);
   const [airaXLoading, setAiraXLoading] = useState(false);
   const [approvalLoading, setApprovalLoading] = useState(false);
+  const [rejectionLoading, setRejectionLoading] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [airaXResponse, setAiraXResponse] = useState<AiraXResponse | null>(
     null
@@ -261,6 +294,21 @@ export default function ChatPage() {
       console.error("AIRA-X Approval Error:", error);
     } finally {
       setApprovalLoading(false);
+    }
+  }
+
+  async function handleRejectAiraX() {
+    if (!airaXResponse?.run_id) return;
+
+    setRejectionLoading(true);
+
+    try {
+      const result = await rejectAiraX(airaXResponse.run_id);
+      setAiraXResponse(result);
+    } catch (error) {
+      console.error("AIRA-X Rejection Error:", error);
+    } finally {
+      setRejectionLoading(false);
     }
   }
 
@@ -370,7 +418,8 @@ export default function ChatPage() {
                 <strong>Decision:</strong> {airaXResponse.decision}
               </p>
               <p>
-                <strong>Final Answer:</strong> {airaXResponse.final_answer}
+                <strong>Final Answer:</strong>{" "}
+                {airaXResponse.final_answer || "No final answer yet"}
               </p>
             </div>
 
@@ -379,34 +428,49 @@ export default function ChatPage() {
                 <div className="flex items-start gap-3">
                   <div className="rounded-xl bg-orange-100 p-2 text-orange-700">
                     <ShieldCheck className="h-5 w-5" />
+                  </div>
+
+                  <div className="flex-1">
+                    <h3 className="text-sm font-bold text-orange-900">
+                      Approval Required
+                    </h3>
+
+                    <p className="mt-2 text-sm leading-6 text-orange-800">
+                      AIRA-X paused because this action can modify your
+                      environment and needs your permission before continuing.
+                    </p>
+
+                    <div className="mt-4 rounded-xl border border-orange-200 bg-white p-3 text-sm text-orange-900">
+                      <strong>Pending action:</strong>{" "}
+                      {airaXResponse.pending_action || "Unknown action"}
                     </div>
 
-                    <div className="flex-1">
-                      <h3 className="text-sm font-bold text-orange-900">
-                      Approval Required
-                      </h3>
-
-                      <p className="mt-2 text-sm leading-6 text-orange-800">
-                        AIRA-X paused because this action can modify your environment and needs your permission before continuing.
-                      </p>
-
-                      <div className="mt-4 rounded-xl border border-orange-200 bg-white p-3 text-sm text-orange-900">
-                        <strong>Pending action:</strong>{" "}
-                        {airaXResponse.pending_action || "Unknown action"}
-                      </div>
-
+                    <div className="mt-4 flex flex-wrap gap-3">
                       <button
                         type="button"
                         onClick={handleApproveAiraX}
-                        disabled={approvalLoading}
-                        className="mt-4 rounded-xl bg-orange-600 px-5 py-3 text-sm font-bold text-white shadow-md transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={approvalLoading || rejectionLoading}
+                        className="rounded-xl bg-orange-600 px-5 py-3 text-sm font-bold text-white shadow-md transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        {approvalLoading ? "Approving and continuing..." : "Approve & Continue"}
-                        </button>
-                        </div>
-                        </div>
-                        </div>
-                      )}
+                        {approvalLoading
+                          ? "Approving and continuing..."
+                          : "Approve & Continue"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleRejectAiraX}
+                        disabled={approvalLoading || rejectionLoading}
+                        className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-5 py-3 text-sm font-bold text-red-700 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <XCircle className="h-4 w-4" />
+                        {rejectionLoading ? "Rejecting..." : "Reject Action"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="mt-5 space-y-3">
               <h3 className="text-sm font-semibold text-slate-900">
@@ -417,7 +481,9 @@ export default function ChatPage() {
                 <div
                   key={step.id}
                   className={`rounded-2xl border p-4 text-sm ${
-                    step.status === "failed" || step.status === "blocked"
+                    step.status === "failed" ||
+                    step.status === "blocked" ||
+                    step.status === "rejected"
                       ? "border-red-200 bg-red-50/60"
                       : "border-blue-100 bg-blue-50/30"
                   }`}
@@ -537,7 +603,9 @@ export default function ChatPage() {
             <button
               type="button"
               onClick={handleRunAiraX}
-              disabled={airaXLoading || loading || approvalLoading}
+              disabled={
+                airaXLoading || loading || approvalLoading || rejectionLoading
+              }
               className="inline-flex items-center gap-2 rounded-full bg-purple-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-600/20 transition-all duration-300 hover:-translate-y-0.5 hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Workflow className="h-4 w-4" />
@@ -545,7 +613,9 @@ export default function ChatPage() {
             </button>
 
             <button
-              disabled={loading || airaXLoading || approvalLoading}
+              disabled={
+                loading || airaXLoading || approvalLoading || rejectionLoading
+              }
               className="group inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-600/25 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Send className="h-4 w-4 transition-all duration-700 ease-out group-hover:-translate-y-2 group-hover:translate-x-3 group-hover:rotate-12 group-hover:opacity-0" />

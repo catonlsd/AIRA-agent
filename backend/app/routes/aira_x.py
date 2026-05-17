@@ -6,6 +6,8 @@ from pydantic import BaseModel
 from graph.aira_workflow import AiraXWorkflow
 from tools.tool_registry import ToolRegistry
 from memory.workflow_store import WorkflowStore
+from memory.workflow_memory import WorkflowMemory
+from agents.memory.memory_agent import MemoryAgent
 
 
 router = APIRouter(prefix="/aira-x", tags=["AIRA-X"])
@@ -16,6 +18,10 @@ class AiraXRunRequest(BaseModel):
 
 
 class AiraXApproveRequest(BaseModel):
+    run_id: str
+
+
+class AiraXRejectRequest(BaseModel):
     run_id: str
 
 
@@ -69,6 +75,16 @@ async def approve_aira_x_action(request: AiraXApproveRequest):
     state.memory.setdefault("approved_actions", [])
     state.memory["approved_actions"].append(pending_action)
 
+    WorkflowMemory.add_log(
+        state,
+        agent="approval_agent",
+        event="approval_granted_by_user",
+        details={
+            "run_id": request.run_id,
+            "approved_action": pending_action,
+        },
+    )
+
     current_step = next(
         (step for step in state.plan if step.id == state.current_step),
         None,
@@ -91,6 +107,66 @@ async def approve_aira_x_action(request: AiraXApproveRequest):
         WorkflowStore.save(resumed_state)
 
     return serialize_state(resumed_state)
+
+
+@router.post("/reject")
+async def reject_aira_x_action(request: AiraXRejectRequest):
+    state = WorkflowStore.get(request.run_id)
+
+    if not state:
+        return {
+            "success": False,
+            "error": f"No pending workflow found for run_id: {request.run_id}",
+        }
+
+    pending_action = state.memory.get("pending_action")
+
+    if not pending_action:
+        return {
+            "success": False,
+            "error": "No pending action found for rejection.",
+        }
+
+    current_step = next(
+        (step for step in state.plan if step.id == state.current_step),
+        None,
+    )
+
+    rejection_message = f"User rejected the action: {pending_action}"
+
+    if current_step:
+        current_step.status = "rejected"
+        current_step.error = rejection_message
+
+    state.status = "rejected"
+    state.decision = "approval_rejected"
+    state.final_answer = rejection_message
+
+    WorkflowMemory.add_log(
+        state,
+        agent="approval_agent",
+        event="approval_rejected_by_user",
+        details={
+            "run_id": request.run_id,
+            "rejected_action": pending_action,
+        },
+    )
+
+    WorkflowMemory.add_log(
+        state,
+        agent="aira_x_workflow",
+        event="workflow_stopped_after_rejection",
+        details={
+            "final_answer": rejection_message,
+        },
+    )
+
+    memory_agent = MemoryAgent()
+    state = await memory_agent.run(state)
+
+    WorkflowStore.delete(request.run_id)
+
+    return serialize_state(state)
 
 
 @router.get("/tools")

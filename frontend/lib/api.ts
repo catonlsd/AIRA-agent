@@ -24,41 +24,82 @@ export type ChatResponse = {
 
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, { cache: "no-store" });
-  if (!res.ok) throw new Error(await res.text());
+
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+
   return res.json();
 }
 
 export async function apiDelete<T>(path: string): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(await res.text());
+
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+
   return res.json();
 }
 
-export async function sendChat(question: string, useWeb?: boolean): Promise<ChatResponse> {
+export async function sendChat(
+  question: string,
+  useWeb?: boolean
+): Promise<ChatResponse> {
   const res = await fetch(`${API_URL}/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, use_web: useWeb })
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      question,
+      use_web: useWeb,
+    }),
   });
-  if (!res.ok) throw new Error(await res.text());
+
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+
   return res.json();
 }
 
-export async function uploadDocuments(files: FileList): Promise<{ documents: unknown[] }> {
+export async function uploadDocuments(
+  files: FileList
+): Promise<{ documents: unknown[] }> {
   const body = new FormData();
+
   Array.from(files).forEach((file) => body.append("files", file));
-  const res = await fetch(`${API_URL}/upload`, { method: "POST", body });
-  if (!res.ok) throw new Error(await res.text());
+
+  const res = await fetch(`${API_URL}/upload`, {
+    method: "POST",
+    body,
+  });
+
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+
   return res.json();
 }
 
-export async function summarizeDocument(documentId: number): Promise<{ summary: string; citations: Citation[] }> {
+export async function summarizeDocument(
+  documentId: number
+): Promise<{ summary: string; citations: Citation[] }> {
   const res = await fetch(`${API_URL}/summarize`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ document_id: documentId })
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      document_id: documentId,
+    }),
   });
-  if (!res.ok) throw new Error(await res.text());
+
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+
   return res.json();
 }
 
@@ -99,6 +140,22 @@ export async function approveAiraX(runId: string) {
 
   if (!response.ok) {
     throw new Error("Failed to approve AIRA-X workflow");
+  }
+
+  return response.json();
+}
+
+export async function rejectAiraX(runId: string) {
+  const response = await fetch(`${API_URL}/aira-x/reject`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ run_id: runId }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to reject AIRA-X workflow");
   }
 
   return response.json();
