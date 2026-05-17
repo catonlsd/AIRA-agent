@@ -17,18 +17,34 @@ class AiraXWorkflow:
         self.reflection = ReflectionAgent()
         self.memory = MemoryAgent()
 
-    async def run(self, user_goal: str) -> AiraXState:
-        state = AiraXState(user_goal=user_goal)
+    async def run(self, user_goal: str, run_id: str | None = None) -> AiraXState:
+        state = AiraXState(user_goal=user_goal, run_id=run_id)
 
         WorkflowMemory.add_log(
             state,
             agent="aira_x_workflow",
             event="workflow_started",
-            details={"user_goal": user_goal},
+            details={"user_goal": user_goal, "run_id": run_id},
         )
 
         state = await self.planner.run(state)
 
+        return await self._execute_loop(state)
+
+    async def resume(self, state: AiraXState) -> AiraXState:
+        WorkflowMemory.add_log(
+            state,
+            agent="aira_x_workflow",
+            event="workflow_resumed_after_approval",
+            details={
+                "run_id": state.run_id,
+                "approved_actions": state.memory.get("approved_actions", []),
+            },
+        )
+
+        return await self._execute_loop(state)
+
+    async def _execute_loop(self, state: AiraXState) -> AiraXState:
         while True:
             state = await self.decision.run(state)
 

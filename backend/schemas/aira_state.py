@@ -18,6 +18,7 @@ class AiraXStep(BaseModel):
 
 
 class AiraXState(BaseModel):
+    run_id: Optional[str] = None
     user_goal: str
     current_step: Optional[int] = None
 

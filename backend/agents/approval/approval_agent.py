@@ -27,6 +27,7 @@ class ApprovalAgent(BaseAgent):
 
     async def run(self, state: AiraXState) -> AiraXState:
         action = state.memory.get("pending_action", "")
+        approved_actions = state.memory.get("approved_actions", [])
 
         WorkflowMemory.add_log(
             state,
@@ -34,6 +35,18 @@ class ApprovalAgent(BaseAgent):
             event="approval_check_started",
             details={"action": action},
         )
+
+        if action in approved_actions:
+            state.decision = "approval_not_required"
+
+            WorkflowMemory.add_log(
+                state,
+                agent=self.name,
+                event="approval_already_granted",
+                details={"action": action},
+            )
+
+            return state
 
         for pattern in self.approval_required_patterns:
             if pattern.lower() in action.lower():

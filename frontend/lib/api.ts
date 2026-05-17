@@ -87,3 +87,19 @@ export async function getAiraXTools() {
 
   return response.json();
 }
+
+export async function approveAiraX(runId: string) {
+  const response = await fetch(`${API_URL}/aira-x/approve`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ run_id: runId }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to approve AIRA-X workflow");
+  }
+
+  return response.json();
+}
