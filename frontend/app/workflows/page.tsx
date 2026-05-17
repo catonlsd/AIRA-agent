@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Activity,
   CheckCircle2,
   Clock,
+  Eye,
   RefreshCcw,
   ShieldAlert,
   XCircle,
@@ -234,9 +236,19 @@ export default function WorkflowsPage() {
                   )}
                 </div>
 
-                <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
-                  <p className="font-semibold text-slate-700">Run ID</p>
-                  <p className="mt-1 max-w-xs break-all">{run.run_id}</p>
+                <div className="flex flex-col gap-3">
+                  <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
+                    <p className="font-semibold text-slate-700">Run ID</p>
+                    <p className="mt-1 max-w-xs break-all">{run.run_id}</p>
+                  </div>
+
+                  <Link
+                    href={`/workflows/${run.run_id}`}
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-purple-600/20 transition hover:bg-purple-700"
+                  >
+                    <Eye className="h-4 w-4" />
+                    View Details
+                  </Link>
                 </div>
               </div>
             </div>
