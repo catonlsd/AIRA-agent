@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
+  Activity,
   BookOpen,
   Handshake,
   Home,
@@ -21,6 +22,7 @@ const links = [
   { href: "/chat", label: "Ask AIRA-X", animation: "chat" },
   { href: "/documents", label: "Knowledge Base", animation: "book" },
   { href: "/history", label: "Interactions", animation: "handshake" },
+  { href: "/workflows", label: "Workflow Runs", animation: "activity" },
   { href: "/tools", label: "Tools Registry", animation: "tools" },
   { href: "/settings", label: "About AIRA-X", animation: "spark" },
 ];
@@ -110,6 +112,8 @@ export function Nav() {
               ? "group-hover:scale-x-125 group-hover:scale-y-110 duration-500"
               : item.animation === "handshake"
               ? "group-hover:animate-[handshake_0.55s_ease-in-out] duration-500"
+              : item.animation === "activity"
+              ? "group-hover:scale-125 group-hover:rotate-6 duration-500"
               : item.animation === "tools"
               ? "group-hover:rotate-12 group-hover:scale-125 duration-500"
               : "group-hover:rotate-6 group-hover:scale-125 duration-500";
@@ -123,6 +127,8 @@ export function Nav() {
               ? BookOpen
               : item.animation === "handshake"
               ? Handshake
+              : item.animation === "activity"
+              ? Activity
               : item.animation === "tools"
               ? Wrench
               : item.animation === "spark"
