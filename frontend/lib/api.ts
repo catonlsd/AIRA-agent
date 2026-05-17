@@ -119,16 +119,6 @@ export async function runAiraX(goal: string) {
   return response.json();
 }
 
-export async function getAiraXTools() {
-  const response = await fetch(`${API_URL}/aira-x/tools`);
-
-  if (!response.ok) {
-    throw new Error("Failed to fetch AIRA-X tools");
-  }
-
-  return response.json();
-}
-
 export async function approveAiraX(runId: string) {
   const response = await fetch(`${API_URL}/aira-x/approve`, {
     method: "POST",
@@ -156,6 +146,40 @@ export async function rejectAiraX(runId: string) {
 
   if (!response.ok) {
     throw new Error("Failed to reject AIRA-X workflow");
+  }
+
+  return response.json();
+}
+
+export async function getAiraXTools() {
+  const response = await fetch(`${API_URL}/aira-x/tools`);
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch AIRA-X tools");
+  }
+
+  return response.json();
+}
+
+export async function getAiraXRuns() {
+  const response = await fetch(`${API_URL}/aira-x/runs`, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch AIRA-X workflow runs");
+  }
+
+  return response.json();
+}
+
+export async function getAiraXRun(runId: string) {
+  const response = await fetch(`${API_URL}/aira-x/runs/${runId}`, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch AIRA-X workflow run");
   }
 
   return response.json();
