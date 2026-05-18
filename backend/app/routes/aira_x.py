@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from graph.aira_workflow import AiraXWorkflow
 from tools.tool_registry import ToolRegistry
+from agents.agent_registry import AgentRegistry
 from memory.workflow_store import WorkflowStore
 from memory.workflow_memory import WorkflowMemory
 from agents.memory.memory_agent import MemoryAgent
@@ -223,4 +224,29 @@ async def get_aira_x_tool(tool_name: str):
         "success": True,
         "tool_name": tool_name,
         "tool": tool,
+    }
+
+
+@router.get("/agents")
+async def list_aira_x_agents():
+    return {
+        "agent_count": len(AgentRegistry.list_agents()),
+        "agents": AgentRegistry.describe_agents(),
+    }
+
+
+@router.get("/agents/{agent_name}")
+async def get_aira_x_agent(agent_name: str):
+    agent = AgentRegistry.get_agent(agent_name)
+
+    if not agent:
+        return {
+            "success": False,
+            "error": f"Agent '{agent_name}' does not exist.",
+        }
+
+    return {
+        "success": True,
+        "agent_name": agent_name,
+        "agent": agent,
     }
