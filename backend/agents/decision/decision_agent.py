@@ -54,6 +54,17 @@ class DecisionAgent(BaseAgent):
             return state
 
         if state.decision == "validation_success" or state.status == "validated":
+            next_step = next(
+                (step for step in state.plan if step.id == state.current_step + 1),
+                None,
+            )
+
+            if next_step:
+                state.current_step = next_step.id
+                state.status = "executing"
+                state.decision = "continue_workflow"
+                return state
+
             state.decision = "validate_final_result"
             return state
 
@@ -64,10 +75,13 @@ class DecisionAgent(BaseAgent):
         if current_step.status == "pending":
             if current_step.assigned_agent == "planner_agent":
                 state.decision = "run_planner"
+
             elif current_step.assigned_agent == "execution_agent":
                 state.decision = "run_execution"
+
             elif current_step.assigned_agent == "validation_agent":
                 state.decision = "run_validation"
+
             elif current_step.assigned_agent == "decision_agent":
                 state.decision = "run_tool"
 
@@ -82,8 +96,9 @@ class DecisionAgent(BaseAgent):
             )
 
             if next_step:
-                state.current_step += 1
+                state.current_step = next_step.id
                 state.decision = "continue_workflow"
+
             else:
                 state.decision = "validate_final_result"
 

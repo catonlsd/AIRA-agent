@@ -145,6 +145,36 @@ class PlannerAgent(BaseAgent):
                 )
             )
 
+        elif (
+            "commit all changes" in goal
+            or "stage and commit" in goal
+            or "stage then commit" in goal
+        ):
+            commit_message = self._extract_commit_message(user_goal)
+
+            plan = [
+                AiraXStep(
+                    id=1,
+                    title="Stage Git changes",
+                    description="Stage all current Git changes. This requires approval.",
+                    assigned_agent="execution_agent",
+                    tool_name="git_tool",
+                    tool_action="stage_all",
+                    tool_payload={},
+                ),
+                AiraXStep(
+                    id=2,
+                    title="Commit Git changes",
+                    description="Create a local Git commit after staging. This requires approval.",
+                    assigned_agent="execution_agent",
+                    tool_name="git_tool",
+                    tool_action="commit",
+                    tool_payload={
+                        "message": commit_message,
+                    },
+                ),
+            ]
+
         elif "git add" in goal or "stage changes" in goal:
             plan.append(
                 AiraXStep(

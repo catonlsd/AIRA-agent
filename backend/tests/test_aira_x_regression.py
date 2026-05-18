@@ -194,6 +194,155 @@ async def test_git_diff():
     return response
 
 
+async def test_git_commit_requires_approval():
+    print("Testing Git commit approval requirement...")
+
+    response = await run_aira_x(AiraXRunRequest(goal="git commit"))
+
+    assert_equal(
+        response["status"],
+        "requires_approval",
+        "Git commit should require approval",
+    )
+
+    assert_equal(
+        response["decision"],
+        "stop_approval_required",
+        "Git commit approval decision",
+    )
+
+    first_step = response["plan"][0]
+
+    assert_equal(first_step["tool_name"], "git_tool", "Git commit tool selection")
+    assert_equal(first_step["tool_action"], "commit", "Git commit action selection")
+
+    print("✅ Git commit approval requirement passed")
+
+    return response
+
+
+async def test_git_commit_custom_message_requires_approval():
+    print("Testing Git commit custom message approval requirement...")
+
+    response = await run_aira_x(
+        AiraXRunRequest(
+            goal='git commit with message "Improve git commit planning"'
+        )
+    )
+
+    assert_equal(
+        response["status"],
+        "requires_approval",
+        "Git commit with custom message should require approval",
+    )
+
+    assert_equal(
+        response["decision"],
+        "stop_approval_required",
+        "Git commit custom message approval decision",
+    )
+
+    assert_equal(
+        response["pending_action"],
+        "git_tool:commit -m Improve git commit planning",
+        "Git commit custom pending action",
+    )
+
+    first_step = response["plan"][0]
+
+    assert_equal(
+        first_step["tool_name"],
+        "git_tool",
+        "Git commit custom message tool selection",
+    )
+
+    assert_equal(
+        first_step["tool_action"],
+        "commit",
+        "Git commit custom message action selection",
+    )
+
+    assert_equal(
+        first_step["tool_payload"]["message"],
+        "Improve git commit planning",
+        "Git commit custom message extraction",
+    )
+
+    print("✅ Git commit custom message approval requirement passed")
+
+    return response
+
+
+async def test_multi_step_commit_requires_stage_approval():
+    print("Testing multi-step commit workflow approval requirement...")
+
+    response = await run_aira_x(
+        AiraXRunRequest(
+            goal='commit all changes with message "Test multi step commit"'
+        )
+    )
+
+    assert_equal(
+        response["status"],
+        "requires_approval",
+        "Multi-step commit should require approval at staging step",
+    )
+
+    assert_equal(
+        response["decision"],
+        "stop_approval_required",
+        "Multi-step commit approval decision",
+    )
+
+    assert_equal(
+        response["pending_action"],
+        "git_tool:stage_all",
+        "Multi-step commit pending action should be stage_all first",
+    )
+
+    assert_true(
+        len(response["plan"]) == 2,
+        "Multi-step commit should create two workflow steps",
+    )
+
+    first_step = response["plan"][0]
+    second_step = response["plan"][1]
+
+    assert_equal(
+        first_step["tool_name"],
+        "git_tool",
+        "Multi-step commit first step tool",
+    )
+
+    assert_equal(
+        first_step["tool_action"],
+        "stage_all",
+        "Multi-step commit first step action",
+    )
+
+    assert_equal(
+        second_step["tool_name"],
+        "git_tool",
+        "Multi-step commit second step tool",
+    )
+
+    assert_equal(
+        second_step["tool_action"],
+        "commit",
+        "Multi-step commit second step action",
+    )
+
+    assert_equal(
+        second_step["tool_payload"]["message"],
+        "Test multi step commit",
+        "Multi-step commit message extraction",
+    )
+
+    print("✅ Multi-step commit workflow approval requirement passed")
+
+    return response
+
+
 async def test_tool_registry_api():
     print("Testing Tool Registry API...")
 
@@ -257,6 +406,28 @@ async def test_agent_registry_api():
     print("✅ Agent Registry API passed")
 
 
+async def test_platform_overview_api():
+    print("Testing Platform Overview API...")
+
+    response = await get_aira_x_overview()
+
+    assert_equal(response["platform"], "AIRA-X", "Overview platform name")
+    assert_true(response["agent_count"] >= 8, "Overview agent count")
+    assert_true(response["tool_count"] >= 4, "Overview tool count")
+    assert_true(
+        "workflow_metrics" in response,
+        "Overview contains workflow metrics",
+    )
+
+    metrics = response["workflow_metrics"]
+
+    assert_true("total_runs" in metrics, "Overview metrics total_runs exists")
+    assert_true("completed_runs" in metrics, "Overview metrics completed_runs exists")
+    assert_true("latest_runs" in metrics, "Overview metrics latest_runs exists")
+
+    print("✅ Platform Overview API passed")
+
+
 async def test_workflow_runs_api(sample_run):
     print("Testing Workflow Runs API...")
 
@@ -290,105 +461,6 @@ async def test_workflow_detail_api(sample_run):
     print("✅ Workflow Detail API passed")
 
 
-async def test_platform_overview_api():
-    print("Testing Platform Overview API...")
-
-    response = await get_aira_x_overview()
-
-    assert_equal(response["platform"], "AIRA-X", "Overview platform name")
-    assert_true(response["agent_count"] >= 8, "Overview agent count")
-    assert_true(response["tool_count"] >= 4, "Overview tool count")
-    assert_true(
-        "workflow_metrics" in response,
-        "Overview contains workflow metrics",
-    )
-
-    metrics = response["workflow_metrics"]
-
-    assert_true("total_runs" in metrics, "Overview metrics total_runs exists")
-    assert_true("completed_runs" in metrics, "Overview metrics completed_runs exists")
-    assert_true("latest_runs" in metrics, "Overview metrics latest_runs exists")
-
-    print("✅ Platform Overview API passed")
-
-async def test_git_commit_requires_approval():
-    print("Testing Git commit approval requirement...")
-
-    response = await run_aira_x(AiraXRunRequest(goal="git commit"))
-
-    assert_equal(
-        response["status"],
-        "requires_approval",
-        "Git commit should require approval",
-    )
-
-    assert_equal(
-        response["decision"],
-        "stop_approval_required",
-        "Git commit approval decision",
-    )
-
-    first_step = response["plan"][0]
-
-    assert_equal(first_step["tool_name"], "git_tool", "Git commit tool selection")
-    assert_equal(first_step["tool_action"], "commit", "Git commit action selection")
-
-    print("✅ Git commit approval requirement passed")
-
-    return response
-
-async def test_git_commit_custom_message_requires_approval():
-    print("Testing Git commit custom message approval requirement...")
-
-    response = await run_aira_x(
-        AiraXRunRequest(
-            goal='git commit with message "Improve git commit planning"'
-        )
-    )
-
-    assert_equal(
-        response["status"],
-        "requires_approval",
-        "Git commit with custom message should require approval",
-    )
-
-    assert_equal(
-        response["decision"],
-        "stop_approval_required",
-        "Git commit custom message approval decision",
-    )
-
-    assert_equal(
-        response["pending_action"],
-        "git_tool:commit -m Improve git commit planning",
-        "Git commit custom pending action",
-    )
-
-    first_step = response["plan"][0]
-
-    assert_equal(
-        first_step["tool_name"],
-        "git_tool",
-        "Git commit custom message tool selection",
-    )
-
-    assert_equal(
-        first_step["tool_action"],
-        "commit",
-        "Git commit custom message action selection",
-    )
-
-    assert_equal(
-        first_step["tool_payload"]["message"],
-        "Improve git commit planning",
-        "Git commit custom message extraction",
-    )
-
-    print("✅ Git commit custom message approval requirement passed")
-
-    return response
-
-
 async def main():
     print("\nRunning AIRA-X regression test suite...\n")
 
@@ -398,10 +470,12 @@ async def main():
     await test_safety_block()
     await test_approval_rejection()
     await test_approval_continuation()
+
     await test_git_status()
     await test_git_diff()
     await test_git_commit_requires_approval()
     await test_git_commit_custom_message_requires_approval()
+    await test_multi_step_commit_requires_stage_approval()
 
     await test_tool_registry_api()
     await test_agent_registry_api()
