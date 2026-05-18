@@ -337,6 +337,57 @@ async def test_git_commit_requires_approval():
 
     return response
 
+async def test_git_commit_custom_message_requires_approval():
+    print("Testing Git commit custom message approval requirement...")
+
+    response = await run_aira_x(
+        AiraXRunRequest(
+            goal='git commit with message "Improve git commit planning"'
+        )
+    )
+
+    assert_equal(
+        response["status"],
+        "requires_approval",
+        "Git commit with custom message should require approval",
+    )
+
+    assert_equal(
+        response["decision"],
+        "stop_approval_required",
+        "Git commit custom message approval decision",
+    )
+
+    assert_equal(
+        response["pending_action"],
+        "git_tool:commit -m Improve git commit planning",
+        "Git commit custom pending action",
+    )
+
+    first_step = response["plan"][0]
+
+    assert_equal(
+        first_step["tool_name"],
+        "git_tool",
+        "Git commit custom message tool selection",
+    )
+
+    assert_equal(
+        first_step["tool_action"],
+        "commit",
+        "Git commit custom message action selection",
+    )
+
+    assert_equal(
+        first_step["tool_payload"]["message"],
+        "Improve git commit planning",
+        "Git commit custom message extraction",
+    )
+
+    print("✅ Git commit custom message approval requirement passed")
+
+    return response
+
 
 async def main():
     print("\nRunning AIRA-X regression test suite...\n")
@@ -350,6 +401,7 @@ async def main():
     await test_git_status()
     await test_git_diff()
     await test_git_commit_requires_approval()
+    await test_git_commit_custom_message_requires_approval()
 
     await test_tool_registry_api()
     await test_agent_registry_api()
