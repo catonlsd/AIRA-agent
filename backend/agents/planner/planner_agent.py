@@ -1,3 +1,5 @@
+import re
+
 from agents.base_agent import BaseAgent
 from schemas.aira_state import AiraXState, AiraXStep
 from memory.workflow_memory import WorkflowMemory
@@ -17,7 +19,8 @@ class PlannerAgent(BaseAgent):
             details={"user_goal": state.user_goal},
         )
 
-        goal = state.user_goal.lower()
+        user_goal = state.user_goal
+        goal = user_goal.lower()
         plan = []
 
         if "list files" in goal:
@@ -156,6 +159,8 @@ class PlannerAgent(BaseAgent):
             )
 
         elif "git commit" in goal or "commit changes" in goal:
+            commit_message = self._extract_commit_message(user_goal)
+
             plan.append(
                 AiraXStep(
                     id=1,
@@ -165,7 +170,7 @@ class PlannerAgent(BaseAgent):
                     tool_name="git_tool",
                     tool_action="commit",
                     tool_payload={
-                        "message": "AIRA-X automated commit",
+                        "message": commit_message,
                     },
                 )
             )
@@ -256,6 +261,7 @@ class PlannerAgent(BaseAgent):
                         "assigned_agent": step.assigned_agent,
                         "tool_name": step.tool_name,
                         "tool_action": step.tool_action,
+                        "tool_payload": step.tool_payload,
                     }
                     for step in state.plan
                 ]
@@ -263,3 +269,24 @@ class PlannerAgent(BaseAgent):
         )
 
         return state
+
+    def _extract_commit_message(self, user_goal: str) -> str:
+        patterns = [
+            r'-m\s+"([^"]+)"',
+            r"-m\s+'([^']+)'",
+            r'with message\s+"([^"]+)"',
+            r"with message\s+'([^']+)'",
+            r'message\s+"([^"]+)"',
+            r"message\s+'([^']+)'",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, user_goal, flags=re.IGNORECASE)
+
+            if match:
+                message = match.group(1).strip()
+
+                if message:
+                    return message
+
+        return "AIRA-X automated commit"
