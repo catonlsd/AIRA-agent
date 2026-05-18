@@ -161,6 +161,26 @@ export async function getAiraXTools() {
   return response.json();
 }
 
+export async function getAiraXAgents() {
+  const response = await fetch(`${API_URL}/aira-x/agents`);
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch AIRA-X agents");
+  }
+
+  return response.json();
+}
+
+export async function getAiraXAgent(agentName: string) {
+  const response = await fetch(`${API_URL}/aira-x/agents/${agentName}`);
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch AIRA-X agent");
+  }
+
+  return response.json();
+}
+
 export async function getAiraXRuns() {
   const response = await fetch(`${API_URL}/aira-x/runs`, {
     cache: "no-store",
