@@ -204,3 +204,15 @@ export async function getAiraXRun(runId: string) {
 
   return response.json();
 }
+
+export async function getAiraXOverview() {
+  const response = await fetch(`${API_URL}/aira-x/overview`, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch AIRA-X overview");
+  }
+
+  return response.json();
+}
