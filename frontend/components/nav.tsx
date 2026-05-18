@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  BarChart3,
   BookOpen,
   BrainCircuit,
   Handshake,
@@ -19,6 +20,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const links = [
   { href: "/", label: "Home", animation: "home" },
+  { href: "/overview", label: "Overview Dashboard", animation: "overview" },
   { href: "/upload", label: "Ingest Documents", animation: "upload" },
   { href: "/chat", label: "Ask AIRA-X", animation: "chat" },
   { href: "/documents", label: "Knowledge Base", animation: "book" },
@@ -108,6 +110,8 @@ export function Nav() {
           const iconClass =
             item.animation === "home"
               ? "group-hover:translate-x-2 group-hover:scale-110 group-hover:drop-shadow-[0_0_8px_rgba(37,99,235,0.45)] duration-500"
+              : item.animation === "overview"
+              ? "group-hover:scale-125 group-hover:-rotate-6 duration-500"
               : item.animation === "chat"
               ? "group-hover:animate-[chatBubblePop_0.55s_ease-out] duration-500"
               : item.animation === "book"
@@ -125,6 +129,8 @@ export function Nav() {
           const Icon =
             item.animation === "home"
               ? Home
+              : item.animation === "overview"
+              ? BarChart3
               : item.animation === "chat"
               ? MessageSquare
               : item.animation === "book"
