@@ -26,3 +26,21 @@ log_result = ToolRouter.run(
     payload={"limit": 5},
 )
 print(log_result)
+
+
+print("\nGIT DIFF SUMMARY TEST")
+diff_result = ToolRouter.run(
+    tool_name="git_tool",
+    action="diff",
+    payload={},
+)
+print(diff_result)
+
+
+print("\nGIT FULL DIFF TEST")
+full_diff_result = ToolRouter.run(
+    tool_name="git_tool",
+    action="full_diff",
+    payload={},
+)
+print(full_diff_result)

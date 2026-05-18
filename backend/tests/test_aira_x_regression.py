@@ -177,6 +177,23 @@ async def test_git_status():
     return response
 
 
+async def test_git_diff():
+    print("Testing Git diff...")
+
+    response = await run_aira_x(AiraXRunRequest(goal="git diff"))
+
+    assert_equal(response["status"], "completed", "Git diff workflow status")
+
+    first_step = response["plan"][0]
+
+    assert_equal(first_step["tool_name"], "git_tool", "Git diff tool selection")
+    assert_equal(first_step["tool_action"], "diff", "Git diff action selection")
+
+    print("✅ Git diff passed")
+
+    return response
+
+
 async def test_tool_registry_api():
     print("Testing Tool Registry API...")
 
@@ -190,7 +207,17 @@ async def test_tool_registry_api():
     assert_true("file_tool" in tool_names, "file_tool exists")
     assert_true("python_tool" in tool_names, "python_tool exists")
     assert_true("git_tool" in tool_names, "git_tool exists")
-    
+
+    git_tool = next(
+        tool for tool in response["tools"] if tool["tool_name"] == "git_tool"
+    )
+
+    assert_true("diff" in git_tool["actions"], "git_tool diff action exists")
+    assert_true(
+        "full_diff" in git_tool["actions"],
+        "git_tool full_diff action exists",
+    )
+
     for tool in response["tools"]:
         assert_true("policy" in tool, f"{tool['tool_name']} has policy metadata")
 
@@ -250,6 +277,7 @@ async def test_workflow_detail_api(sample_run):
 
     print("✅ Workflow Detail API passed")
 
+
 async def test_platform_overview_api():
     print("Testing Platform Overview API...")
 
@@ -282,6 +310,7 @@ async def main():
     await test_approval_rejection()
     await test_approval_continuation()
     await test_git_status()
+    await test_git_diff()
 
     await test_tool_registry_api()
     await test_agent_registry_api()

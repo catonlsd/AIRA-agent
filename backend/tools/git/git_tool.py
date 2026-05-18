@@ -32,6 +32,20 @@ class GitTool:
         )
 
     @staticmethod
+    def diff() -> Dict[str, Any]:
+        return GitTool._run_git_command(
+            ["git", "diff", "--stat"],
+            action="diff",
+        )
+
+    @staticmethod
+    def full_diff() -> Dict[str, Any]:
+        return GitTool._run_git_command(
+            ["git", "diff"],
+            action="full_diff",
+        )
+
+    @staticmethod
     def _run_git_command(command: list[str], action: str) -> Dict[str, Any]:
         try:
             result = subprocess.run(
@@ -39,20 +53,34 @@ class GitTool:
                 cwd=GitTool._repo_root(),
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=30,
             )
+
+            output = result.stdout.strip() or result.stderr.strip()
 
             return {
                 "success": result.returncode == 0,
                 "tool_name": "git_tool",
                 "action": action,
                 "command": " ".join(command),
-                "output": result.stdout,
+                "output": output,
                 "stdout": result.stdout,
                 "stderr": result.stderr,
                 "return_code": result.returncode,
             }
- 
+
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "tool_name": "git_tool",
+                "action": action,
+                "command": " ".join(command),
+                "output": "",
+                "error": "Git command timed out.",
+            }
+
         except Exception as e:
             return {
                 "success": False,

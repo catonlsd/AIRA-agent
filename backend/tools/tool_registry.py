@@ -63,12 +63,14 @@ class ToolRegistry:
             },
         },
         "git_tool": {
-            "description": "Reads Git repository status, branch, and recent commits.",
-            "actions": ["status", "branch", "recent_commits"],
+            "description": "Reads Git repository status, branch, diffs, and recent commits.",
+            "actions": ["status", "branch", "recent_commits", "diff", "full_diff"],
             "examples": [
                 "git status --short",
                 "git branch --show-current",
                 "git log --oneline -5",
+                "git diff --stat",
+                "git diff",
             ],
             "policy": {
                 "status": {
@@ -85,6 +87,16 @@ class ToolRegistry:
                     "risk_level": "safe",
                     "requires_approval": False,
                     "description": "Reads recent Git commit history.",
+                },
+                "diff": {
+                    "risk_level": "safe",
+                    "requires_approval": False,
+                    "description": "Reads a summary of uncommitted Git changes.",
+                },
+                "full_diff": {
+                    "risk_level": "safe",
+                    "requires_approval": False,
+                    "description": "Reads full uncommitted Git changes.",
                 },
             },
         },

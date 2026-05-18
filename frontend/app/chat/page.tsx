@@ -494,7 +494,7 @@ export default function ChatPage() {
 
                   <p className="mt-1 text-slate-600">{step.description}</p>
 
-                  <div className="mt-2 grid gap-1 text-xs text-slate-600 sm:grid-cols-3">
+                  <div className="mt-2 grid gap-1 text-xs text-slate-600 sm:grid-cols-2">
                     <p>
                       <strong>Status:</strong> {step.status}
                     </p>
@@ -502,17 +502,25 @@ export default function ChatPage() {
                     <p>
                       <strong>Agent:</strong> {step.assigned_agent}
                     </p>
+                  </div>
 
-                    <p>
-                      <strong>Result:</strong> {step.result || "No result yet"}
-                    </p>
+                  <div className="mt-3">
+                    <p className="mb-2 text-xs font-semibold text-slate-700">Result:</p>
 
-                    {step.error && (
-                      <p className="text-red-600 sm:col-span-3">
-                        <strong>Error:</strong> {step.error}
-                      </p>
+                    {step.result ? (
+                      <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-950 p-4 text-xs leading-6 text-slate-100">
+                        {step.result}
+                      </pre>
+                    ) : (
+                      <p className="text-xs text-slate-500">No result yet</p>
                     )}
                   </div>
+
+                  {step.error && (
+                    <div className="mt-3 rounded-xl border border-red-200 bg-white p-3 text-xs text-red-700">
+                      <strong>Error:</strong> {step.error}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

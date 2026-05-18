@@ -144,6 +144,32 @@ class PlannerAgent(BaseAgent):
                 )
             )
 
+        elif "git diff" in goal or "show changes" in goal:
+            plan.append(
+                AiraXStep(
+                    id=1,
+                    title="Show Git diff summary",
+                    description="Show a summary of uncommitted Git changes.",
+                    assigned_agent="execution_agent",
+                    tool_name="git_tool",
+                    tool_action="diff",
+                    tool_payload={},
+                )
+            )
+
+        elif "full diff" in goal or "show full changes" in goal:
+            plan.append(
+                AiraXStep(
+                    id=1,
+                    title="Show full Git diff",
+                    description="Show full uncommitted Git changes.",
+                    assigned_agent="execution_agent",
+                    tool_name="git_tool",
+                    tool_action="full_diff",
+                    tool_payload={},
+                )
+            )
+         
         elif "rm -rf" in goal or "delete system32" in goal or "format disk" in goal:
             plan.append(
                 AiraXStep(

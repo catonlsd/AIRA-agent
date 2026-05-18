@@ -83,6 +83,12 @@ class ToolRouter:
                 limit = payload.get("limit", 5)
                 return GitTool.recent_commits(limit=limit)
 
+            if action == "diff":
+                return GitTool.diff()
+
+            if action == "full_diff":
+                return GitTool.full_diff()   
+
         return {
             "success": False,
             "tool_name": tool_name,
