@@ -13,6 +13,13 @@ class ToolRegistry:
                 "echo Hello",
                 "python --version",
             ],
+            "policy": {
+                "run": {
+                    "risk_level": "variable",
+                    "requires_approval": False,
+                    "description": "Shell commands are checked by Safety Agent and Approval Agent before execution.",
+                }
+            },
         },
         "file_tool": {
             "description": "Reads, writes, and lists files.",
@@ -22,6 +29,23 @@ class ToolRegistry:
                 "write_file",
                 "list_files",
             ],
+            "policy": {
+                "read_file": {
+                    "risk_level": "safe",
+                    "requires_approval": False,
+                    "description": "Reads file content without modifying the environment.",
+                },
+                "write_file": {
+                    "risk_level": "sensitive",
+                    "requires_approval": False,
+                    "description": "Writes or modifies files inside the project workspace.",
+                },
+                "list_files": {
+                    "risk_level": "safe",
+                    "requires_approval": False,
+                    "description": "Lists files without modifying the environment.",
+                },
+            },
         },
         "python_tool": {
             "description": "Executes Python code snippets.",
@@ -30,6 +54,13 @@ class ToolRegistry:
                 "print('hello')",
                 "import math; print(math.sqrt(16))",
             ],
+            "policy": {
+                "run_code": {
+                    "risk_level": "sensitive",
+                    "requires_approval": False,
+                    "description": "Executes Python code in a controlled subprocess.",
+                }
+            },
         },
         "git_tool": {
             "description": "Reads Git repository status, branch, and recent commits.",
@@ -39,6 +70,23 @@ class ToolRegistry:
                 "git branch --show-current",
                 "git log --oneline -5",
             ],
+            "policy": {
+                "status": {
+                    "risk_level": "safe",
+                    "requires_approval": False,
+                    "description": "Reads current repository status.",
+                },
+                "branch": {
+                    "risk_level": "safe",
+                    "requires_approval": False,
+                    "description": "Reads the current Git branch.",
+                },
+                "recent_commits": {
+                    "risk_level": "safe",
+                    "requires_approval": False,
+                    "description": "Reads recent Git commit history.",
+                },
+            },
         },
     }
 
@@ -64,6 +112,26 @@ class ToolRegistry:
         return action in tool.get("actions", [])
 
     @classmethod
+    def get_action_policy(cls, tool_name: str, action: str) -> Dict[str, Any]:
+        tool = cls.get_tool(tool_name)
+
+        if not tool:
+            return {
+                "risk_level": "unknown",
+                "requires_approval": True,
+                "description": "Unknown tool.",
+            }
+
+        return tool.get("policy", {}).get(
+            action,
+            {
+                "risk_level": "unknown",
+                "requires_approval": True,
+                "description": "Unknown action policy.",
+            },
+        )
+
+    @classmethod
     def describe_tools(cls) -> List[Dict[str, Any]]:
         return [
             {
@@ -71,6 +139,7 @@ class ToolRegistry:
                 "description": config["description"],
                 "actions": config["actions"],
                 "examples": config["examples"],
+                "policy": config.get("policy", {}),
             }
             for tool_name, config in cls.tools.items()
         ]

@@ -190,6 +190,9 @@ async def test_tool_registry_api():
     assert_true("file_tool" in tool_names, "file_tool exists")
     assert_true("python_tool" in tool_names, "python_tool exists")
     assert_true("git_tool" in tool_names, "git_tool exists")
+    
+    for tool in response["tools"]:
+        assert_true("policy" in tool, f"{tool['tool_name']} has policy metadata")
 
     print("✅ Tool Registry API passed")
 

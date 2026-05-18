@@ -1,14 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Wrench, Cpu, Terminal, FileText, Code2 } from "lucide-react";
+import { Wrench, Cpu, Terminal, FileText, Code2, ShieldCheck } from "lucide-react";
 import { getAiraXTools } from "@/lib/api";
+
+type ToolPolicy = {
+  risk_level: string;
+  requires_approval: boolean;
+  description: string;
+};
 
 type Tool = {
   tool_name: string;
   description: string;
   actions: string[];
   examples: string[];
+  policy?: Record<string, ToolPolicy>;
 };
 
 function getToolIcon(toolName: string) {
@@ -17,6 +24,22 @@ function getToolIcon(toolName: string) {
   if (toolName === "python_tool") return <Code2 className="h-5 w-5" />;
 
   return <Wrench className="h-5 w-5" />;
+}
+
+function getRiskStyle(riskLevel: string) {
+  if (riskLevel === "safe") {
+    return "bg-green-50 text-green-700 border-green-200";
+  }
+
+  if (riskLevel === "sensitive") {
+    return "bg-orange-50 text-orange-700 border-orange-200";
+  }
+
+  if (riskLevel === "dangerous") {
+    return "bg-red-50 text-red-700 border-red-200";
+  }
+
+  return "bg-slate-50 text-slate-700 border-slate-200";
 }
 
 export default function ToolsPage() {
@@ -61,9 +84,8 @@ export default function ToolsPage() {
           </h1>
 
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-            These are the tools AIRA-X can use to execute real tasks. The
-            registry tells the system which tools exist, what actions are
-            allowed, and how each tool can be used.
+            These are the tools AIRA-X can use to execute real tasks. Each tool
+            includes allowed actions, examples, and execution risk policies.
           </p>
         </div>
       </section>
@@ -99,7 +121,7 @@ export default function ToolsPage() {
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2">
             {tools.map((tool) => (
               <div
                 key={tool.tool_name}
@@ -139,7 +161,48 @@ export default function ToolsPage() {
                   </div>
                 </div>
 
-                <div className="mt-4">
+                {tool.policy && (
+                  <div className="mt-5">
+                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      Risk Policy
+                    </div>
+
+                    <div className="space-y-3">
+                      {Object.entries(tool.policy).map(([action, policy]) => (
+                        <div
+                          key={action}
+                          className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-sm font-semibold text-slate-900">
+                              {action}
+                            </p>
+
+                            <span
+                              className={`rounded-full border px-3 py-1 text-xs font-semibold ${getRiskStyle(
+                                policy.risk_level
+                              )}`}
+                            >
+                              {policy.risk_level}
+                            </span>
+                          </div>
+
+                          <p className="mt-2 text-xs leading-5 text-slate-600">
+                            {policy.description}
+                          </p>
+
+                          <p className="mt-2 text-xs text-slate-500">
+                            <strong>Requires approval:</strong>{" "}
+                            {policy.requires_approval ? "Yes" : "No"}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-5">
                   <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Examples
                   </p>

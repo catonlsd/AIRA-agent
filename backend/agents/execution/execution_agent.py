@@ -3,6 +3,7 @@ from datetime import datetime
 from agents.base_agent import BaseAgent
 from schemas.aira_state import AiraXState
 from tools.tool_router import ToolRouter
+from tools.tool_registry import ToolRegistry
 from agents.safety.safety_agent import SafetyAgent
 from agents.approval.approval_agent import ApprovalAgent
 from memory.workflow_memory import WorkflowMemory
@@ -30,6 +31,18 @@ class ExecutionAgent(BaseAgent):
 
         current_step.status = "running"
 
+        if not current_step.tool_name or not current_step.tool_action:
+            current_step.status = "failed"
+            current_step.error = "No tool assigned to this execution step."
+            state.status = "failed"
+            state.decision = "execution_failed"
+            return state
+
+        tool_policy = ToolRegistry.get_action_policy(
+            current_step.tool_name,
+            current_step.tool_action,
+        )
+
         WorkflowMemory.add_log(
             state,
             agent=self.name,
@@ -40,15 +53,22 @@ class ExecutionAgent(BaseAgent):
                 "retry_count": state.retry_count,
                 "tool_name": current_step.tool_name,
                 "tool_action": current_step.tool_action,
+                "tool_policy": tool_policy,
             },
         )
 
-        if not current_step.tool_name or not current_step.tool_action:
-            current_step.status = "failed"
-            current_step.error = "No tool assigned to this execution step."
-            state.status = "failed"
-            state.decision = "execution_failed"
-            return state
+        WorkflowMemory.add_log(
+            state,
+            agent=self.name,
+            event="tool_policy_checked",
+            details={
+                "tool_name": current_step.tool_name,
+                "tool_action": current_step.tool_action,
+                "risk_level": tool_policy.get("risk_level"),
+                "requires_approval": tool_policy.get("requires_approval"),
+                "description": tool_policy.get("description"),
+            },
+        )
 
         if "run retry demo command" in current_step.title.lower():
             if state.retry_count == 0:
@@ -67,6 +87,7 @@ class ExecutionAgent(BaseAgent):
         )
 
         state.memory["pending_action"] = pending_action
+        state.memory["current_tool_policy"] = tool_policy
 
         safety = SafetyAgent()
         state = await safety.run(state)
@@ -118,6 +139,7 @@ class ExecutionAgent(BaseAgent):
             "timestamp": datetime.utcnow().isoformat(),
             "tool_used": current_step.tool_name,
             "tool_action": current_step.tool_action,
+            "tool_policy": tool_policy,
             "safety_decision": "approved",
             "approval_decision": "not_required",
             "tool_result": tool_result,
@@ -147,6 +169,7 @@ class ExecutionAgent(BaseAgent):
                     "step_id": current_step.id,
                     "tool_used": current_step.tool_name,
                     "tool_action": current_step.tool_action,
+                    "risk_level": tool_policy.get("risk_level"),
                     "result": current_step.result,
                 },
             )
@@ -165,6 +188,7 @@ class ExecutionAgent(BaseAgent):
                     "step_id": current_step.id,
                     "tool_used": current_step.tool_name,
                     "tool_action": current_step.tool_action,
+                    "risk_level": tool_policy.get("risk_level"),
                     "error": current_step.error,
                 },
             )
