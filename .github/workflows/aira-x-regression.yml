@@ -36,6 +36,11 @@ jobs:
           PYTHONPATH: .
         run: python tests/test_aira_x_regression.py
 
+      - name: Run File Tool security tests
+        env:
+          PYTHONPATH: .
+        run: python tests/test_file_tool_security.py
+
   frontend-build-check:
     runs-on: ubuntu-latest
 
