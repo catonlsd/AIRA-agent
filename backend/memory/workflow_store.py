@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 from typing import Dict, Optional, List, Any
 
 from schemas.aira_state import AiraXState
@@ -5,23 +7,80 @@ from schemas.aira_state import AiraXState
 
 class WorkflowStore:
     runs: Dict[str, AiraXState] = {}
+    loaded: bool = False
+
+    storage_file = (
+        Path(__file__).resolve().parents[1]
+        / "storage"
+        / "workflow_runs.json"
+    )
+
+    @classmethod
+    def _ensure_loaded(cls) -> None:
+        if cls.loaded:
+            return
+
+        cls.storage_file.parent.mkdir(parents=True, exist_ok=True)
+
+        if not cls.storage_file.exists():
+            cls.storage_file.write_text("{}", encoding="utf-8")
+            cls.loaded = True
+            return
+
+        try:
+            raw_data = json.loads(cls.storage_file.read_text(encoding="utf-8"))
+
+            for run_id, state_data in raw_data.items():
+                try:
+                    cls.runs[run_id] = AiraXState.model_validate(state_data)
+                except Exception:
+                    continue
+
+        except Exception:
+            cls.runs = {}
+
+        cls.loaded = True
+
+    @classmethod
+    def _persist(cls) -> None:
+        cls.storage_file.parent.mkdir(parents=True, exist_ok=True)
+
+        data = {
+            run_id: state.model_dump()
+            for run_id, state in cls.runs.items()
+        }
+
+        cls.storage_file.write_text(
+            json.dumps(data, indent=2),
+            encoding="utf-8",
+        )
 
     @classmethod
     def save(cls, state: AiraXState) -> None:
+        cls._ensure_loaded()
+
         if state.run_id:
             cls.runs[state.run_id] = state
+            cls._persist()
 
     @classmethod
     def get(cls, run_id: str) -> Optional[AiraXState]:
+        cls._ensure_loaded()
+
         return cls.runs.get(run_id)
 
     @classmethod
     def delete(cls, run_id: str) -> None:
+        cls._ensure_loaded()
+
         if run_id in cls.runs:
             del cls.runs[run_id]
+            cls._persist()
 
     @classmethod
     def list_runs(cls) -> List[Dict[str, Any]]:
+        cls._ensure_loaded()
+
         summaries = []
 
         for run_id, state in cls.runs.items():

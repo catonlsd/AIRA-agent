@@ -13,3 +13,4 @@ frontend/.env.local
 # OS / editor
 .DS_Store
 .vscode/
+backend/storage/workflow_runs.json
