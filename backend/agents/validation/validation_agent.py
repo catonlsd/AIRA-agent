@@ -57,7 +57,9 @@ class ValidationAgent(BaseAgent):
 
         if execution_success:
             current_step.status = "completed"
-            current_step.result = "Validation passed. Successful execution output exists."
+
+            if not current_step.result:
+                current_step.result = "Execution completed successfully."
 
             state.status = "validated"
             state.decision = "validation_success"
@@ -68,7 +70,8 @@ class ValidationAgent(BaseAgent):
                 event="validation_success",
                 details={
                     "step_id": current_step.id,
-                    "result": current_step.result,
+                    "step_result": current_step.result,
+                    "validation_result": "Validation passed. Successful execution output exists.",
                 },
             )
 
