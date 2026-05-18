@@ -28,12 +28,16 @@ class ApprovalAgent(BaseAgent):
     async def run(self, state: AiraXState) -> AiraXState:
         action = state.memory.get("pending_action", "")
         approved_actions = state.memory.get("approved_actions", [])
+        tool_policy = state.memory.get("current_tool_policy", {})
 
         WorkflowMemory.add_log(
             state,
             agent=self.name,
             event="approval_check_started",
-            details={"action": action},
+            details={
+                "action": action,
+                "tool_policy": tool_policy,
+            },
         )
 
         if action in approved_actions:
@@ -44,6 +48,27 @@ class ApprovalAgent(BaseAgent):
                 agent=self.name,
                 event="approval_already_granted",
                 details={"action": action},
+            )
+
+            return state
+
+        if tool_policy.get("requires_approval") is True:
+            state.status = "requires_approval"
+            state.decision = "approval_required"
+            state.final_answer = (
+                "This action requires user approval by tool policy before execution: "
+                f"{action}"
+            )
+
+            WorkflowMemory.add_log(
+                state,
+                agent=self.name,
+                event="approval_required",
+                details={
+                    "action": action,
+                    "reason": "Tool policy requires approval.",
+                    "tool_policy": tool_policy,
+                },
             )
 
             return state
@@ -75,7 +100,10 @@ class ApprovalAgent(BaseAgent):
             state,
             agent=self.name,
             event="approval_not_required",
-            details={"action": action},
+            details={
+                "action": action,
+                "risk_level": tool_policy.get("risk_level"),
+            },
         )
 
         return state
