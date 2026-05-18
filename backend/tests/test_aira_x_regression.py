@@ -11,6 +11,10 @@ from app.routes.aira_x import (
     approve_aira_x_action,
     reject_aira_x_action,
     run_aira_x,
+    list_aira_x_tools,
+    list_aira_x_agents,
+    list_aira_x_runs,
+    get_aira_x_run,
 )
 
 
@@ -28,12 +32,15 @@ def assert_contains(text, expected, label):
         )
 
 
+def assert_true(condition, label):
+    if not condition:
+        raise AssertionError(f"{label} failed.")
+
+
 async def test_normal_python_execution():
     print("Testing normal Python execution...")
 
-    response = await run_aira_x(
-        AiraXRunRequest(goal="run python code")
-    )
+    response = await run_aira_x(AiraXRunRequest(goal="run python code"))
 
     assert_equal(response["status"], "completed", "Python execution status")
     assert_contains(
@@ -44,18 +51,20 @@ async def test_normal_python_execution():
 
     print("✅ Normal Python execution passed")
 
+    return response
+
 
 async def test_retry_self_correction():
     print("Testing retry self-correction...")
 
-    response = await run_aira_x(
-        AiraXRunRequest(goal="test retry")
-    )
+    response = await run_aira_x(AiraXRunRequest(goal="test retry"))
 
     assert_equal(response["status"], "completed", "Retry workflow status")
-    assert response["memory"].get("reflections"), "Reflection memory missing"
+    assert_true(response["memory"].get("reflections"), "Reflection memory exists")
 
     print("✅ Retry self-correction passed")
+
+    return response
 
 
 async def test_safety_block():
@@ -74,6 +83,8 @@ async def test_safety_block():
     )
 
     print("✅ Safety block passed")
+
+    return response
 
 
 async def test_approval_rejection():
@@ -109,6 +120,8 @@ async def test_approval_rejection():
 
     print("✅ Approval rejection passed")
 
+    return rejected_response
+
 
 async def test_approval_continuation():
     print("Testing approval continuation...")
@@ -143,13 +156,13 @@ async def test_approval_continuation():
 
     print("✅ Approval continuation passed")
 
+    return approved_response
+
 
 async def test_git_status():
     print("Testing Git status...")
 
-    response = await run_aira_x(
-        AiraXRunRequest(goal="git status")
-    )
+    response = await run_aira_x(AiraXRunRequest(goal="git status"))
 
     assert_equal(response["status"], "completed", "Git status workflow status")
 
@@ -160,16 +173,95 @@ async def test_git_status():
 
     print("✅ Git status passed")
 
+    return response
+
+
+async def test_tool_registry_api():
+    print("Testing Tool Registry API...")
+
+    response = await list_aira_x_tools()
+
+    assert_true(response["tool_count"] >= 4, "Tool count should be at least 4")
+
+    tool_names = [tool["tool_name"] for tool in response["tools"]]
+
+    assert_true("shell_tool" in tool_names, "shell_tool exists")
+    assert_true("file_tool" in tool_names, "file_tool exists")
+    assert_true("python_tool" in tool_names, "python_tool exists")
+    assert_true("git_tool" in tool_names, "git_tool exists")
+
+    print("✅ Tool Registry API passed")
+
+
+async def test_agent_registry_api():
+    print("Testing Agent Registry API...")
+
+    response = await list_aira_x_agents()
+
+    assert_true(response["agent_count"] >= 8, "Agent count should be at least 8")
+
+    agent_names = [agent["agent_name"] for agent in response["agents"]]
+
+    assert_true("planner_agent" in agent_names, "planner_agent exists")
+    assert_true("decision_agent" in agent_names, "decision_agent exists")
+    assert_true("execution_agent" in agent_names, "execution_agent exists")
+    assert_true("safety_agent" in agent_names, "safety_agent exists")
+    assert_true("approval_agent" in agent_names, "approval_agent exists")
+    assert_true("validation_agent" in agent_names, "validation_agent exists")
+    assert_true("reflection_agent" in agent_names, "reflection_agent exists")
+    assert_true("memory_agent" in agent_names, "memory_agent exists")
+
+    print("✅ Agent Registry API passed")
+
+
+async def test_workflow_runs_api(sample_run):
+    print("Testing Workflow Runs API...")
+
+    response = await list_aira_x_runs()
+
+    assert_true(
+        response["run_count"] >= 1,
+        "Workflow run count should be at least 1",
+    )
+
+    run_ids = [run["run_id"] for run in response["runs"]]
+
+    assert_true(sample_run["run_id"] in run_ids, "Sample run exists in history")
+
+    print("✅ Workflow Runs API passed")
+
+
+async def test_workflow_detail_api(sample_run):
+    print("Testing Workflow Detail API...")
+
+    response = await get_aira_x_run(sample_run["run_id"])
+
+    assert_equal(response["success"], True, "Workflow detail success")
+
+    run = response["run"]
+
+    assert_equal(run["run_id"], sample_run["run_id"], "Workflow detail run_id")
+    assert_true(len(run["plan"]) >= 1, "Workflow detail contains plan")
+    assert_true(len(run["workflow_logs"]) >= 1, "Workflow detail contains logs")
+
+    print("✅ Workflow Detail API passed")
+
 
 async def main():
     print("\nRunning AIRA-X regression test suite...\n")
 
-    await test_normal_python_execution()
+    sample_run = await test_normal_python_execution()
+
     await test_retry_self_correction()
     await test_safety_block()
     await test_approval_rejection()
     await test_approval_continuation()
     await test_git_status()
+
+    await test_tool_registry_api()
+    await test_agent_registry_api()
+    await test_workflow_runs_api(sample_run)
+    await test_workflow_detail_api(sample_run)
 
     print("\n🎉 All AIRA-X regression tests passed successfully!\n")
 
