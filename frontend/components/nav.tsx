@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   Activity,
   BookOpen,
+  BrainCircuit,
   Handshake,
   Home,
   MessageSquare,
@@ -23,6 +24,7 @@ const links = [
   { href: "/documents", label: "Knowledge Base", animation: "book" },
   { href: "/history", label: "Interactions", animation: "handshake" },
   { href: "/workflows", label: "Workflow Runs", animation: "activity" },
+  { href: "/agents", label: "Agent Registry", animation: "agents" },
   { href: "/tools", label: "Tools Registry", animation: "tools" },
   { href: "/settings", label: "About AIRA-X", animation: "spark" },
 ];
@@ -114,6 +116,8 @@ export function Nav() {
               ? "group-hover:animate-[handshake_0.55s_ease-in-out] duration-500"
               : item.animation === "activity"
               ? "group-hover:scale-125 group-hover:rotate-6 duration-500"
+              : item.animation === "agents"
+              ? "group-hover:scale-125 group-hover:rotate-3 duration-500"
               : item.animation === "tools"
               ? "group-hover:rotate-12 group-hover:scale-125 duration-500"
               : "group-hover:rotate-6 group-hover:scale-125 duration-500";
@@ -129,6 +133,8 @@ export function Nav() {
               ? Handshake
               : item.animation === "activity"
               ? Activity
+              : item.animation === "agents"
+              ? BrainCircuit
               : item.animation === "tools"
               ? Wrench
               : item.animation === "spark"
