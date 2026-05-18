@@ -42,6 +42,22 @@ def serialize_state(state):
     }
 
 
+@router.get("/overview")
+async def get_aira_x_overview():
+    workflow_metrics = WorkflowStore.get_metrics()
+
+    return {
+        "platform": "AIRA-X",
+        "focus": "AI Research + Autonomous Execution",
+        "status": "operational",
+        "agent_count": len(AgentRegistry.list_agents()),
+        "tool_count": len(ToolRegistry.list_tools()),
+        "agents": AgentRegistry.describe_agents(),
+        "tools": ToolRegistry.describe_tools(),
+        "workflow_metrics": workflow_metrics,
+    }
+
+
 @router.post("/run")
 async def run_aira_x(request: AiraXRunRequest):
     run_id = str(uuid4())

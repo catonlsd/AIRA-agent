@@ -15,6 +15,7 @@ from app.routes.aira_x import (
     list_aira_x_agents,
     list_aira_x_runs,
     get_aira_x_run,
+    get_aira_x_overview,
 )
 
 
@@ -246,6 +247,27 @@ async def test_workflow_detail_api(sample_run):
 
     print("✅ Workflow Detail API passed")
 
+async def test_platform_overview_api():
+    print("Testing Platform Overview API...")
+
+    response = await get_aira_x_overview()
+
+    assert_equal(response["platform"], "AIRA-X", "Overview platform name")
+    assert_true(response["agent_count"] >= 8, "Overview agent count")
+    assert_true(response["tool_count"] >= 4, "Overview tool count")
+    assert_true(
+        "workflow_metrics" in response,
+        "Overview contains workflow metrics",
+    )
+
+    metrics = response["workflow_metrics"]
+
+    assert_true("total_runs" in metrics, "Overview metrics total_runs exists")
+    assert_true("completed_runs" in metrics, "Overview metrics completed_runs exists")
+    assert_true("latest_runs" in metrics, "Overview metrics latest_runs exists")
+
+    print("✅ Platform Overview API passed")
+
 
 async def main():
     print("\nRunning AIRA-X regression test suite...\n")
@@ -260,6 +282,7 @@ async def main():
 
     await test_tool_registry_api()
     await test_agent_registry_api()
+    await test_platform_overview_api()
     await test_workflow_runs_api(sample_run)
     await test_workflow_detail_api(sample_run)
 

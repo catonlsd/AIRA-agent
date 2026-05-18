@@ -101,3 +101,34 @@ class WorkflowStore:
             )
 
         return summaries
+
+    @classmethod
+    def get_metrics(cls) -> Dict[str, Any]:
+        cls._ensure_loaded()
+
+        runs = list(cls.runs.values())
+
+        completed = sum(1 for run in runs if run.status == "completed")
+        failed = sum(1 for run in runs if run.status == "failed")
+        requires_approval = sum(
+            1 for run in runs if run.status == "requires_approval"
+        )
+        rejected = sum(1 for run in runs if run.status == "rejected")
+
+        total_retries = sum(run.retry_count for run in runs)
+        total_tool_calls = sum(len(run.execution_outputs) for run in runs)
+        total_logs = sum(len(run.memory.get("workflow_logs", [])) for run in runs)
+
+        latest_runs = cls.list_runs()[-5:]
+
+        return {
+            "total_runs": len(runs),
+            "completed_runs": completed,
+            "failed_runs": failed,
+            "requires_approval_runs": requires_approval,
+            "rejected_runs": rejected,
+            "total_retries": total_retries,
+            "total_tool_calls": total_tool_calls,
+            "total_logs": total_logs,
+            "latest_runs": latest_runs,
+        }
