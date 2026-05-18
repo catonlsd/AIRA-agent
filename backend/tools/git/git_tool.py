@@ -46,6 +46,22 @@ class GitTool:
         )
 
     @staticmethod
+    def stage_all() -> Dict[str, Any]:
+        return GitTool._run_git_command(
+            ["git", "add", "."],
+            action="stage_all",
+        )
+
+    @staticmethod
+    def commit(message: str) -> Dict[str, Any]:
+        clean_message = message.strip() or "AIRA-X automated commit"
+
+        return GitTool._run_git_command(
+            ["git", "commit", "-m", clean_message],
+            action="commit",
+        )
+
+    @staticmethod
     def _run_git_command(command: list[str], action: str) -> Dict[str, Any]:
         try:
             result = subprocess.run(

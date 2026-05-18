@@ -24,7 +24,10 @@ class AiraXWorkflow:
             state,
             agent="aira_x_workflow",
             event="workflow_started",
-            details={"user_goal": user_goal, "run_id": run_id},
+            details={
+                "user_goal": user_goal,
+                "run_id": run_id,
+            },
         )
 
         state = await self.planner.run(state)
@@ -62,6 +65,7 @@ class AiraXWorkflow:
 
             if state.decision == "run_planner":
                 current_step = self._get_current_step(state)
+
                 if current_step:
                     current_step.status = "completed"
                     current_step.result = "Goal understood and initial plan created."
@@ -84,6 +88,7 @@ class AiraXWorkflow:
 
             elif state.decision == "run_tool":
                 current_step = self._get_current_step(state)
+
                 if current_step:
                     current_step.status = "completed"
                     current_step.result = "Decision step completed."
@@ -100,7 +105,9 @@ class AiraXWorkflow:
                     state,
                     agent="aira_x_workflow",
                     event="workflow_completed",
-                    details={"final_answer": state.final_answer},
+                    details={
+                        "final_answer": state.final_answer,
+                    },
                 )
 
                 state = await self.memory.run(state)
@@ -113,7 +120,9 @@ class AiraXWorkflow:
                     state,
                     agent="aira_x_workflow",
                     event="workflow_blocked_by_safety",
-                    details={"final_answer": state.final_answer},
+                    details={
+                        "final_answer": state.final_answer,
+                    },
                 )
 
                 state = await self.memory.run(state)
@@ -126,7 +135,41 @@ class AiraXWorkflow:
                     state,
                     agent="aira_x_workflow",
                     event="workflow_waiting_for_approval",
-                    details={"final_answer": state.final_answer},
+                    details={
+                        "final_answer": state.final_answer,
+                    },
+                )
+
+                state = await self.memory.run(state)
+                break
+
+            elif state.decision == "stop_non_retryable_failure":
+                state.status = "failed"
+
+                current_step = self._get_current_step(state)
+
+                if current_step:
+                    current_step.status = "failed"
+
+                    if not current_step.error:
+                        current_step.error = (
+                            state.memory.get("last_execution_error")
+                            or "Non-retryable workflow step failed."
+                        )
+
+                if not state.final_answer:
+                    state.final_answer = (
+                        state.memory.get("last_execution_error")
+                        or "Workflow stopped because a non-retryable action failed."
+                    )
+
+                WorkflowMemory.add_log(
+                    state,
+                    agent="aira_x_workflow",
+                    event="workflow_stopped_non_retryable_failure",
+                    details={
+                        "final_answer": state.final_answer,
+                    },
                 )
 
                 state = await self.memory.run(state)
@@ -141,13 +184,27 @@ class AiraXWorkflow:
 
             elif state.decision == "stop_max_retries":
                 state.status = "failed"
+
+                current_step = self._get_current_step(state)
+
+                if current_step:
+                    current_step.status = "failed"
+
+                    if not current_step.error:
+                        current_step.error = (
+                            state.memory.get("last_execution_error")
+                            or "Workflow failed after maximum retries."
+                        )
+
                 state.final_answer = "Workflow failed after maximum retries."
 
                 WorkflowMemory.add_log(
                     state,
                     agent="aira_x_workflow",
                     event="workflow_failed_max_retries",
-                    details={"retry_count": state.retry_count},
+                    details={
+                        "retry_count": state.retry_count,
+                    },
                 )
 
                 state = await self.memory.run(state)
@@ -161,7 +218,9 @@ class AiraXWorkflow:
                     state,
                     agent="aira_x_workflow",
                     event="workflow_failed_unknown_decision",
-                    details={"decision": state.decision},
+                    details={
+                        "decision": state.decision,
+                    },
                 )
 
                 state = await self.memory.run(state)

@@ -23,7 +23,29 @@ class DecisionAgent(BaseAgent):
                 state.final_answer = current_step.error
                 return state
 
-        if state.retry_count >= 3:
+        if current_step and current_step.status == "failed":
+            if current_step.tool_name == "git_tool" and current_step.tool_action in {
+                "stage_all",
+                "commit",
+            }:
+                state.decision = "stop_non_retryable_failure"
+                state.status = "failed"
+                state.final_answer = (
+                    current_step.error
+                    or "Git write action failed and will not be retried automatically."
+                )
+                return state
+
+        if state.retry_count >= state.max_retries:
+            if current_step:
+                current_step.status = "failed"
+
+                if not current_step.error:
+                    current_step.error = (
+                        state.memory.get("last_execution_error")
+                        or "Workflow failed after maximum retries."
+                    )
+
             state.decision = "stop_max_retries"
             return state
 

@@ -87,7 +87,14 @@ class ToolRouter:
                 return GitTool.diff()
 
             if action == "full_diff":
-                return GitTool.full_diff()   
+                return GitTool.full_diff()
+
+            if action == "stage_all":
+                return GitTool.stage_all()
+
+            if action == "commit":
+                message = payload.get("message", "AIRA-X automated commit")
+                return GitTool.commit(message=message)   
 
         return {
             "success": False,

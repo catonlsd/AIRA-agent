@@ -63,14 +63,24 @@ class ToolRegistry:
             },
         },
         "git_tool": {
-            "description": "Reads Git repository status, branch, diffs, and recent commits.",
-            "actions": ["status", "branch", "recent_commits", "diff", "full_diff"],
+            "description": "Reads Git repository status, branch, diffs, recent commits, and performs approval-gated local Git writes.",
+            "actions": [
+                "status",
+                "branch",
+                "recent_commits",
+                "diff",
+                "full_diff",
+                "stage_all",
+                "commit",
+            ],
             "examples": [
                 "git status --short",
                 "git branch --show-current",
                 "git log --oneline -5",
                 "git diff --stat",
                 "git diff",
+                "git add .",
+                "git commit -m \"message\"",
             ],
             "policy": {
                 "status": {
@@ -97,6 +107,16 @@ class ToolRegistry:
                     "risk_level": "safe",
                     "requires_approval": False,
                     "description": "Reads full uncommitted Git changes.",
+                },
+                "stage_all": {
+                    "risk_level": "sensitive",
+                    "requires_approval": True,
+                    "description": "Stages all current repository changes. Requires user approval.",
+                },
+                "commit": {
+                    "risk_level": "sensitive",
+                    "requires_approval": True,
+                    "description": "Creates a local Git commit. Requires user approval.",
                 },
             },
         },

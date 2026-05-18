@@ -116,31 +116,16 @@ class PlannerAgent(BaseAgent):
                 )
             )
 
-        elif "git push" in goal:
+        elif "full diff" in goal or "show full changes" in goal:
             plan.append(
                 AiraXStep(
                     id=1,
-                    title="Push Git changes",
-                    description="Attempt to push Git changes. This should require approval.",
+                    title="Show full Git diff",
+                    description="Show full uncommitted Git changes.",
                     assigned_agent="execution_agent",
-                    tool_name="shell_tool",
-                    tool_action="run",
-                    tool_payload={"command": "git push"},
-                )
-            )
-
-        elif "git commit" in goal:
-            plan.append(
-                AiraXStep(
-                    id=1,
-                    title="Commit Git changes",
-                    description="Attempt to create a Git commit. This should require approval.",
-                    assigned_agent="execution_agent",
-                    tool_name="shell_tool",
-                    tool_action="run",
-                    tool_payload={
-                        "command": 'git commit -m "AIRA-X automated commit"'
-                    },
+                    tool_name="git_tool",
+                    tool_action="full_diff",
+                    tool_payload={},
                 )
             )
 
@@ -157,19 +142,47 @@ class PlannerAgent(BaseAgent):
                 )
             )
 
-        elif "full diff" in goal or "show full changes" in goal:
+        elif "git add" in goal or "stage changes" in goal:
             plan.append(
                 AiraXStep(
                     id=1,
-                    title="Show full Git diff",
-                    description="Show full uncommitted Git changes.",
+                    title="Stage Git changes",
+                    description="Stage all current Git changes. This requires approval.",
                     assigned_agent="execution_agent",
                     tool_name="git_tool",
-                    tool_action="full_diff",
+                    tool_action="stage_all",
                     tool_payload={},
                 )
             )
-         
+
+        elif "git commit" in goal or "commit changes" in goal:
+            plan.append(
+                AiraXStep(
+                    id=1,
+                    title="Commit Git changes",
+                    description="Create a local Git commit. This requires approval.",
+                    assigned_agent="execution_agent",
+                    tool_name="git_tool",
+                    tool_action="commit",
+                    tool_payload={
+                        "message": "AIRA-X automated commit",
+                    },
+                )
+            )
+
+        elif "git push" in goal:
+            plan.append(
+                AiraXStep(
+                    id=1,
+                    title="Push Git changes",
+                    description="Attempt to push Git changes. This should require approval.",
+                    assigned_agent="execution_agent",
+                    tool_name="shell_tool",
+                    tool_action="run",
+                    tool_payload={"command": "git push"},
+                )
+            )
+
         elif "rm -rf" in goal or "delete system32" in goal or "format disk" in goal:
             plan.append(
                 AiraXStep(

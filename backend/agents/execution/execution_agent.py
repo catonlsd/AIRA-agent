@@ -36,6 +36,7 @@ class ExecutionAgent(BaseAgent):
             current_step.error = "No tool assigned to this execution step."
             state.status = "failed"
             state.decision = "execution_failed"
+            state.memory["last_execution_error"] = current_step.error
             return state
 
         tool_policy = ToolRegistry.get_action_policy(
@@ -95,6 +96,7 @@ class ExecutionAgent(BaseAgent):
         if state.decision == "blocked_by_safety_agent":
             current_step.status = "failed"
             current_step.error = state.final_answer
+            state.memory["last_execution_error"] = current_step.error
 
             WorkflowMemory.add_log(
                 state,
@@ -152,8 +154,10 @@ class ExecutionAgent(BaseAgent):
 
             if isinstance(raw_output, list):
                 current_step.result = "\n".join(raw_output)
+
             elif raw_output:
                 current_step.result = str(raw_output).strip()
+
             else:
                 current_step.result = "Execution completed successfully."
 
@@ -175,10 +179,17 @@ class ExecutionAgent(BaseAgent):
             )
 
         else:
-            current_step.error = tool_result.get("stderr") or tool_result.get("error")
+            current_step.error = (
+                tool_result.get("stderr")
+                or tool_result.get("error")
+                or tool_result.get("output")
+                or "Tool execution failed."
+            )
+
             current_step.status = "failed"
             state.status = "failed"
             state.decision = "execution_failed"
+            state.memory["last_execution_error"] = current_step.error
 
             WorkflowMemory.add_log(
                 state,
@@ -206,6 +217,12 @@ class ExecutionAgent(BaseAgent):
             return f"{action}: {payload.get('path', '')}"
 
         if tool_name == "git_tool":
+            if action == "commit":
+                return (
+                    "git_tool:commit -m "
+                    f"{payload.get('message', 'AIRA-X automated commit')}"
+                )
+
             return f"git_tool:{action}"
 
         return f"{tool_name}:{action}"

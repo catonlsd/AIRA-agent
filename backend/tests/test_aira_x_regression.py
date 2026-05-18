@@ -217,6 +217,18 @@ async def test_tool_registry_api():
         "full_diff" in git_tool["actions"],
         "git_tool full_diff action exists",
     )
+    assert_true("stage_all" in git_tool["actions"], "git_tool stage_all action exists")
+    assert_true("commit" in git_tool["actions"], "git_tool commit action exists")
+
+    assert_true(
+        git_tool["policy"]["stage_all"]["requires_approval"] is True,
+        "git_tool stage_all requires approval",
+    )
+
+    assert_true(
+        git_tool["policy"]["commit"]["requires_approval"] is True,
+        "git_tool commit requires approval",
+    )
 
     for tool in response["tools"]:
         assert_true("policy" in tool, f"{tool['tool_name']} has policy metadata")
@@ -299,6 +311,32 @@ async def test_platform_overview_api():
 
     print("✅ Platform Overview API passed")
 
+async def test_git_commit_requires_approval():
+    print("Testing Git commit approval requirement...")
+
+    response = await run_aira_x(AiraXRunRequest(goal="git commit"))
+
+    assert_equal(
+        response["status"],
+        "requires_approval",
+        "Git commit should require approval",
+    )
+
+    assert_equal(
+        response["decision"],
+        "stop_approval_required",
+        "Git commit approval decision",
+    )
+
+    first_step = response["plan"][0]
+
+    assert_equal(first_step["tool_name"], "git_tool", "Git commit tool selection")
+    assert_equal(first_step["tool_action"], "commit", "Git commit action selection")
+
+    print("✅ Git commit approval requirement passed")
+
+    return response
+
 
 async def main():
     print("\nRunning AIRA-X regression test suite...\n")
@@ -311,6 +349,7 @@ async def main():
     await test_approval_continuation()
     await test_git_status()
     await test_git_diff()
+    await test_git_commit_requires_approval()
 
     await test_tool_registry_api()
     await test_agent_registry_api()
