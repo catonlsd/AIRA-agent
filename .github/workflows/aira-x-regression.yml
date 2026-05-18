@@ -34,4 +34,4 @@ jobs:
       - name: Run AIRA-X regression test suite
         env:
           PYTHONPATH: .
-        run: python test_aira_x_regression.py
+        run: python tests/test_aira_x_regression.py
