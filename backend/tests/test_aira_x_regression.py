@@ -490,6 +490,70 @@ async def test_workflow_runs_include_git_preflight_summary():
 
     return matching_run
 
+async def test_overview_latest_runs_include_git_preflight_summary():
+    print("Testing Overview API includes Git preflight summary in latest runs...")
+
+    preflight_response = await run_aira_x(
+        AiraXRunRequest(
+            goal='commit all changes with message "Overview preflight test"'
+        )
+    )
+
+    assert_equal(
+        preflight_response["status"],
+        "requires_approval",
+        "Overview preflight workflow should require approval",
+    )
+
+    overview_response = await get_aira_x_overview()
+
+    latest_runs = overview_response["workflow_metrics"]["latest_runs"]
+
+    matching_run = next(
+        (
+            run
+            for run in latest_runs
+            if run["run_id"] == preflight_response["run_id"]
+        ),
+        None,
+    )
+
+    assert_true(
+        matching_run is not None,
+        "Preflight workflow should appear in overview latest runs",
+    )
+
+    assert_equal(
+        matching_run["approval_context_type"],
+        "git_write_preflight",
+        "Overview latest run should include approval context type",
+    )
+
+    assert_true(
+        isinstance(matching_run.get("approval_context"), dict),
+        "Overview latest run should include approval context",
+    )
+
+    assert_equal(
+        matching_run["approval_context"].get("pending_action"),
+        "git_tool:stage_all",
+        "Overview latest run should include pending Git action",
+    )
+
+    assert_true(
+        "branch" in matching_run["approval_context"],
+        "Overview latest run should include Git branch",
+    )
+
+    assert_true(
+        "diff_summary" in matching_run["approval_context"],
+        "Overview latest run should include diff summary",
+    )
+
+    print("✅ Overview Git preflight summary passed")
+
+    return matching_run
+
 async def test_tool_registry_api():
     print("Testing Tool Registry API...")
 
@@ -625,6 +689,7 @@ async def main():
     await test_multi_step_commit_requires_stage_approval()
     await test_git_preflight_context()
     await test_workflow_runs_include_git_preflight_summary()
+    await test_overview_latest_runs_include_git_preflight_summary()
 
     await test_tool_registry_api()
     await test_agent_registry_api()
