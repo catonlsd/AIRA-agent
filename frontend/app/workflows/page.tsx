@@ -24,6 +24,18 @@ type ApprovalContext = {
   diff_summary?: string;
 };
 
+type CleanupAction = {
+  reason: string;
+  tool_name: string;
+  tool_action: string;
+  result?: {
+    success?: boolean;
+    command?: string;
+    output?: string;
+    error?: string;
+  };
+};
+
 type WorkflowRunSummary = {
   run_id: string;
   user_goal: string;
@@ -36,6 +48,9 @@ type WorkflowRunSummary = {
   pending_action?: string;
   approval_context?: ApprovalContext;
   approval_context_type?: string;
+  cleanup_actions?: CleanupAction[];
+  cleanup_count?: number;
+  has_cleanup?: boolean;
   step_count: number;
   log_count: number;
 };
@@ -72,6 +87,13 @@ function getStatusIcon(status: string) {
   return <Clock className="h-4 w-4" />;
 }
 
+function hasGitPreflight(run: WorkflowRunSummary) {
+  return (
+    run.approval_context_type === "git_write_preflight" ||
+    run.approval_context?.type === "git_write_preflight"
+  );
+}
+
 export default function WorkflowsPage() {
   const [runs, setRuns] = useState<WorkflowRunSummary[]>([]);
   const [runCount, setRunCount] = useState(0);
@@ -101,6 +123,8 @@ export default function WorkflowsPage() {
     loadRuns();
   }, []);
 
+  const cleanupRunCount = runs.filter((run) => run.has_cleanup).length;
+
   return (
     <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-6xl flex-col gap-6">
       <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-6">
@@ -118,8 +142,8 @@ export default function WorkflowsPage() {
 
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
             Review previous AIRA-X workflow executions, approval states,
-            decisions, retry counts, Git preflight summaries, and execution
-            outcomes.
+            decisions, retry counts, Git preflight summaries, cleanup actions,
+            and execution outcomes.
           </p>
         </div>
       </section>
@@ -138,7 +162,7 @@ export default function WorkflowsPage() {
 
       {!loading && !error && (
         <>
-          <section className="grid gap-4 md:grid-cols-3">
+          <section className="grid gap-4 md:grid-cols-4">
             <div className="sarvam-card rounded-[1.5rem] p-5">
               <p className="text-sm font-semibold text-slate-500">
                 Total Runs
@@ -165,13 +189,17 @@ export default function WorkflowsPage() {
               </p>
 
               <h2 className="mt-1 text-3xl font-semibold text-purple-700">
-                {
-                  runs.filter(
-                    (run) =>
-                      run.approval_context_type === "git_write_preflight" ||
-                      run.approval_context?.type === "git_write_preflight"
-                  ).length
-                }
+                {runs.filter((run) => hasGitPreflight(run)).length}
+              </h2>
+            </div>
+
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
+                Cleanups
+              </p>
+
+              <h2 className="mt-1 text-3xl font-semibold text-green-700">
+                {cleanupRunCount}
               </h2>
             </div>
           </section>
@@ -192,9 +220,8 @@ export default function WorkflowsPage() {
                   .slice()
                   .reverse()
                   .map((run) => {
-                    const hasGitPreflight =
-                      run.approval_context_type === "git_write_preflight" ||
-                      run.approval_context?.type === "git_write_preflight";
+                    const gitPreflight = hasGitPreflight(run);
+                    const cleanupPerformed = Boolean(run.has_cleanup);
 
                     return (
                       <Link
@@ -226,10 +253,17 @@ export default function WorkflowsPage() {
                                 Logs: {run.log_count}
                               </span>
 
-                              {hasGitPreflight && (
+                              {gitPreflight && (
                                 <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700">
                                   <ShieldAlert className="h-3.5 w-3.5" />
                                   Git Preflight Available
+                                </span>
+                              )}
+
+                              {cleanupPerformed && (
+                                <span className="inline-flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                  Cleanup Performed
                                 </span>
                               )}
                             </div>
@@ -250,7 +284,7 @@ export default function WorkflowsPage() {
                               </p>
                             )}
 
-                            {hasGitPreflight && (
+                            {gitPreflight && (
                               <div className="mt-3 rounded-xl border border-orange-100 bg-white p-3">
                                 <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-orange-700">
                                   <GitBranch className="h-3.5 w-3.5" />
@@ -270,6 +304,39 @@ export default function WorkflowsPage() {
                                       run.pending_action ||
                                       "Unknown action"}
                                   </p>
+                                </div>
+                              </div>
+                            )}
+
+                            {cleanupPerformed && (
+                              <div className="mt-3 rounded-xl border border-green-100 bg-white p-3">
+                                <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-green-700">
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                  Cleanup Summary
+                                </div>
+
+                                <div className="space-y-2 text-xs text-slate-600">
+                                  <p>
+                                    <strong>Cleanup Count:</strong>{" "}
+                                    {run.cleanup_count || 0}
+                                  </p>
+
+                                  {run.cleanup_actions?.[0] && (
+                                    <>
+                                      <p>
+                                        <strong>Action:</strong>{" "}
+                                        {run.cleanup_actions[0].tool_name}:
+                                        {run.cleanup_actions[0].tool_action}
+                                      </p>
+
+                                      <p>
+                                        <strong>Status:</strong>{" "}
+                                        {run.cleanup_actions[0].result?.success
+                                          ? "successful"
+                                          : "failed"}
+                                      </p>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                             )}
