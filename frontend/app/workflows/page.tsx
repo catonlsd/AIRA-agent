@@ -6,14 +6,25 @@ import {
   Activity,
   CheckCircle2,
   Clock,
-  Eye,
-  RefreshCcw,
+  GitBranch,
   ShieldAlert,
+  Workflow,
   XCircle,
 } from "lucide-react";
 import { getAiraXRuns } from "@/lib/api";
 
-type WorkflowRun = {
+type ApprovalContext = {
+  type?: string;
+  tool_name?: string;
+  tool_action?: string;
+  pending_action?: string;
+  commit_message?: string | null;
+  branch?: string;
+  changed_files?: string;
+  diff_summary?: string;
+};
+
+type WorkflowRunSummary = {
   run_id: string;
   user_goal: string;
   status: string;
@@ -23,18 +34,11 @@ type WorkflowRun = {
   retry_count: number;
   requires_approval: boolean;
   pending_action?: string;
+  approval_context?: ApprovalContext;
+  approval_context_type?: string;
   step_count: number;
   log_count: number;
 };
-
-function getStatusIcon(status: string) {
-  if (status === "completed") return <CheckCircle2 className="h-5 w-5" />;
-  if (status === "failed") return <XCircle className="h-5 w-5" />;
-  if (status === "requires_approval") return <ShieldAlert className="h-5 w-5" />;
-  if (status === "rejected") return <XCircle className="h-5 w-5" />;
-
-  return <Clock className="h-5 w-5" />;
-}
 
 function getStatusStyle(status: string) {
   if (status === "completed") {
@@ -52,20 +56,31 @@ function getStatusStyle(status: string) {
   return "border-blue-200 bg-blue-50 text-blue-700";
 }
 
+function getStatusIcon(status: string) {
+  if (status === "completed") {
+    return <CheckCircle2 className="h-4 w-4" />;
+  }
+
+  if (status === "failed" || status === "rejected") {
+    return <XCircle className="h-4 w-4" />;
+  }
+
+  if (status === "requires_approval") {
+    return <ShieldAlert className="h-4 w-4" />;
+  }
+
+  return <Clock className="h-4 w-4" />;
+}
+
 export default function WorkflowsPage() {
-  const [runs, setRuns] = useState<WorkflowRun[]>([]);
+  const [runs, setRuns] = useState<WorkflowRunSummary[]>([]);
   const [runCount, setRunCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
-  async function loadRuns(isRefresh = false) {
+  async function loadRuns() {
     try {
-      if (isRefresh) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
+      setLoading(true);
 
       const data = await getAiraXRuns();
 
@@ -79,7 +94,6 @@ export default function WorkflowsPage() {
       setError(message);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }
 
@@ -90,74 +104,29 @@ export default function WorkflowsPage() {
   return (
     <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-6xl flex-col gap-6">
       <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-6">
-        <div className="absolute -right-12 -top-16 h-40 w-40 rounded-full bg-purple-200/50 blur-3xl" />
+        <div className="absolute -right-12 -top-16 h-40 w-40 rounded-full bg-blue-200/50 blur-3xl" />
 
-        <div className="relative z-10 flex items-start justify-between gap-4">
-          <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-purple-100 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-700">
-              <Activity className="h-3.5 w-3.5" />
-              AIRA-X Workflow History
-            </div>
-
-            <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
-              Workflow Runs
-            </h1>
-
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-              View recent AIRA-X executions, approval states, retries, failures,
-              and completed autonomous workflows.
-            </p>
+        <div className="relative z-10">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-purple-100 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-700">
+            <Workflow className="h-3.5 w-3.5" />
+            AIRA-X Workflow History
           </div>
 
-          <button
-            type="button"
-            onClick={() => loadRuns(true)}
-            disabled={refreshing}
-            className="inline-flex items-center gap-2 rounded-full bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-purple-600/20 transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <RefreshCcw className="h-4 w-4" />
-            {refreshing ? "Refreshing..." : "Refresh"}
-          </button>
-        </div>
-      </section>
+          <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
+            Workflow Runs
+          </h1>
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <div className="sarvam-card rounded-[1.5rem] p-5">
-          <p className="text-sm font-semibold text-slate-500">Total Runs</p>
-          <h2 className="mt-1 text-3xl font-semibold text-slate-950">
-            {runCount}
-          </h2>
-        </div>
-
-        <div className="sarvam-card rounded-[1.5rem] p-5">
-          <p className="text-sm font-semibold text-slate-500">Completed</p>
-          <h2 className="mt-1 text-3xl font-semibold text-green-700">
-            {runs.filter((run) => run.status === "completed").length}
-          </h2>
-        </div>
-
-        <div className="sarvam-card rounded-[1.5rem] p-5">
-          <p className="text-sm font-semibold text-slate-500">Needs Approval</p>
-          <h2 className="mt-1 text-3xl font-semibold text-orange-700">
-            {runs.filter((run) => run.status === "requires_approval").length}
-          </h2>
-        </div>
-
-        <div className="sarvam-card rounded-[1.5rem] p-5">
-          <p className="text-sm font-semibold text-slate-500">Failed/Rejected</p>
-          <h2 className="mt-1 text-3xl font-semibold text-red-700">
-            {
-              runs.filter(
-                (run) => run.status === "failed" || run.status === "rejected"
-              ).length
-            }
-          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+            Review previous AIRA-X workflow executions, approval states,
+            decisions, retry counts, Git preflight summaries, and execution
+            outcomes.
+          </p>
         </div>
       </section>
 
       {loading && (
-        <div className="w-fit rounded-full border border-purple-100 bg-white px-5 py-3 text-sm font-medium text-purple-700 shadow-sm">
-          Loading workflow history...
+        <div className="w-fit rounded-full border border-blue-100 bg-white px-5 py-3 text-sm font-medium text-blue-700 shadow-sm">
+          Loading workflow runs...
         </div>
       )}
 
@@ -167,93 +136,156 @@ export default function WorkflowsPage() {
         </div>
       )}
 
-      {!loading && !error && runs.length === 0 && (
-        <div className="rounded-[2rem] border border-dashed border-purple-200 bg-white/80 p-10 text-center shadow-sm">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-50 text-purple-600">
-            <Activity className="h-5 w-5" />
-          </div>
+      {!loading && !error && (
+        <>
+          <section className="grid gap-4 md:grid-cols-3">
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
+                Total Runs
+              </p>
 
-          <h2 className="text-xl font-semibold text-slate-950">
-            No workflow runs yet
-          </h2>
-
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-            Run AIRA-X from the chat page first, then come back here to view
-            workflow history.
-          </p>
-        </div>
-      )}
-
-      {!loading && !error && runs.length > 0 && (
-        <section className="space-y-4">
-          {runs.map((run) => (
-            <div
-              key={run.run_id}
-              className="sarvam-card rounded-[1.5rem] p-5"
-            >
-              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <span
-                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${getStatusStyle(
-                        run.status
-                      )}`}
-                    >
-                      {getStatusIcon(run.status)}
-                      {run.status}
-                    </span>
-
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-                      Retries: {run.retry_count}
-                    </span>
-
-                    <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-                      Steps: {run.step_count}
-                    </span>
-
-                    <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-medium text-purple-700">
-                      Logs: {run.log_count}
-                    </span>
-                  </div>
-
-                  <h3 className="text-lg font-semibold text-slate-950">
-                    {run.user_goal}
-                  </h3>
-
-                  <p className="mt-2 text-sm text-slate-600">
-                    <strong>Decision:</strong> {run.decision}
-                  </p>
-
-                  <p className="mt-1 text-sm text-slate-600">
-                    <strong>Final Answer:</strong>{" "}
-                    {run.final_answer || "No final answer yet"}
-                  </p>
-
-                  {run.pending_action && (
-                    <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
-                      <strong>Pending action:</strong> {run.pending_action}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-col gap-3">
-                  <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
-                    <p className="font-semibold text-slate-700">Run ID</p>
-                    <p className="mt-1 max-w-xs break-all">{run.run_id}</p>
-                  </div>
-
-                  <Link
-                    href={`/workflows/${run.run_id}`}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-purple-600/20 transition hover:bg-purple-700"
-                  >
-                    <Eye className="h-4 w-4" />
-                    View Details
-                  </Link>
-                </div>
-              </div>
+              <h2 className="mt-1 text-3xl font-semibold text-slate-950">
+                {runCount}
+              </h2>
             </div>
-          ))}
-        </section>
+
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
+                Approval Runs
+              </p>
+
+              <h2 className="mt-1 text-3xl font-semibold text-orange-700">
+                {runs.filter((run) => run.requires_approval).length}
+              </h2>
+            </div>
+
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
+                Git Preflights
+              </p>
+
+              <h2 className="mt-1 text-3xl font-semibold text-purple-700">
+                {
+                  runs.filter(
+                    (run) =>
+                      run.approval_context_type === "git_write_preflight" ||
+                      run.approval_context?.type === "git_write_preflight"
+                  ).length
+                }
+              </h2>
+            </div>
+          </section>
+
+          <section className="sarvam-card rounded-[1.5rem] p-5">
+            <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
+              <Activity className="h-4 w-4 text-blue-600" />
+              Recent Workflow Runs
+            </div>
+
+            {runs.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                No workflow runs recorded yet.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {runs
+                  .slice()
+                  .reverse()
+                  .map((run) => {
+                    const hasGitPreflight =
+                      run.approval_context_type === "git_write_preflight" ||
+                      run.approval_context?.type === "git_write_preflight";
+
+                    return (
+                      <Link
+                        key={run.run_id}
+                        href={`/workflows/${run.run_id}`}
+                        className="block rounded-2xl border border-blue-100 bg-blue-50/30 p-4 transition hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50"
+                      >
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                          <div className="min-w-0 flex-1">
+                            <div className="mb-2 flex flex-wrap items-center gap-2">
+                              <span
+                                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${getStatusStyle(
+                                  run.status
+                                )}`}
+                              >
+                                {getStatusIcon(run.status)}
+                                {run.status}
+                              </span>
+
+                              <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                                Decision: {run.decision}
+                              </span>
+
+                              <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                                Steps: {run.step_count}
+                              </span>
+
+                              <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                                Logs: {run.log_count}
+                              </span>
+
+                              {hasGitPreflight && (
+                                <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700">
+                                  <ShieldAlert className="h-3.5 w-3.5" />
+                                  Git Preflight Available
+                                </span>
+                              )}
+                            </div>
+
+                            <h3 className="truncate text-sm font-semibold text-slate-950">
+                              {run.user_goal}
+                            </h3>
+
+                            <p className="mt-1 text-xs text-slate-600">
+                              <strong>Final Answer:</strong>{" "}
+                              {run.final_answer || "No final answer yet"}
+                            </p>
+
+                            {run.pending_action && (
+                              <p className="mt-1 text-xs text-slate-600">
+                                <strong>Pending Action:</strong>{" "}
+                                {run.pending_action}
+                              </p>
+                            )}
+
+                            {hasGitPreflight && (
+                              <div className="mt-3 rounded-xl border border-orange-100 bg-white p-3">
+                                <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-orange-700">
+                                  <GitBranch className="h-3.5 w-3.5" />
+                                  Git Approval Preview
+                                </div>
+
+                                <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-2">
+                                  <p>
+                                    <strong>Branch:</strong>{" "}
+                                    {run.approval_context?.branch ||
+                                      "Unknown branch"}
+                                  </p>
+
+                                  <p>
+                                    <strong>Action:</strong>{" "}
+                                    {run.approval_context?.pending_action ||
+                                      run.pending_action ||
+                                      "Unknown action"}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          <p className="max-w-xs break-all rounded-xl bg-white p-3 text-[11px] text-slate-500">
+                            {run.run_id}
+                          </p>
+                        </div>
+                      </Link>
+                    );
+                  })}
+              </div>
+            )}
+          </section>
+        </>
       )}
     </div>
   );

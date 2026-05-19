@@ -1,20 +1,34 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   Activity,
   ArrowLeft,
   CheckCircle2,
-  ClipboardList,
-  FileText,
+  Clock,
+  GitBranch,
   History,
   ShieldAlert,
-  Terminal,
+  Workflow,
   XCircle,
 } from "lucide-react";
-import Link from "next/link";
 import { getAiraXRun } from "@/lib/api";
+
+type ApprovalContext = {
+  type?: string;
+  tool_name?: string;
+  tool_action?: string;
+  pending_action?: string;
+  commit_message?: string | null;
+  branch?: string;
+  changed_files?: string;
+  diff_summary?: string;
+  branch_success?: boolean;
+  status_success?: boolean;
+  diff_success?: boolean;
+};
 
 type WorkflowLog = {
   timestamp: string;
@@ -44,23 +58,12 @@ type WorkflowRun = {
   plan: WorkflowStep[];
   execution_outputs: any[];
   memory: any;
-  workflow_logs: WorkflowLog[];
-  workflow_summary: any;
-  requires_approval: boolean;
+  workflow_logs?: WorkflowLog[];
+  workflow_summary?: any;
+  requires_approval?: boolean;
   pending_action?: string;
+  approval_context?: ApprovalContext | null;
 };
-
-function getStatusIcon(status: string) {
-  if (status === "completed") return <CheckCircle2 className="h-5 w-5" />;
-  if (status === "failed" || status === "rejected") {
-    return <XCircle className="h-5 w-5" />;
-  }
-  if (status === "requires_approval") {
-    return <ShieldAlert className="h-5 w-5" />;
-  }
-
-  return <Activity className="h-5 w-5" />;
-}
 
 function getStatusStyle(status: string) {
   if (status === "completed") {
@@ -78,74 +81,168 @@ function getStatusStyle(status: string) {
   return "border-blue-200 bg-blue-50 text-blue-700";
 }
 
-export default function WorkflowDetailsPage() {
-  const params = useParams<{ run_id: string }>();
-  const runId = params.run_id;
+function getStatusIcon(status: string) {
+  if (status === "completed") {
+    return <CheckCircle2 className="h-4 w-4" />;
+  }
+
+  if (status === "failed" || status === "rejected") {
+    return <XCircle className="h-4 w-4" />;
+  }
+
+  if (status === "requires_approval") {
+    return <ShieldAlert className="h-4 w-4" />;
+  }
+
+  return <Clock className="h-4 w-4" />;
+}
+
+function renderApprovalContext(context?: ApprovalContext | null) {
+  if (!context || context.type !== "git_write_preflight") {
+    return null;
+  }
+
+  return (
+    <section className="sarvam-card rounded-[1.5rem] border border-orange-200 bg-orange-50/40 p-5">
+      <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-orange-900">
+        <ShieldAlert className="h-4 w-4" />
+        Git Preflight Summary
+      </div>
+
+      <p className="mb-4 text-sm leading-6 text-orange-800">
+        This workflow required approval for a Git write action. AIRA-X captured
+        the repository state before asking for permission.
+      </p>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Current Branch
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {context.branch || "Unknown branch"}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Git Action
+          </p>
+
+          <p className="mt-1 break-words text-sm font-semibold text-slate-900">
+            {context.pending_action || "Unknown action"}
+          </p>
+        </div>
+      </div>
+
+      {context.commit_message && (
+        <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+            Commit Message
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-blue-900">
+            {context.commit_message}
+          </p>
+        </div>
+      )}
+
+      <div className="mt-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Changed Files
+        </p>
+
+        <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-4 text-xs leading-5 text-slate-100">
+          {context.changed_files?.trim() || "No changed files detected."}
+        </pre>
+      </div>
+
+      <div className="mt-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Diff Summary
+        </p>
+
+        <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-4 text-xs leading-5 text-slate-100">
+          {context.diff_summary?.trim() || "No diff summary available."}
+        </pre>
+      </div>
+    </section>
+  );
+}
+
+export default function WorkflowDetailPage() {
+  const params = useParams();
+  const runIdParam = params?.run_id;
+  const runId = Array.isArray(runIdParam) ? runIdParam[0] : runIdParam;
 
   const [run, setRun] = useState<WorkflowRun | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    async function loadRun() {
-      try {
-        setLoading(true);
+  async function loadRun() {
+    if (!runId) return;
 
-        const data = await getAiraXRun(runId);
+    try {
+      setLoading(true);
 
-        if (!data.success) {
-          setError(data.error || "Workflow run not found.");
-          return;
-        }
+      const data = await getAiraXRun(runId);
 
-        setRun(data.run);
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Failed to load workflow run.";
-
-        setError(message);
-      } finally {
-        setLoading(false);
+      if (!data.success) {
+        setError(data.error || "Workflow run not found.");
+        setRun(null);
+        return;
       }
-    }
 
-    if (runId) {
-      loadRun();
+      setRun(data.run);
+      setError("");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to load workflow run.";
+
+      setError(message);
+      setRun(null);
+    } finally {
+      setLoading(false);
     }
+  }
+
+  useEffect(() => {
+    loadRun();
   }, [runId]);
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-6xl flex-col gap-6">
       <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-6">
-        <div className="absolute -right-12 -top-16 h-40 w-40 rounded-full bg-purple-200/50 blur-3xl" />
+        <div className="absolute -right-12 -top-16 h-40 w-40 rounded-full bg-blue-200/50 blur-3xl" />
 
         <div className="relative z-10">
           <Link
             href="/workflows"
-            className="mb-4 inline-flex items-center gap-2 rounded-full border border-purple-100 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-700 transition hover:bg-purple-100"
+            className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to Workflow Runs
           </Link>
 
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-purple-100 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-700">
-            <Activity className="h-3.5 w-3.5" />
-            AIRA-X Workflow Details
+            <Workflow className="h-3.5 w-3.5" />
+            AIRA-X Workflow Detail
           </div>
 
           <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
-            Workflow Run Details
+            Workflow Run
           </h1>
 
           <p className="mt-2 max-w-3xl break-all text-sm leading-6 text-slate-600">
-            Run ID: {runId}
+            {runId}
           </p>
         </div>
       </section>
 
       {loading && (
-        <div className="w-fit rounded-full border border-purple-100 bg-white px-5 py-3 text-sm font-medium text-purple-700 shadow-sm">
-          Loading workflow details...
+        <div className="w-fit rounded-full border border-blue-100 bg-white px-5 py-3 text-sm font-medium text-blue-700 shadow-sm">
+          Loading workflow run...
         </div>
       )}
 
@@ -158,65 +255,48 @@ export default function WorkflowDetailsPage() {
       {!loading && !error && run && (
         <>
           <section className="sarvam-card rounded-[1.5rem] p-5">
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div>
-                <span
-                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${getStatusStyle(
-                    run.status
-                  )}`}
-                >
-                  {getStatusIcon(run.status)}
-                  {run.status}
-                </span>
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <span
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${getStatusStyle(
+                  run.status
+                )}`}
+              >
+                {getStatusIcon(run.status)}
+                {run.status}
+              </span>
 
-                <h2 className="mt-4 text-xl font-semibold text-slate-950">
-                  {run.memory?.workflow_summary?.user_goal || "Workflow Run"}
-                </h2>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                Decision: {run.decision}
+              </span>
 
-                <p className="mt-2 text-sm text-slate-600">
-                  <strong>Decision:</strong> {run.decision}
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                Steps: {run.plan.length}
+              </span>
+
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                Logs: {run.workflow_logs?.length || 0}
+              </span>
+            </div>
+
+            <div className="space-y-2 text-sm text-slate-700">
+              <p>
+                <strong>Final Answer:</strong>{" "}
+                {run.final_answer || "No final answer yet"}
+              </p>
+
+              {run.pending_action && (
+                <p>
+                  <strong>Pending Action:</strong> {run.pending_action}
                 </p>
-
-                <p className="mt-1 text-sm text-slate-600">
-                  <strong>Final Answer:</strong>{" "}
-                  {run.final_answer || "No final answer yet"}
-                </p>
-
-                {run.pending_action && (
-                  <div className="mt-4 rounded-xl border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
-                    <strong>Pending action:</strong> {run.pending_action}
-                  </div>
-                )}
-              </div>
-
-              <div className="grid gap-3 text-sm sm:grid-cols-3">
-                <div className="rounded-2xl bg-blue-50 p-4 text-blue-700">
-                  <p className="font-semibold">Steps</p>
-                  <p className="mt-1 text-2xl font-bold">
-                    {run.plan.length}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl bg-purple-50 p-4 text-purple-700">
-                  <p className="font-semibold">Logs</p>
-                  <p className="mt-1 text-2xl font-bold">
-                    {run.workflow_logs.length}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl bg-slate-50 p-4 text-slate-700">
-                  <p className="font-semibold">Tool Calls</p>
-                  <p className="mt-1 text-2xl font-bold">
-                    {run.execution_outputs.length}
-                  </p>
-                </div>
-              </div>
+              )}
             </div>
           </section>
 
+          {renderApprovalContext(run.approval_context)}
+
           <section className="sarvam-card rounded-[1.5rem] p-5">
             <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <ClipboardList className="h-4 w-4 text-purple-600" />
+              <GitBranch className="h-4 w-4 text-blue-600" />
               Execution Plan
             </div>
 
@@ -238,7 +318,7 @@ export default function WorkflowDetailsPage() {
 
                   <p className="mt-1 text-slate-600">{step.description}</p>
 
-                  <div className="mt-3 grid gap-2 text-xs text-slate-600 md:grid-cols-4">
+                  <div className="mt-3 grid gap-2 text-xs text-slate-600 md:grid-cols-2">
                     <p>
                       <strong>Status:</strong> {step.status}
                     </p>
@@ -247,19 +327,26 @@ export default function WorkflowDetailsPage() {
                       <strong>Agent:</strong> {step.assigned_agent}
                     </p>
 
-                    <p>
-                      <strong>Tool:</strong> {step.tool_name || "None"}
-                    </p>
+                    {step.tool_name && (
+                      <p>
+                        <strong>Tool:</strong> {step.tool_name}
+                      </p>
+                    )}
 
-                    <p>
-                      <strong>Action:</strong> {step.tool_action || "None"}
-                    </p>
+                    {step.tool_action && (
+                      <p>
+                        <strong>Action:</strong> {step.tool_action}
+                      </p>
+                    )}
                   </div>
 
                   {step.result && (
-                    <div className="mt-3 rounded-xl bg-white p-3 text-xs text-slate-700">
-                      <strong>Result:</strong>
-                      <pre className="mt-2 whitespace-pre-wrap break-words">
+                    <div className="mt-3">
+                      <p className="mb-2 text-xs font-semibold text-slate-700">
+                        Result:
+                      </p>
+
+                      <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-950 p-4 text-xs leading-6 text-slate-100">
                         {step.result}
                       </pre>
                     </div>
@@ -275,85 +362,57 @@ export default function WorkflowDetailsPage() {
             </div>
           </section>
 
-          <section className="sarvam-card rounded-[1.5rem] p-5">
-            <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <Terminal className="h-4 w-4 text-purple-600" />
-              Tool Execution Outputs
-            </div>
+          {run.workflow_logs && run.workflow_logs.length > 0 && (
+            <section className="sarvam-card rounded-[1.5rem] p-5">
+              <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <History className="h-4 w-4 text-purple-600" />
+                Workflow Logs
+              </div>
 
-            {run.execution_outputs.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                No tool execution outputs recorded for this run.
-              </p>
-            ) : (
               <div className="space-y-3">
-                {run.execution_outputs.map((output, index) => (
+                {run.workflow_logs.map((log, index) => (
                   <div
-                    key={index}
-                    className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-700"
+                    key={`${log.timestamp}-${index}`}
+                    className="rounded-xl border border-purple-100 bg-purple-50/30 p-3 text-xs text-slate-700"
                   >
-                    <p>
-                      <strong>Agent:</strong> {output.agent}
-                    </p>
-                    <p>
-                      <strong>Tool:</strong> {output.tool_used}
-                    </p>
-                    <p>
-                      <strong>Action:</strong> {output.tool_action}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-semibold text-slate-900">
+                        {log.agent}
+                      </p>
+
+                      <p className="text-slate-400">
+                        {new Date(log.timestamp).toLocaleString()}
+                      </p>
+                    </div>
+
+                    <p className="mt-1">
+                      <strong>Event:</strong> {log.event}
                     </p>
 
-                    <pre className="mt-3 max-h-72 overflow-auto rounded-xl bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">
-                      {JSON.stringify(output.tool_result, null, 2)}
+                    <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">
+                      {JSON.stringify(log.details, null, 2)}
                     </pre>
                   </div>
                 ))}
               </div>
+            </section>
+          )}
+
+          <section className="sarvam-card rounded-[1.5rem] p-5">
+            <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
+              <Activity className="h-4 w-4 text-blue-600" />
+              Raw Execution Outputs
+            </div>
+
+            {run.execution_outputs.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                No execution outputs recorded.
+              </p>
+            ) : (
+              <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-4 text-xs leading-6 text-slate-100">
+                {JSON.stringify(run.execution_outputs, null, 2)}
+              </pre>
             )}
-          </section>
-
-          <section className="sarvam-card rounded-[1.5rem] p-5">
-            <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <History className="h-4 w-4 text-purple-600" />
-              Workflow Logs
-            </div>
-
-            <div className="space-y-3">
-              {run.workflow_logs.map((log, index) => (
-                <div
-                  key={`${log.timestamp}-${index}`}
-                  className="rounded-2xl border border-purple-100 bg-purple-50/30 p-4 text-xs text-slate-700"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-semibold text-slate-900">
-                      {log.agent}
-                    </p>
-
-                    <p className="text-slate-400">
-                      {new Date(log.timestamp).toLocaleString()}
-                    </p>
-                  </div>
-
-                  <p className="mt-1">
-                    <strong>Event:</strong> {log.event}
-                  </p>
-
-                  <pre className="mt-3 max-h-64 overflow-auto rounded-xl bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">
-                    {JSON.stringify(log.details, null, 2)}
-                  </pre>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="sarvam-card rounded-[1.5rem] p-5">
-            <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FileText className="h-4 w-4 text-purple-600" />
-              Memory Summary
-            </div>
-
-            <pre className="max-h-96 overflow-auto rounded-2xl bg-slate-950 p-4 text-xs leading-6 text-slate-100">
-              {JSON.stringify(run.workflow_summary || {}, null, 2)}
-            </pre>
           </section>
         </>
       )}

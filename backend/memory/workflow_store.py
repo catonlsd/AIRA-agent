@@ -84,6 +84,8 @@ class WorkflowStore:
         summaries = []
 
         for run_id, state in cls.runs.items():
+            approval_context = state.memory.get("approval_context", {})
+
             summaries.append(
                 {
                     "run_id": run_id,
@@ -95,6 +97,8 @@ class WorkflowStore:
                     "retry_count": state.retry_count,
                     "requires_approval": state.status == "requires_approval",
                     "pending_action": state.memory.get("pending_action"),
+                    "approval_context": approval_context,
+                    "approval_context_type": approval_context.get("type"),
                     "step_count": len(state.plan),
                     "log_count": len(state.memory.get("workflow_logs", [])),
                 }
