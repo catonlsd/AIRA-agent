@@ -171,6 +171,55 @@ function renderApprovalContext(context?: ApprovalContext | null) {
   );
 }
 
+function renderCleanupActions(memory: any) {
+  const cleanupActions = memory?.cleanup_actions || [];
+
+  if (!Array.isArray(cleanupActions) || cleanupActions.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="sarvam-card rounded-[1.5rem] border border-green-200 bg-green-50/40 p-5">
+      <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-green-900">
+        <CheckCircle2 className="h-4 w-4" />
+        Cleanup Actions
+      </div>
+
+      <p className="mb-4 text-sm leading-6 text-green-800">
+        AIRA-X performed cleanup after the workflow was rejected or stopped.
+      </p>
+
+      <div className="space-y-3">
+        {cleanupActions.map((cleanup: any, index: number) => (
+          <div
+            key={`${cleanup.tool_action}-${index}`}
+            className="rounded-xl border border-green-200 bg-white p-3 text-xs text-green-900"
+          >
+            <p>
+              <strong>Action:</strong> {cleanup.tool_name}:{cleanup.tool_action}
+            </p>
+
+            <p className="mt-1">
+              <strong>Reason:</strong> {cleanup.reason}
+            </p>
+
+            <p className="mt-1">
+              <strong>Status:</strong>{" "}
+              {cleanup.result?.success ? "successful" : "failed"}
+            </p>
+
+            {cleanup.result?.command && (
+              <p className="mt-1">
+                <strong>Command:</strong> {cleanup.result.command}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function WorkflowDetailPage() {
   const params = useParams();
   const runIdParam = params?.run_id;
@@ -293,6 +342,8 @@ export default function WorkflowDetailPage() {
           </section>
 
           {renderApprovalContext(run.approval_context)}
+
+          {renderCleanupActions(run.memory)}
 
           <section className="sarvam-card rounded-[1.5rem] p-5">
             <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
