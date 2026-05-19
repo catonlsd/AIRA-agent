@@ -86,6 +86,7 @@ const knownLogEvents = [
   "approval_already_granted",
   "approval_granted_by_user",
   "approval_rejected_by_user",
+  "git_staging_cleanup_after_rejection",
   "execution_started",
   "tool_policy_checked",
   "execution_success",
@@ -173,6 +174,18 @@ function renderLogMessage(log: WorkflowLog) {
           <strong>{log.details.rejected_action}</strong>
         </p>
       );
+
+    case "git_staging_cleanup_after_rejection":
+      return (
+      <p>
+        AIRA-X automatically unstaged Git changes after the commit approval was
+        rejected. Cleanup status:{" "}
+        <strong>
+          {log.details.cleanup_success ? "successful" : "failed"}
+        </strong>
+        .
+        </p>
+        );
 
     case "execution_started":
       return <p>Execution started for step: {log.details.step_title}</p>;
