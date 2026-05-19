@@ -428,6 +428,67 @@ async def test_git_preflight_context():
 
     return response
 
+async def test_workflow_runs_include_git_preflight_summary():
+    print("Testing Workflow Runs API includes Git preflight summary...")
+
+    preflight_response = await run_aira_x(
+        AiraXRunRequest(
+            goal='commit all changes with message "Workflow list preflight test"'
+        )
+    )
+
+    assert_equal(
+        preflight_response["status"],
+        "requires_approval",
+        "Preflight workflow should require approval",
+    )
+
+    runs_response = await list_aira_x_runs()
+
+    matching_run = next(
+        (
+            run
+            for run in runs_response["runs"]
+            if run["run_id"] == preflight_response["run_id"]
+        ),
+        None,
+    )
+
+    assert_true(
+        matching_run is not None,
+        "Preflight workflow should appear in workflow runs list",
+    )
+
+    assert_equal(
+        matching_run["approval_context_type"],
+        "git_write_preflight",
+        "Workflow run summary should include approval context type",
+    )
+
+    assert_true(
+        isinstance(matching_run.get("approval_context"), dict),
+        "Workflow run summary should include approval context",
+    )
+
+    assert_equal(
+        matching_run["approval_context"].get("pending_action"),
+        "git_tool:stage_all",
+        "Workflow run summary should include pending Git action",
+    )
+
+    assert_true(
+        "branch" in matching_run["approval_context"],
+        "Workflow run summary should include Git branch",
+    )
+
+    assert_true(
+        "diff_summary" in matching_run["approval_context"],
+        "Workflow run summary should include diff summary",
+    )
+
+    print("✅ Workflow Runs Git preflight summary passed")
+
+    return matching_run
 
 async def test_tool_registry_api():
     print("Testing Tool Registry API...")
@@ -563,6 +624,7 @@ async def main():
     await test_git_commit_custom_message_requires_approval()
     await test_multi_step_commit_requires_stage_approval()
     await test_git_preflight_context()
+    await test_workflow_runs_include_git_preflight_summary()
 
     await test_tool_registry_api()
     await test_agent_registry_api()
