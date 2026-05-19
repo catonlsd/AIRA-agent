@@ -351,6 +351,52 @@ function renderApprovalContext(context?: ApprovalContext | null) {
   );
 }
 
+function renderCleanupActions(memory: any) {
+  const cleanupActions = memory?.cleanup_actions || [];
+
+  if (!Array.isArray(cleanupActions) || cleanupActions.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-5 rounded-2xl border border-green-200 bg-green-50 p-5">
+      <h3 className="text-sm font-bold text-green-900">Cleanup Actions</h3>
+
+      <p className="mt-2 text-sm leading-6 text-green-800">
+        AIRA-X performed cleanup after the workflow was rejected or stopped.
+      </p>
+
+      <div className="mt-4 space-y-3">
+        {cleanupActions.map((cleanup: any, index: number) => (
+          <div
+            key={`${cleanup.tool_action}-${index}`}
+            className="rounded-xl border border-green-200 bg-white p-3 text-xs text-green-900"
+          >
+            <p>
+              <strong>Action:</strong> {cleanup.tool_name}:{cleanup.tool_action}
+            </p>
+
+            <p className="mt-1">
+              <strong>Reason:</strong> {cleanup.reason}
+            </p>
+
+            <p className="mt-1">
+              <strong>Status:</strong>{" "}
+              {cleanup.result?.success ? "successful" : "failed"}
+            </p>
+
+            {cleanup.result?.command && (
+              <p className="mt-1">
+                <strong>Command:</strong> {cleanup.result.command}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function ChatPage() {
   const [question, setQuestion] = useState("");
   const [forceWeb, setForceWeb] = useState(false);
@@ -605,6 +651,8 @@ export default function ChatPage() {
                 </div>
               </div>
             )}
+
+            {renderCleanupActions(airaXResponse.memory)}
 
             <div className="mt-5 space-y-3">
               <h3 className="text-sm font-semibold text-slate-900">
