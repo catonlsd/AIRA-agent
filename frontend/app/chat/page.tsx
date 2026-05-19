@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import {
   Globe2,
   Cpu,
@@ -20,13 +20,31 @@ import {
   rejectAiraX,
 } from "@/lib/api";
 
-type Turn = { question: string; response?: ChatResponse; error?: string };
+type Turn = {
+  question: string;
+  response?: ChatResponse;
+  error?: string;
+};
 
 type WorkflowLog = {
   timestamp: string;
   agent: string;
   event: string;
   details: any;
+};
+
+type ApprovalContext = {
+  type?: string;
+  tool_name?: string;
+  tool_action?: string;
+  pending_action?: string;
+  commit_message?: string | null;
+  branch?: string;
+  changed_files?: string;
+  diff_summary?: string;
+  branch_success?: boolean;
+  status_success?: boolean;
+  diff_success?: boolean;
 };
 
 type AiraXResponse = {
@@ -36,14 +54,18 @@ type AiraXResponse = {
   final_answer: string | null;
   requires_approval?: boolean;
   pending_action?: string;
+  approval_context?: ApprovalContext | null;
   plan: {
     id: number;
     title: string;
     description: string;
     status: string;
     assigned_agent: string;
-    result?: string;
-    error?: string;
+    tool_name?: string | null;
+    tool_action?: string | null;
+    tool_payload?: any;
+    result?: string | null;
+    error?: string | null;
   }[];
   execution_outputs: any[];
   memory: any;
@@ -65,6 +87,7 @@ const knownLogEvents = [
   "approval_granted_by_user",
   "approval_rejected_by_user",
   "execution_started",
+  "tool_policy_checked",
   "execution_success",
   "execution_failed",
   "execution_waiting_for_approval",
@@ -77,6 +100,8 @@ const knownLogEvents = [
   "workflow_resumed_after_approval",
   "workflow_blocked_by_safety",
   "workflow_stopped_after_rejection",
+  "workflow_stopped_non_retryable_failure",
+  "workflow_failed_max_retries",
   "workflow_completed",
   "memory_summary_created",
 ];
@@ -152,6 +177,14 @@ function renderLogMessage(log: WorkflowLog) {
     case "execution_started":
       return <p>Execution started for step: {log.details.step_title}</p>;
 
+    case "tool_policy_checked":
+      return (
+        <p>
+          Tool policy checked. Risk level:{" "}
+          <strong>{log.details.risk_level || "unknown"}</strong>
+        </p>
+      );
+
     case "execution_success":
       return <p>Execution completed successfully.</p>;
 
@@ -211,6 +244,12 @@ function renderLogMessage(log: WorkflowLog) {
     case "workflow_stopped_after_rejection":
       return <p>Workflow stopped because the user rejected the action.</p>;
 
+    case "workflow_stopped_non_retryable_failure":
+      return <p>Workflow stopped because a non-retryable action failed.</p>;
+
+    case "workflow_failed_max_retries":
+      return <p>Workflow failed after maximum retries.</p>;
+
     case "workflow_completed":
       return <p>Workflow completed successfully.</p>;
 
@@ -220,6 +259,83 @@ function renderLogMessage(log: WorkflowLog) {
     default:
       return <p>{JSON.stringify(log.details)}</p>;
   }
+}
+
+function renderApprovalContext(context?: ApprovalContext | null) {
+  if (!context) return null;
+
+  if (context.type !== "git_write_preflight") {
+    return null;
+  }
+
+  return (
+    <div className="mt-4 rounded-2xl border border-orange-200 bg-white p-4">
+      <div className="mb-3">
+        <h4 className="text-sm font-bold text-orange-900">
+          Git Preflight Summary
+        </h4>
+
+        <p className="mt-1 text-xs leading-5 text-orange-700">
+          Review these repository changes before approving this Git write
+          action.
+        </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Current Branch
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {context.branch || "Unknown branch"}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Git Action
+          </p>
+
+          <p className="mt-1 break-words text-sm font-semibold text-slate-900">
+            {context.pending_action || "Unknown action"}
+          </p>
+        </div>
+      </div>
+
+      {context.commit_message && (
+        <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+            Commit Message
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-blue-900">
+            {context.commit_message}
+          </p>
+        </div>
+      )}
+
+      <div className="mt-3">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Changed Files
+        </p>
+
+        <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-100">
+          {context.changed_files?.trim() || "No changed files detected."}
+        </pre>
+      </div>
+
+      <div className="mt-3">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Diff Summary
+        </p>
+
+        <pre className="max-h-52 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-100">
+          {context.diff_summary?.trim() || "No diff summary available."}
+        </pre>
+      </div>
+    </div>
+  );
 }
 
 export default function ChatPage() {
@@ -234,7 +350,7 @@ export default function ChatPage() {
     null
   );
 
-  async function submit(event: React.FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
 
     const trimmed = question.trim();
@@ -248,16 +364,16 @@ export default function ChatPage() {
       const response = await sendChat(trimmed, forceWeb || undefined);
 
       setTurns((prev) =>
-        prev.map((turn, i) =>
-          i === prev.length - 1 ? { ...turn, response } : turn
+        prev.map((turn, index) =>
+          index === prev.length - 1 ? { ...turn, response } : turn
         )
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Chat failed.";
 
       setTurns((prev) =>
-        prev.map((turn, i) =>
-          i === prev.length - 1 ? { ...turn, error: message } : turn
+        prev.map((turn, index) =>
+          index === prev.length - 1 ? { ...turn, error: message } : turn
         )
       );
     } finally {
@@ -393,6 +509,7 @@ export default function ChatPage() {
                     <p className="mb-3 text-sm font-semibold text-slate-800">
                       Sources
                     </p>
+
                     <CitationList citations={turn.response.citations} />
                   </div>
                 )}
@@ -414,9 +531,11 @@ export default function ChatPage() {
               <p>
                 <strong>Status:</strong> {airaXResponse.status}
               </p>
+
               <p>
                 <strong>Decision:</strong> {airaXResponse.decision}
               </p>
+
               <p>
                 <strong>Final Answer:</strong>{" "}
                 {airaXResponse.final_answer || "No final answer yet"}
@@ -444,6 +563,8 @@ export default function ChatPage() {
                       <strong>Pending action:</strong>{" "}
                       {airaXResponse.pending_action || "Unknown action"}
                     </div>
+
+                    {renderApprovalContext(airaXResponse.approval_context)}
 
                     <div className="mt-4 flex flex-wrap gap-3">
                       <button
@@ -502,10 +623,24 @@ export default function ChatPage() {
                     <p>
                       <strong>Agent:</strong> {step.assigned_agent}
                     </p>
+
+                    {step.tool_name && (
+                      <p>
+                        <strong>Tool:</strong> {step.tool_name}
+                      </p>
+                    )}
+
+                    {step.tool_action && (
+                      <p>
+                        <strong>Action:</strong> {step.tool_action}
+                      </p>
+                    )}
                   </div>
 
                   <div className="mt-3">
-                    <p className="mb-2 text-xs font-semibold text-slate-700">Result:</p>
+                    <p className="mb-2 text-xs font-semibold text-slate-700">
+                      Result:
+                    </p>
 
                     {step.result ? (
                       <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-950 p-4 text-xs leading-6 text-slate-100">

@@ -39,6 +39,7 @@ def serialize_state(state):
         "workflow_summary": state.memory.get("workflow_summary", {}),
         "requires_approval": state.status == "requires_approval",
         "pending_action": state.memory.get("pending_action"),
+        "approval_context": state.memory.get("approval_context", {}),
     }
 
 

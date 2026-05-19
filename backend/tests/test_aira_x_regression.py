@@ -342,6 +342,92 @@ async def test_multi_step_commit_requires_stage_approval():
 
     return response
 
+async def test_git_preflight_context():
+    print("Testing Git preflight approval context...")
+
+    response = await run_aira_x(
+        AiraXRunRequest(
+            goal='commit all changes with message "Test preflight context"'
+        )
+    )
+
+    assert_equal(
+        response["status"],
+        "requires_approval",
+        "Git preflight workflow should require approval",
+    )
+
+    assert_equal(
+        response["pending_action"],
+        "git_tool:stage_all",
+        "Git preflight pending action should be stage_all",
+    )
+
+    approval_context = response.get("approval_context")
+
+    assert_true(
+        isinstance(approval_context, dict),
+        "Approval context should exist",
+    )
+
+    assert_equal(
+        approval_context.get("type"),
+        "git_write_preflight",
+        "Approval context type",
+    )
+
+    assert_equal(
+        approval_context.get("tool_name"),
+        "git_tool",
+        "Approval context tool name",
+    )
+
+    assert_equal(
+        approval_context.get("tool_action"),
+        "stage_all",
+        "Approval context tool action",
+    )
+
+    assert_equal(
+        approval_context.get("pending_action"),
+        "git_tool:stage_all",
+        "Approval context pending action",
+    )
+
+    assert_true(
+        "branch" in approval_context,
+        "Approval context contains branch",
+    )
+
+    assert_true(
+        "changed_files" in approval_context,
+        "Approval context contains changed files",
+    )
+
+    assert_true(
+        "diff_summary" in approval_context,
+        "Approval context contains diff summary",
+    )
+
+    assert_true(
+        "branch_success" in approval_context,
+        "Approval context contains branch success flag",
+    )
+
+    assert_true(
+        "status_success" in approval_context,
+        "Approval context contains status success flag",
+    )
+
+    assert_true(
+        "diff_success" in approval_context,
+        "Approval context contains diff success flag",
+    )
+
+    print("✅ Git preflight approval context passed")
+
+    return response
+
 
 async def test_tool_registry_api():
     print("Testing Tool Registry API...")
@@ -476,6 +562,7 @@ async def main():
     await test_git_commit_requires_approval()
     await test_git_commit_custom_message_requires_approval()
     await test_multi_step_commit_requires_stage_approval()
+    await test_git_preflight_context()
 
     await test_tool_registry_api()
     await test_agent_registry_api()

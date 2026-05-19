@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Dict, Any
 
 from agents.base_agent import BaseAgent
 from schemas.aira_state import AiraXState
@@ -89,6 +90,12 @@ class ExecutionAgent(BaseAgent):
 
         state.memory["pending_action"] = pending_action
         state.memory["current_tool_policy"] = tool_policy
+        state.memory["approval_context"] = self._build_approval_context(
+            tool_name=current_step.tool_name,
+            action=current_step.tool_action,
+            payload=current_step.tool_payload,
+            pending_action=pending_action,
+        )
 
         safety = SafetyAgent()
         state = await safety.run(state)
@@ -124,6 +131,7 @@ class ExecutionAgent(BaseAgent):
                 details={
                     "step_id": current_step.id,
                     "action": pending_action,
+                    "approval_context": state.memory.get("approval_context", {}),
                 },
             )
 
@@ -226,3 +234,50 @@ class ExecutionAgent(BaseAgent):
             return f"git_tool:{action}"
 
         return f"{tool_name}:{action}"
+
+    def _build_approval_context(
+        self,
+        tool_name: str,
+        action: str,
+        payload: Dict[str, Any],
+        pending_action: str,
+    ) -> Dict[str, Any]:
+        if tool_name == "git_tool" and action in {"stage_all", "commit"}:
+            branch_result = ToolRouter.run(
+                tool_name="git_tool",
+                action="branch",
+                payload={},
+            )
+
+            status_result = ToolRouter.run(
+                tool_name="git_tool",
+                action="status",
+                payload={},
+            )
+
+            diff_result = ToolRouter.run(
+                tool_name="git_tool",
+                action="diff",
+                payload={},
+            )
+
+            return {
+                "type": "git_write_preflight",
+                "tool_name": tool_name,
+                "tool_action": action,
+                "pending_action": pending_action,
+                "commit_message": payload.get("message"),
+                "branch": branch_result.get("output", ""),
+                "changed_files": status_result.get("output", ""),
+                "diff_summary": diff_result.get("output", ""),
+                "branch_success": branch_result.get("success", False),
+                "status_success": status_result.get("success", False),
+                "diff_success": diff_result.get("success", False),
+            }
+
+        return {
+            "type": "generic_action",
+            "tool_name": tool_name,
+            "tool_action": action,
+            "pending_action": pending_action,
+        }
