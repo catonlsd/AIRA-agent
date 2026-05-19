@@ -1,6 +1,10 @@
 import sys
 from pathlib import Path
 import asyncio
+import app.routes.aira_x as aira_x_routes
+
+from schemas.aira_state import AiraXState, AiraXStep
+from memory.workflow_store import WorkflowStore
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -592,6 +596,10 @@ async def test_tool_registry_api():
     )
 
     assert_true("stage_all" in git_tool["actions"], "git_tool stage_all action exists")
+    assert_true(
+        "unstage_all" in git_tool["actions"],
+        "git_tool unstage_all action exists",
+    )
     assert_true("commit" in git_tool["actions"], "git_tool commit action exists")
 
     assert_true(
@@ -602,6 +610,11 @@ async def test_tool_registry_api():
     assert_true(
         git_tool["policy"]["commit"]["requires_approval"] is True,
         "git_tool commit requires approval",
+    )
+
+    assert_true(
+        git_tool["policy"]["unstage_all"]["requires_approval"] is False,
+        "git_tool unstage_all does not require approval",
     )
 
     assert_true(
@@ -700,6 +713,161 @@ async def test_workflow_detail_api(sample_run):
 
     print("✅ Workflow Detail API passed")
 
+async def test_commit_rejection_triggers_unstage_cleanup():
+    print("Testing commit rejection triggers unstage cleanup...")
+
+    run_id = "test-auto-unstage-cleanup"
+
+    state = AiraXState(
+        user_goal='commit all changes with message "Test cleanup"',
+        run_id=run_id,
+    )
+
+    state.status = "requires_approval"
+    state.decision = "stop_approval_required"
+    state.current_step = 2
+
+    state.plan = [
+        AiraXStep(
+            id=1,
+            title="Stage Git changes",
+            description="Stage all current Git changes.",
+            assigned_agent="execution_agent",
+            tool_name="git_tool",
+            tool_action="stage_all",
+            tool_payload={},
+            status="completed",
+            result="Execution completed successfully.",
+        ),
+        AiraXStep(
+            id=2,
+            title="Commit Git changes",
+            description="Create a local Git commit after staging.",
+            assigned_agent="execution_agent",
+            tool_name="git_tool",
+            tool_action="commit",
+            tool_payload={"message": "Test cleanup"},
+            status="blocked",
+            error="This action requires user approval.",
+        ),
+    ]
+
+    state.memory["pending_action"] = "git_tool:commit -m Test cleanup"
+    state.memory["approval_context"] = {
+        "type": "git_write_preflight",
+        "tool_name": "git_tool",
+        "tool_action": "commit",
+        "pending_action": "git_tool:commit -m Test cleanup",
+        "commit_message": "Test cleanup",
+        "branch": "main",
+        "changed_files": "M backend/example.py",
+        "diff_summary": "backend/example.py | 1 +",
+    }
+
+    state.execution_outputs.append(
+        {
+            "step_id": 1,
+            "agent": "execution_agent",
+            "tool_used": "git_tool",
+            "tool_action": "stage_all",
+            "tool_result": {
+                "success": True,
+                "output": "",
+            },
+        }
+    )
+
+    WorkflowStore.save(state)
+
+    original_tool_run = aira_x_routes.ToolRouter.run
+    cleanup_calls = []
+
+    def fake_tool_run(tool_name, action, payload=None):
+        cleanup_calls.append(
+            {
+                "tool_name": tool_name,
+                "action": action,
+                "payload": payload or {},
+            }
+        )
+
+        if tool_name == "git_tool" and action == "unstage_all":
+            return {
+                "success": True,
+                "tool_name": "git_tool",
+                "action": "unstage_all",
+                "command": "git restore --staged .",
+                "output": "",
+                "return_code": 0,
+            }
+
+        return {
+            "success": False,
+            "tool_name": tool_name,
+            "action": action,
+            "output": "",
+            "error": "Unexpected mocked tool call.",
+        }
+
+    try:
+        aira_x_routes.ToolRouter.run = staticmethod(fake_tool_run)
+
+        response = await reject_aira_x_action(
+            AiraXRejectRequest(run_id=run_id)
+        )
+
+    finally:
+        aira_x_routes.ToolRouter.run = original_tool_run
+        WorkflowStore.delete(run_id)
+
+    assert_equal(
+        response["status"],
+        "rejected",
+        "Cleanup rejection workflow status",
+    )
+
+    assert_equal(
+        response["decision"],
+        "approval_rejected",
+        "Cleanup rejection workflow decision",
+    )
+
+    assert_contains(
+        response["final_answer"],
+        "unstaged changes",
+        "Cleanup final answer should mention unstaged changes",
+    )
+
+    assert_true(
+        any(
+            call["tool_name"] == "git_tool"
+            and call["action"] == "unstage_all"
+            for call in cleanup_calls
+        ),
+        "Rejecting commit after stage_all should call git_tool.unstage_all",
+    )
+
+    cleanup_actions = response["memory"].get("cleanup_actions", [])
+
+    assert_true(
+        len(cleanup_actions) >= 1,
+        "Cleanup action should be recorded in memory",
+    )
+
+    assert_equal(
+        cleanup_actions[-1]["tool_action"],
+        "unstage_all",
+        "Cleanup memory should record unstage_all",
+    )
+
+    assert_true(
+        cleanup_actions[-1]["result"]["success"] is True,
+        "Cleanup result should be successful",
+    )
+
+    print("✅ Commit rejection unstage cleanup passed")
+
+    return response
 
 async def main():
     print("\nRunning AIRA-X regression test suite...\n")
@@ -719,6 +887,7 @@ async def main():
     await test_git_preflight_context()
     await test_workflow_runs_include_git_preflight_summary()
     await test_overview_latest_runs_include_git_preflight_summary()
+    await test_commit_rejection_triggers_unstage_cleanup()
 
     await test_tool_registry_api()
     await test_agent_registry_api()

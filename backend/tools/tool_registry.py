@@ -74,6 +74,7 @@ class ToolRegistry:
                 "staged_diff",
                 "full_staged_diff",
                 "stage_all",
+                "unstage_all",
                 "commit",
             ],
             "examples": [
@@ -86,6 +87,7 @@ class ToolRegistry:
                 "git diff --cached --stat",
                 "git diff --cached",
                 "git add .",
+                "git restore --staged .",
                 "git commit -m \"message\"",
             ],
             "policy": {
@@ -133,6 +135,11 @@ class ToolRegistry:
                     "risk_level": "sensitive",
                     "requires_approval": True,
                     "description": "Stages all current repository changes. Requires user approval.",
+                },
+                "unstage_all": {
+                    "risk_level": "sensitive",
+                    "requires_approval": False,
+                    "description": "Unstages all currently staged files after commit rejection. Does not delete file changes.",
                 },
                 "commit": {
                     "risk_level": "sensitive",

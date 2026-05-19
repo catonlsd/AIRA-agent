@@ -86,6 +86,9 @@ class ToolRouter:
             if action == "stage_all":
                 return GitTool.stage_all()
 
+            if action == "unstage_all":
+                return GitTool.unstage_all()
+
             if action == "commit":
                 message = payload.get("message", "AIRA-X automated commit")
                 return GitTool.commit(message=message)

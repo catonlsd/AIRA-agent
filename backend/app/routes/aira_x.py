@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from graph.aira_workflow import AiraXWorkflow
 from tools.tool_registry import ToolRegistry
+from tools.tool_router import ToolRouter
 from agents.agent_registry import AgentRegistry
 from memory.workflow_store import WorkflowStore
 from memory.workflow_memory import WorkflowMemory
@@ -41,6 +42,60 @@ def serialize_state(state):
         "pending_action": state.memory.get("pending_action"),
         "approval_context": state.memory.get("approval_context", {}),
     }
+
+
+def _workflow_successfully_staged_changes(state) -> bool:
+    return any(
+        output.get("tool_used") == "git_tool"
+        and output.get("tool_action") == "stage_all"
+        and output.get("tool_result", {}).get("success") is True
+        for output in state.execution_outputs
+    )
+
+
+def _should_cleanup_staged_changes_after_rejection(state) -> bool:
+    approval_context = state.memory.get("approval_context", {})
+    pending_action = state.memory.get("pending_action", "")
+
+    is_commit_rejection = (
+        approval_context.get("tool_name") == "git_tool"
+        and approval_context.get("tool_action") == "commit"
+        and pending_action.startswith("git_tool:commit")
+    )
+
+    return is_commit_rejection and _workflow_successfully_staged_changes(state)
+
+
+def _cleanup_staged_changes_after_rejection(state):
+    cleanup_result = ToolRouter.run(
+        tool_name="git_tool",
+        action="unstage_all",
+        payload={},
+    )
+
+    state.memory.setdefault("cleanup_actions", [])
+    state.memory["cleanup_actions"].append(
+        {
+            "reason": "commit_rejected_after_aira_x_stage_all",
+            "tool_name": "git_tool",
+            "tool_action": "unstage_all",
+            "result": cleanup_result,
+        }
+    )
+
+    WorkflowMemory.add_log(
+        state,
+        agent="git_tool",
+        event="git_staging_cleanup_after_rejection",
+        details={
+            "reason": "Commit approval was rejected after AIRA-X staged changes.",
+            "cleanup_action": "git_tool:unstage_all",
+            "cleanup_success": cleanup_result.get("success", False),
+            "cleanup_result": cleanup_result,
+        },
+    )
+
+    return cleanup_result
 
 
 @router.get("/overview")
@@ -158,7 +213,22 @@ async def reject_aira_x_action(request: AiraXRejectRequest):
         None,
     )
 
-    rejection_message = f"User rejected the action: {pending_action}"
+    cleanup_result = None
+
+    if _should_cleanup_staged_changes_after_rejection(state):
+        cleanup_result = _cleanup_staged_changes_after_rejection(state)
+
+    rejection_message = f"User rejected the action: {pending_action}."
+
+    if cleanup_result:
+        if cleanup_result.get("success"):
+            rejection_message += (
+                " AIRA-X also unstaged changes that it staged for this workflow."
+            )
+        else:
+            rejection_message += (
+                " AIRA-X attempted to unstage changes, but cleanup failed."
+            )
 
     if current_step:
         current_step.status = "rejected"
@@ -175,6 +245,7 @@ async def reject_aira_x_action(request: AiraXRejectRequest):
         details={
             "run_id": request.run_id,
             "rejected_action": pending_action,
+            "cleanup_attempted": cleanup_result is not None,
         },
     )
 

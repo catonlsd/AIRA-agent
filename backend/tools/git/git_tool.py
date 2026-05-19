@@ -74,6 +74,13 @@ class GitTool:
         )
 
     @staticmethod
+    def unstage_all() -> Dict[str, Any]:
+        return GitTool._run_git_command(
+            ["git", "restore", "--staged", "."],
+            action="unstage_all",
+        )
+
+    @staticmethod
     def commit(message: str) -> Dict[str, Any]:
         clean_message = message.strip() or "AIRA-X automated commit"
 
