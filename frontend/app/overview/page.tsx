@@ -15,6 +15,17 @@ import {
 } from "lucide-react";
 import { getAiraXOverview } from "@/lib/api";
 
+type ApprovalContext = {
+  type?: string;
+  tool_name?: string;
+  tool_action?: string;
+  pending_action?: string;
+  commit_message?: string | null;
+  branch?: string;
+  changed_files?: string;
+  diff_summary?: string;
+};
+
 type LatestRun = {
   run_id: string;
   user_goal: string;
@@ -25,6 +36,8 @@ type LatestRun = {
   retry_count: number;
   requires_approval: boolean;
   pending_action?: string;
+  approval_context?: ApprovalContext;
+  approval_context_type?: string;
   step_count: number;
   log_count: number;
 };
@@ -80,6 +93,13 @@ function getStatusIcon(status: string) {
   return <Clock className="h-4 w-4" />;
 }
 
+function hasGitPreflight(run: LatestRun) {
+  return (
+    run.approval_context_type === "git_write_preflight" ||
+    run.approval_context?.type === "git_write_preflight"
+  );
+}
+
 export default function OverviewPage() {
   const [overview, setOverview] = useState<OverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -109,6 +129,9 @@ export default function OverviewPage() {
 
   const metrics = overview?.workflow_metrics;
 
+  const gitPreflightCount =
+    metrics?.latest_runs.filter((run) => hasGitPreflight(run)).length || 0;
+
   return (
     <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-6xl flex-col gap-6">
       <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-6">
@@ -127,7 +150,7 @@ export default function OverviewPage() {
 
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
               Monitor AIRA-X agents, tools, workflow runs, retries, approvals,
-              execution activity, and platform health.
+              execution activity, Git preflight summaries, and platform health.
             </p>
           </div>
 
@@ -160,6 +183,7 @@ export default function OverviewPage() {
                   <p className="text-sm font-semibold text-slate-500">
                     Agents
                   </p>
+
                   <h2 className="mt-1 text-3xl font-semibold text-slate-950">
                     {overview.agent_count}
                   </h2>
@@ -175,6 +199,7 @@ export default function OverviewPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold text-slate-500">Tools</p>
+
                   <h2 className="mt-1 text-3xl font-semibold text-slate-950">
                     {overview.tool_count}
                   </h2>
@@ -192,6 +217,7 @@ export default function OverviewPage() {
                   <p className="text-sm font-semibold text-slate-500">
                     Workflow Runs
                   </p>
+
                   <h2 className="mt-1 text-3xl font-semibold text-slate-950">
                     {metrics.total_runs}
                   </h2>
@@ -209,6 +235,7 @@ export default function OverviewPage() {
                   <p className="text-sm font-semibold text-slate-500">
                     Tool Calls
                   </p>
+
                   <h2 className="mt-1 text-3xl font-semibold text-slate-950">
                     {metrics.total_tool_calls}
                   </h2>
@@ -224,6 +251,7 @@ export default function OverviewPage() {
           <section className="grid gap-4 md:grid-cols-4">
             <div className="sarvam-card rounded-[1.5rem] p-5">
               <p className="text-sm font-semibold text-slate-500">Completed</p>
+
               <h2 className="mt-1 text-3xl font-semibold text-green-700">
                 {metrics.completed_runs}
               </h2>
@@ -231,6 +259,7 @@ export default function OverviewPage() {
 
             <div className="sarvam-card rounded-[1.5rem] p-5">
               <p className="text-sm font-semibold text-slate-500">Failed</p>
+
               <h2 className="mt-1 text-3xl font-semibold text-red-700">
                 {metrics.failed_runs}
               </h2>
@@ -240,6 +269,7 @@ export default function OverviewPage() {
               <p className="text-sm font-semibold text-slate-500">
                 Needs Approval
               </p>
+
               <h2 className="mt-1 text-3xl font-semibold text-orange-700">
                 {metrics.requires_approval_runs}
               </h2>
@@ -247,17 +277,19 @@ export default function OverviewPage() {
 
             <div className="sarvam-card rounded-[1.5rem] p-5">
               <p className="text-sm font-semibold text-slate-500">Rejected</p>
+
               <h2 className="mt-1 text-3xl font-semibold text-red-700">
                 {metrics.rejected_runs}
               </h2>
             </div>
           </section>
 
-          <section className="grid gap-4 md:grid-cols-3">
+          <section className="grid gap-4 md:grid-cols-4">
             <div className="sarvam-card rounded-[1.5rem] p-5">
               <p className="text-sm font-semibold text-slate-500">
                 Total Retries
               </p>
+
               <h2 className="mt-1 text-3xl font-semibold text-purple-700">
                 {metrics.total_retries}
               </h2>
@@ -267,6 +299,7 @@ export default function OverviewPage() {
               <p className="text-sm font-semibold text-slate-500">
                 Total Logs
               </p>
+
               <h2 className="mt-1 text-3xl font-semibold text-blue-700">
                 {metrics.total_logs}
               </h2>
@@ -274,8 +307,19 @@ export default function OverviewPage() {
 
             <div className="sarvam-card rounded-[1.5rem] p-5">
               <p className="text-sm font-semibold text-slate-500">
+                Git Preflights
+              </p>
+
+              <h2 className="mt-1 text-3xl font-semibold text-orange-700">
+                {gitPreflightCount}
+              </h2>
+            </div>
+
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
                 Storage Mode
               </p>
+
               <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">
                 <Database className="h-4 w-4" />
                 Local JSON
@@ -295,52 +339,105 @@ export default function OverviewPage() {
               </p>
             ) : (
               <div className="space-y-3">
-                {metrics.latest_runs.map((run) => (
-                  <div
-                    key={run.run_id}
-                    className="rounded-2xl border border-blue-100 bg-blue-50/30 p-4"
-                  >
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <div className="mb-2 flex flex-wrap items-center gap-2">
-                          <span
-                            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${getStatusStyle(
-                              run.status
-                            )}`}
-                          >
-                            {getStatusIcon(run.status)}
-                            {run.status}
-                          </span>
+                {metrics.latest_runs.map((run) => {
+                  const gitPreflight = hasGitPreflight(run);
 
-                          <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600">
-                            Retries: {run.retry_count}
-                          </span>
+                  return (
+                    <div
+                      key={run.run_id}
+                      className="rounded-2xl border border-blue-100 bg-blue-50/30 p-4"
+                    >
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-2 flex flex-wrap items-center gap-2">
+                            <span
+                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${getStatusStyle(
+                                run.status
+                              )}`}
+                            >
+                              {getStatusIcon(run.status)}
+                              {run.status}
+                            </span>
 
-                          <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600">
-                            Logs: {run.log_count}
-                          </span>
+                            <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                              Retries: {run.retry_count}
+                            </span>
+
+                            <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                              Logs: {run.log_count}
+                            </span>
+
+                            {gitPreflight && (
+                              <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700">
+                                <ShieldAlert className="h-3.5 w-3.5" />
+                                Git Preflight
+                              </span>
+                            )}
+                          </div>
+
+                          <h3 className="text-sm font-semibold text-slate-950">
+                            {run.user_goal}
+                          </h3>
+
+                          <p className="mt-1 text-xs text-slate-600">
+                            <strong>Decision:</strong> {run.decision}
+                          </p>
+
+                          <p className="mt-1 text-xs text-slate-600">
+                            <strong>Final Answer:</strong>{" "}
+                            {run.final_answer || "No final answer yet"}
+                          </p>
+
+                          {run.pending_action && (
+                            <p className="mt-1 text-xs text-slate-600">
+                              <strong>Pending Action:</strong>{" "}
+                              {run.pending_action}
+                            </p>
+                          )}
+
+                          {gitPreflight && (
+                            <div className="mt-3 rounded-xl border border-orange-100 bg-white p-3">
+                              <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-orange-700">
+                                <GitBranch className="h-3.5 w-3.5" />
+                                Git Approval Preview
+                              </div>
+
+                              <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-2">
+                                <p>
+                                  <strong>Branch:</strong>{" "}
+                                  {run.approval_context?.branch ||
+                                    "Unknown branch"}
+                                </p>
+
+                                <p>
+                                  <strong>Action:</strong>{" "}
+                                  {run.approval_context?.pending_action ||
+                                    run.pending_action ||
+                                    "Unknown action"}
+                                </p>
+                              </div>
+
+                              <div className="mt-3">
+                                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                  Diff Summary
+                                </p>
+
+                                <pre className="max-h-36 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">
+                                  {run.approval_context?.diff_summary?.trim() ||
+                                    "No diff summary available."}
+                                </pre>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
-                        <h3 className="text-sm font-semibold text-slate-950">
-                          {run.user_goal}
-                        </h3>
-
-                        <p className="mt-1 text-xs text-slate-600">
-                          <strong>Decision:</strong> {run.decision}
-                        </p>
-
-                        <p className="mt-1 text-xs text-slate-600">
-                          <strong>Final Answer:</strong>{" "}
-                          {run.final_answer || "No final answer yet"}
+                        <p className="max-w-xs break-all rounded-xl bg-white p-3 text-[11px] text-slate-500">
+                          {run.run_id}
                         </p>
                       </div>
-
-                      <p className="max-w-xs break-all rounded-xl bg-white p-3 text-[11px] text-slate-500">
-                        {run.run_id}
-                      </p>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
