@@ -44,3 +44,30 @@ full_diff_result = ToolRouter.run(
     payload={},
 )
 print(full_diff_result)
+
+
+print("\nGIT STAGED FILES TEST")
+staged_files_result = ToolRouter.run(
+    tool_name="git_tool",
+    action="staged_files",
+    payload={},
+)
+print(staged_files_result)
+
+
+print("\nGIT STAGED DIFF SUMMARY TEST")
+staged_diff_result = ToolRouter.run(
+    tool_name="git_tool",
+    action="staged_diff",
+    payload={},
+)
+print(staged_diff_result)
+
+
+print("\nGIT FULL STAGED DIFF TEST")
+full_staged_diff_result = ToolRouter.run(
+    tool_name="git_tool",
+    action="full_staged_diff",
+    payload={},
+)
+print(full_staged_diff_result)

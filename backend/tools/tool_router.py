@@ -11,14 +11,17 @@ class ToolRouter:
     name = "tool_router"
 
     @staticmethod
-    def run(tool_name: str, action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def run(tool_name: str, action: str, payload: Dict[str, Any] | None = None):
+        if payload is None:
+            payload = {}
+
         if not ToolRegistry.is_tool_available(tool_name):
             return {
                 "success": False,
                 "tool_name": tool_name,
                 "action": action,
                 "output": "",
-                "error": f"Unknown tool: {tool_name}",
+                "error": f"Tool '{tool_name}' is not registered.",
             }
 
         if not ToolRegistry.is_action_allowed(tool_name, action):
@@ -31,46 +34,28 @@ class ToolRouter:
             }
 
         if tool_name == "shell_tool":
-            command = payload.get("command")
-
-            if not command:
-                return {
-                    "success": False,
-                    "tool_name": tool_name,
-                    "action": action,
-                    "output": "",
-                    "error": "Missing command for shell_tool.",
-                }
-
-            return ShellTool.run(command)
+            if action == "run":
+                command = payload.get("command", "")
+                return ShellTool.run(command=command)
 
         if tool_name == "file_tool":
             if action == "read_file":
-                return FileTool.read_file(payload.get("path", ""))
+                path = payload.get("path", "")
+                return FileTool.read_file(path=path)
 
             if action == "write_file":
-                return FileTool.write_file(
-                    payload.get("path", ""),
-                    payload.get("content", ""),
-                )
+                path = payload.get("path", "")
+                content = payload.get("content", "")
+                return FileTool.write_file(path=path, content=content)
 
             if action == "list_files":
-                return FileTool.list_files(payload.get("path", "."))
+                path = payload.get("path", ".")
+                return FileTool.list_files(path=path)
 
         if tool_name == "python_tool":
             if action == "run_code":
-                code = payload.get("code")
-
-                if not code:
-                    return {
-                        "success": False,
-                        "tool_name": tool_name,
-                        "action": action,
-                        "output": "",
-                        "error": "Missing code for python_tool.",
-                    }
-
-                return PythonTool.run_code(code)
+                code = payload.get("code", "")
+                return PythonTool.run_code(code=code)
 
         if tool_name == "git_tool":
             if action == "status":
@@ -89,17 +74,26 @@ class ToolRouter:
             if action == "full_diff":
                 return GitTool.full_diff()
 
+            if action == "staged_files":
+                return GitTool.staged_files()
+
+            if action == "staged_diff":
+                return GitTool.staged_diff()
+
+            if action == "full_staged_diff":
+                return GitTool.full_staged_diff()
+
             if action == "stage_all":
                 return GitTool.stage_all()
 
             if action == "commit":
                 message = payload.get("message", "AIRA-X automated commit")
-                return GitTool.commit(message=message)   
+                return GitTool.commit(message=message)
 
         return {
             "success": False,
             "tool_name": tool_name,
             "action": action,
             "output": "",
-            "error": f"No execution handler found for {tool_name}:{action}.",
+            "error": f"No router implementation for {tool_name}.{action}.",
         }

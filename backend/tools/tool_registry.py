@@ -63,13 +63,16 @@ class ToolRegistry:
             },
         },
         "git_tool": {
-            "description": "Reads Git repository status, branch, diffs, recent commits, and performs approval-gated local Git writes.",
+            "description": "Reads Git repository state and performs approval-gated local Git writes.",
             "actions": [
                 "status",
                 "branch",
                 "recent_commits",
                 "diff",
                 "full_diff",
+                "staged_files",
+                "staged_diff",
+                "full_staged_diff",
                 "stage_all",
                 "commit",
             ],
@@ -79,6 +82,9 @@ class ToolRegistry:
                 "git log --oneline -5",
                 "git diff --stat",
                 "git diff",
+                "git diff --cached --name-status",
+                "git diff --cached --stat",
+                "git diff --cached",
                 "git add .",
                 "git commit -m \"message\"",
             ],
@@ -101,12 +107,27 @@ class ToolRegistry:
                 "diff": {
                     "risk_level": "safe",
                     "requires_approval": False,
-                    "description": "Reads a summary of uncommitted Git changes.",
+                    "description": "Reads a summary of unstaged Git changes.",
                 },
                 "full_diff": {
                     "risk_level": "safe",
                     "requires_approval": False,
-                    "description": "Reads full uncommitted Git changes.",
+                    "description": "Reads full unstaged Git changes.",
+                },
+                "staged_files": {
+                    "risk_level": "safe",
+                    "requires_approval": False,
+                    "description": "Reads files currently staged for commit.",
+                },
+                "staged_diff": {
+                    "risk_level": "safe",
+                    "requires_approval": False,
+                    "description": "Reads a summary of staged Git changes.",
+                },
+                "full_staged_diff": {
+                    "risk_level": "safe",
+                    "requires_approval": False,
+                    "description": "Reads full staged Git changes.",
                 },
                 "stage_all": {
                     "risk_level": "sensitive",

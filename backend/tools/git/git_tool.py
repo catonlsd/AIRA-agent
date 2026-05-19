@@ -46,6 +46,27 @@ class GitTool:
         )
 
     @staticmethod
+    def staged_files() -> Dict[str, Any]:
+        return GitTool._run_git_command(
+            ["git", "diff", "--cached", "--name-status"],
+            action="staged_files",
+        )
+
+    @staticmethod
+    def staged_diff() -> Dict[str, Any]:
+        return GitTool._run_git_command(
+            ["git", "diff", "--cached", "--stat"],
+            action="staged_diff",
+        )
+
+    @staticmethod
+    def full_staged_diff() -> Dict[str, Any]:
+        return GitTool._run_git_command(
+            ["git", "diff", "--cached"],
+            action="full_staged_diff",
+        )
+
+    @staticmethod
     def stage_all() -> Dict[str, Any]:
         return GitTool._run_git_command(
             ["git", "add", "."],

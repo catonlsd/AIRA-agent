@@ -577,6 +577,20 @@ async def test_tool_registry_api():
         "full_diff" in git_tool["actions"],
         "git_tool full_diff action exists",
     )
+
+    assert_true(
+        "staged_files" in git_tool["actions"],
+        "git_tool staged_files action exists",
+    )
+    assert_true(
+        "staged_diff" in git_tool["actions"],
+        "git_tool staged_diff action exists",
+    )
+    assert_true(
+        "full_staged_diff" in git_tool["actions"],
+        "git_tool full_staged_diff action exists",
+    )
+
     assert_true("stage_all" in git_tool["actions"], "git_tool stage_all action exists")
     assert_true("commit" in git_tool["actions"], "git_tool commit action exists")
 
@@ -588,6 +602,21 @@ async def test_tool_registry_api():
     assert_true(
         git_tool["policy"]["commit"]["requires_approval"] is True,
         "git_tool commit requires approval",
+    )
+
+    assert_true(
+    git_tool["policy"]["staged_files"]["requires_approval"] is False,
+    "git_tool staged_files does not require approval",
+    )
+
+    assert_true(
+        git_tool["policy"]["staged_diff"]["requires_approval"] is False,
+        "git_tool staged_diff does not require approval",
+    )
+
+    assert_true(
+        git_tool["policy"]["full_staged_diff"]["requires_approval"] is False,
+        "git_tool full_staged_diff does not require approval",
     )
 
     for tool in response["tools"]:

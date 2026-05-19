@@ -91,6 +91,7 @@ class ExecutionAgent(BaseAgent):
         state.memory["pending_action"] = pending_action
         state.memory["current_tool_policy"] = tool_policy
         state.memory["approval_context"] = self._build_approval_context(
+            state=state,
             tool_name=current_step.tool_name,
             action=current_step.tool_action,
             payload=current_step.tool_payload,
@@ -237,6 +238,7 @@ class ExecutionAgent(BaseAgent):
 
     def _build_approval_context(
         self,
+        state: AiraXState,
         tool_name: str,
         action: str,
         payload: Dict[str, Any],
@@ -249,30 +251,59 @@ class ExecutionAgent(BaseAgent):
                 payload={},
             )
 
-            status_result = ToolRouter.run(
+            if action == "stage_all":
+                status_result = ToolRouter.run(
+                    tool_name="git_tool",
+                    action="status",
+                    payload={},
+                )
+
+                diff_result = ToolRouter.run(
+                    tool_name="git_tool",
+                    action="diff",
+                    payload={},
+                )
+
+                return {
+                    "type": "git_write_preflight",
+                    "preflight_scope": "unstaged_changes_before_stage",
+                    "tool_name": tool_name,
+                    "tool_action": action,
+                    "pending_action": pending_action,
+                    "commit_message": self._find_planned_commit_message(state),
+                    "branch": branch_result.get("output", ""),
+                    "changed_files": status_result.get("output", ""),
+                    "diff_summary": diff_result.get("output", ""),
+                    "branch_success": branch_result.get("success", False),
+                    "status_success": status_result.get("success", False),
+                    "diff_success": diff_result.get("success", False),
+                }
+
+            staged_files_result = ToolRouter.run(
                 tool_name="git_tool",
-                action="status",
+                action="staged_files",
                 payload={},
             )
 
-            diff_result = ToolRouter.run(
+            staged_diff_result = ToolRouter.run(
                 tool_name="git_tool",
-                action="diff",
+                action="staged_diff",
                 payload={},
             )
 
             return {
                 "type": "git_write_preflight",
+                "preflight_scope": "staged_changes_before_commit",
                 "tool_name": tool_name,
                 "tool_action": action,
                 "pending_action": pending_action,
                 "commit_message": payload.get("message"),
                 "branch": branch_result.get("output", ""),
-                "changed_files": status_result.get("output", ""),
-                "diff_summary": diff_result.get("output", ""),
+                "changed_files": staged_files_result.get("output", ""),
+                "diff_summary": staged_diff_result.get("output", ""),
                 "branch_success": branch_result.get("success", False),
-                "status_success": status_result.get("success", False),
-                "diff_success": diff_result.get("success", False),
+                "status_success": staged_files_result.get("success", False),
+                "diff_success": staged_diff_result.get("success", False),
             }
 
         return {
@@ -281,3 +312,10 @@ class ExecutionAgent(BaseAgent):
             "tool_action": action,
             "pending_action": pending_action,
         }
+
+    def _find_planned_commit_message(self, state: AiraXState) -> str | None:
+        for step in state.plan:
+            if step.tool_name == "git_tool" and step.tool_action == "commit":
+                return step.tool_payload.get("message")
+
+        return None
