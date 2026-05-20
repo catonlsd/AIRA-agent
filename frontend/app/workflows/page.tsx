@@ -8,6 +8,7 @@ import {
   Clock,
   GitBranch,
   ShieldAlert,
+  UploadCloud,
   Workflow,
   XCircle,
 } from "lucide-react";
@@ -15,13 +16,22 @@ import { getAiraXRuns } from "@/lib/api";
 
 type ApprovalContext = {
   type?: string;
+  preflight_scope?: string;
   tool_name?: string;
   tool_action?: string;
   pending_action?: string;
+
   commit_message?: string | null;
   branch?: string;
   changed_files?: string;
   diff_summary?: string;
+
+  target_remote?: string;
+  target_branch?: string;
+  status_branch?: string;
+  remote_info?: string;
+  last_commit?: string;
+  recent_commits?: string;
 };
 
 type CleanupAction = {
@@ -87,11 +97,22 @@ function getStatusIcon(status: string) {
   return <Clock className="h-4 w-4" />;
 }
 
-function hasGitPreflight(run: WorkflowRunSummary) {
+function isGitWritePreflight(run: WorkflowRunSummary) {
   return (
     run.approval_context_type === "git_write_preflight" ||
     run.approval_context?.type === "git_write_preflight"
   );
+}
+
+function isGitPushPreflight(run: WorkflowRunSummary) {
+  return (
+    run.approval_context_type === "git_push_preflight" ||
+    run.approval_context?.type === "git_push_preflight"
+  );
+}
+
+function hasAnyGitPreflight(run: WorkflowRunSummary) {
+  return isGitWritePreflight(run) || isGitPushPreflight(run);
 }
 
 export default function WorkflowsPage() {
@@ -124,6 +145,10 @@ export default function WorkflowsPage() {
   }, []);
 
   const cleanupRunCount = runs.filter((run) => run.has_cleanup).length;
+  const gitPreflightCount = runs.filter((run) => hasAnyGitPreflight(run)).length;
+  const gitPushPreflightCount = runs.filter((run) =>
+    isGitPushPreflight(run)
+  ).length;
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-6xl flex-col gap-6">
@@ -142,8 +167,8 @@ export default function WorkflowsPage() {
 
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
             Review previous AIRA-X workflow executions, approval states,
-            decisions, retry counts, Git preflight summaries, cleanup actions,
-            and execution outcomes.
+            decisions, retry counts, Git write preflights, Git push preflights,
+            cleanup actions, and execution outcomes.
           </p>
         </div>
       </section>
@@ -162,7 +187,7 @@ export default function WorkflowsPage() {
 
       {!loading && !error && (
         <>
-          <section className="grid gap-4 md:grid-cols-4">
+          <section className="grid gap-4 md:grid-cols-5">
             <div className="sarvam-card rounded-[1.5rem] p-5">
               <p className="text-sm font-semibold text-slate-500">
                 Total Runs
@@ -189,7 +214,17 @@ export default function WorkflowsPage() {
               </p>
 
               <h2 className="mt-1 text-3xl font-semibold text-purple-700">
-                {runs.filter((run) => hasGitPreflight(run)).length}
+                {gitPreflightCount}
+              </h2>
+            </div>
+
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
+                Push Preflights
+              </p>
+
+              <h2 className="mt-1 text-3xl font-semibold text-red-700">
+                {gitPushPreflightCount}
               </h2>
             </div>
 
@@ -220,7 +255,8 @@ export default function WorkflowsPage() {
                   .slice()
                   .reverse()
                   .map((run) => {
-                    const gitPreflight = hasGitPreflight(run);
+                    const gitWritePreflight = isGitWritePreflight(run);
+                    const gitPushPreflight = isGitPushPreflight(run);
                     const cleanupPerformed = Boolean(run.has_cleanup);
 
                     return (
@@ -253,10 +289,17 @@ export default function WorkflowsPage() {
                                 Logs: {run.log_count}
                               </span>
 
-                              {gitPreflight && (
+                              {gitWritePreflight && (
                                 <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700">
                                   <ShieldAlert className="h-3.5 w-3.5" />
-                                  Git Preflight Available
+                                  Git Write Preflight
+                                </span>
+                              )}
+
+                              {gitPushPreflight && (
+                                <span className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
+                                  <UploadCloud className="h-3.5 w-3.5" />
+                                  Git Push Preflight
                                 </span>
                               )}
 
@@ -284,11 +327,11 @@ export default function WorkflowsPage() {
                               </p>
                             )}
 
-                            {gitPreflight && (
+                            {gitWritePreflight && (
                               <div className="mt-3 rounded-xl border border-orange-100 bg-white p-3">
                                 <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-orange-700">
                                   <GitBranch className="h-3.5 w-3.5" />
-                                  Git Approval Preview
+                                  Git Write Approval Preview
                                 </div>
 
                                 <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-2">
@@ -304,6 +347,54 @@ export default function WorkflowsPage() {
                                       run.pending_action ||
                                       "Unknown action"}
                                   </p>
+                                </div>
+                              </div>
+                            )}
+
+                            {gitPushPreflight && (
+                              <div className="mt-3 rounded-xl border border-red-100 bg-white p-3">
+                                <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-red-700">
+                                  <UploadCloud className="h-3.5 w-3.5" />
+                                  Git Push Approval Preview
+                                </div>
+
+                                <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-2">
+                                  <p>
+                                    <strong>Target Remote:</strong>{" "}
+                                    {run.approval_context?.target_remote ||
+                                      "origin"}
+                                  </p>
+
+                                  <p>
+                                    <strong>Target Branch:</strong>{" "}
+                                    {run.approval_context?.target_branch ||
+                                      run.approval_context?.branch ||
+                                      "Unknown branch"}
+                                  </p>
+
+                                  <p>
+                                    <strong>Current Branch:</strong>{" "}
+                                    {run.approval_context?.branch ||
+                                      "Unknown branch"}
+                                  </p>
+
+                                  <p>
+                                    <strong>Action:</strong>{" "}
+                                    {run.approval_context?.pending_action ||
+                                      run.pending_action ||
+                                      "Unknown action"}
+                                  </p>
+                                </div>
+
+                                <div className="mt-3">
+                                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    Latest Local Commit
+                                  </p>
+
+                                  <pre className="max-h-24 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">
+                                    {run.approval_context?.last_commit?.trim() ||
+                                      "No latest commit available."}
+                                  </pre>
                                 </div>
                               </div>
                             )}

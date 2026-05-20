@@ -462,7 +462,15 @@ export default function WorkflowDetailPage() {
 
               {run.pending_action && (
                 <p>
-                  <strong>Pending Action:</strong> {run.pending_action}
+                  <strong>
+                    {run.status === "rejected"
+                      ? "Rejected Action"
+                      : run.status === "requires_approval"
+                        ? "Pending Action"
+                        : "Action"}
+                    :
+                  </strong>{" "}
+                  {run.pending_action}
                 </p>
               )}
             </div>
