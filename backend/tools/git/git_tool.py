@@ -18,6 +18,13 @@ class GitTool:
         )
 
     @staticmethod
+    def status_branch() -> Dict[str, Any]:
+        return GitTool._run_git_command(
+            ["git", "status", "-sb"],
+            action="status_branch",
+        )
+
+    @staticmethod
     def branch() -> Dict[str, Any]:
         return GitTool._run_git_command(
             ["git", "branch", "--show-current"],
@@ -25,10 +32,24 @@ class GitTool:
         )
 
     @staticmethod
+    def remote_info() -> Dict[str, Any]:
+        return GitTool._run_git_command(
+            ["git", "remote", "-v"],
+            action="remote_info",
+        )
+
+    @staticmethod
     def recent_commits(limit: int = 5) -> Dict[str, Any]:
         return GitTool._run_git_command(
             ["git", "log", "--oneline", f"-{limit}"],
             action="recent_commits",
+        )
+
+    @staticmethod
+    def last_commit() -> Dict[str, Any]:
+        return GitTool._run_git_command(
+            ["git", "log", "-1", "--oneline"],
+            action="last_commit",
         )
 
     @staticmethod
@@ -90,7 +111,37 @@ class GitTool:
         )
 
     @staticmethod
-    def _run_git_command(command: list[str], action: str) -> Dict[str, Any]:
+    def push(remote: str = "origin", branch: str | None = None) -> Dict[str, Any]:
+        clean_remote = remote.strip() or "origin"
+        clean_branch = branch.strip() if branch else ""
+
+        if not clean_branch:
+            branch_result = GitTool.branch()
+
+            if not branch_result.get("success") or not branch_result.get("output"):
+                return {
+                    "success": False,
+                    "tool_name": "git_tool",
+                    "action": "push",
+                    "command": "git push",
+                    "output": "",
+                    "error": "Could not determine current Git branch before push.",
+                }
+
+            clean_branch = branch_result["output"].strip()
+
+        return GitTool._run_git_command(
+            ["git", "push", clean_remote, clean_branch],
+            action="push",
+            timeout=120,
+        )
+
+    @staticmethod
+    def _run_git_command(
+        command: list[str],
+        action: str,
+        timeout: int = 30,
+    ) -> Dict[str, Any]:
         try:
             result = subprocess.run(
                 command,
@@ -99,7 +150,7 @@ class GitTool:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=30,
+                timeout=timeout,
             )
 
             output = result.stdout.strip() or result.stderr.strip()

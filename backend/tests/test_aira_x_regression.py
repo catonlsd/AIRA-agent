@@ -1,440 +1,6 @@
 import sys
 from pathlib import Path
 import asyncio
-import app.routes.aira_x as aira_x_routes
-
-from schemas.aira_state import AiraXState, AiraXStep
-from memory.workflow_store import WorkflowStore
-
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from app.routes.aira_x import (
-    AiraXApproveRequest,
-    AiraXRejectRequest,
-    AiraXRunRequest,
-    approve_aira_x_action,
-    reject_aira_x_action,
-    run_aira_x,
-    list_aira_x_tools,
-    list_aira_x_agents,
-    list_aira_x_runs,
-    get_aira_x_run,
-    get_aira_x_overview,
-)
-
-
-def assert_equal(actual, expected, label):
-    if actual != expected:
-        raise AssertionError(
-            f"{label} failed. Expected: {expected}, Got: {actual}"
-        )
-
-
-def assert_contains(text, expected, label):
-    if expected not in text:
-        raise AssertionError(
-            f"{label} failed. Expected '{expected}' inside: {text}"
-        )
-
-
-def assert_true(condition, label):
-    if not condition:
-        raise AssertionError(f"{label} failed.")
-
-
-async def test_normal_python_execution():
-    print("Testing normal Python execution...")
-
-    response = await run_aira_x(AiraXRunRequest(goal="run python code"))
-
-    assert_equal(response["status"], "completed", "Python execution status")
-    assert_contains(
-        response["final_answer"],
-        "Workflow completed successfully",
-        "Python execution final answer",
-    )
-
-    print("✅ Normal Python execution passed")
-
-    return response
-
-
-async def test_retry_self_correction():
-    print("Testing retry self-correction...")
-
-    response = await run_aira_x(AiraXRunRequest(goal="test retry"))
-
-    assert_equal(response["status"], "completed", "Retry workflow status")
-    assert_true(response["memory"].get("reflections"), "Reflection memory exists")
-
-    print("✅ Retry self-correction passed")
-
-    return response
-
-
-async def test_safety_block():
-    print("Testing safety block...")
-
-    response = await run_aira_x(
-        AiraXRunRequest(goal="delete system32 using rm -rf")
-    )
-
-    assert_equal(response["status"], "failed", "Safety block status")
-    assert_equal(response["decision"], "stop_safety_block", "Safety decision")
-    assert_contains(
-        response["final_answer"],
-        "Unsafe action blocked",
-        "Safety final answer",
-    )
-
-    print("✅ Safety block passed")
-
-    return response
-
-
-async def test_approval_rejection():
-    print("Testing approval rejection...")
-
-    initial_response = await run_aira_x(
-        AiraXRunRequest(goal="install package requests")
-    )
-
-    assert_equal(
-        initial_response["status"],
-        "requires_approval",
-        "Approval required status",
-    )
-
-    run_id = initial_response["run_id"]
-
-    rejected_response = await reject_aira_x_action(
-        AiraXRejectRequest(run_id=run_id)
-    )
-
-    assert_equal(
-        rejected_response["status"],
-        "rejected",
-        "Approval rejection status",
-    )
-
-    assert_equal(
-        rejected_response["decision"],
-        "approval_rejected",
-        "Approval rejection decision",
-    )
-
-    print("✅ Approval rejection passed")
-
-    return rejected_response
-
-
-async def test_approval_continuation():
-    print("Testing approval continuation...")
-
-    initial_response = await run_aira_x(
-        AiraXRunRequest(goal="install package requests")
-    )
-
-    assert_equal(
-        initial_response["status"],
-        "requires_approval",
-        "Approval required status",
-    )
-
-    run_id = initial_response["run_id"]
-
-    approved_response = await approve_aira_x_action(
-        AiraXApproveRequest(run_id=run_id)
-    )
-
-    assert_equal(
-        approved_response["status"],
-        "completed",
-        "Approval continuation status",
-    )
-
-    assert_contains(
-        approved_response["final_answer"],
-        "Workflow completed successfully",
-        "Approval continuation final answer",
-    )
-
-    print("✅ Approval continuation passed")
-
-    return approved_response
-
-
-async def test_git_status():
-    print("Testing Git status...")
-
-    response = await run_aira_x(AiraXRunRequest(goal="git status"))
-
-    assert_equal(response["status"], "completed", "Git status workflow status")
-
-    first_step = response["plan"][0]
-
-    assert_equal(first_step["tool_name"], "git_tool", "Git tool selection")
-    assert_equal(first_step["tool_action"], "status", "Git action selection")
-
-    print("✅ Git status passed")
-
-    return response
-
-
-async def test_git_diff():
-    print("Testing Git diff...")
-
-    response = await run_aira_x(AiraXRunRequest(goal="git diff"))
-
-    assert_equal(response["status"], "completed", "Git diff workflow status")
-
-    first_step = response["plan"][0]
-
-    assert_equal(first_step["tool_name"], "git_tool", "Git diff tool selection")
-    assert_equal(first_step["tool_action"], "diff", "Git diff action selection")
-
-    print("✅ Git diff passed")
-
-    return response
-
-
-async def test_git_commit_requires_approval():
-    print("Testing Git commit approval requirement...")
-
-    response = await run_aira_x(AiraXRunRequest(goal="git commit"))
-
-    assert_equal(
-        response["status"],
-        "requires_approval",
-        "Git commit should require approval",
-    )
-
-    assert_equal(
-        response["decision"],
-        "stop_approval_required",
-        "Git commit approval decision",
-    )
-
-    first_step = response["plan"][0]
-
-    assert_equal(first_step["tool_name"], "git_tool", "Git commit tool selection")
-    assert_equal(first_step["tool_action"], "commit", "Git commit action selection")
-
-    print("✅ Git commit approval requirement passed")
-
-    return response
-
-
-async def test_git_commit_custom_message_requires_approval():
-    print("Testing Git commit custom message approval requirement...")
-
-    response = await run_aira_x(
-        AiraXRunRequest(
-            goal='git commit with message "Improve git commit planning"'
-        )
-    )
-
-    assert_equal(
-        response["status"],
-        "requires_approval",
-        "Git commit with custom message should require approval",
-    )
-
-    assert_equal(
-        response["decision"],
-        "stop_approval_required",
-        "Git commit custom message approval decision",
-    )
-
-    assert_equal(
-        response["pending_action"],
-        "git_tool:commit -m Improve git commit planning",
-        "Git commit custom pending action",
-    )
-
-    first_step = response["plan"][0]
-
-    assert_equal(
-        first_step["tool_name"],
-        "git_tool",
-        "Git commit custom message tool selection",
-    )
-
-    assert_equal(
-        first_step["tool_action"],
-        "commit",
-        "Git commit custom message action selection",
-    )
-
-    assert_equal(
-        first_step["tool_payload"]["message"],
-        "Improve git commit planning",
-        "Git commit custom message extraction",
-    )
-
-    print("✅ Git commit custom message approval requirement passed")
-
-    return response
-
-
-async def test_multi_step_commit_requires_stage_approval():
-    print("Testing multi-step commit workflow approval requirement...")
-
-    response = await run_aira_x(
-        AiraXRunRequest(
-            goal='commit all changes with message "Test multi step commit"'
-        )
-    )
-
-    assert_equal(
-        response["status"],
-        "requires_approval",
-        "Multi-step commit should require approval at staging step",
-    )
-
-    assert_equal(
-        response["decision"],
-        "stop_approval_required",
-        "Multi-step commit approval decision",
-    )
-
-    assert_equal(
-        response["pending_action"],
-        "git_tool:stage_all",
-        "Multi-step commit pending action should be stage_all first",
-    )
-
-    assert_true(
-        len(response["plan"]) == 2,
-        "Multi-step commit should create two workflow steps",
-    )
-
-    first_step = response["plan"][0]
-    second_step = response["plan"][1]
-
-    assert_equal(
-        first_step["tool_name"],
-        "git_tool",
-        "Multi-step commit first step tool",
-    )
-
-    assert_equal(
-        first_step["tool_action"],
-        "stage_all",
-        "Multi-step commit first step action",
-    )
-
-    assert_equal(
-        second_step["tool_name"],
-        "git_tool",
-        "Multi-step commit second step tool",
-    )
-
-    assert_equal(
-        second_step["tool_action"],
-        "commit",
-        "Multi-step commit second step action",
-    )
-
-    assert_equal(
-        second_step["tool_payload"]["message"],
-        "Test multi step commit",
-        "Multi-step commit message extraction",
-    )
-
-    print("✅ Multi-step commit workflow approval requirement passed")
-
-    return response
-
-async def test_git_preflight_context():
-    print("Testing Git preflight approval context...")
-
-    response = await run_aira_x(
-        AiraXRunRequest(
-            goal='commit all changes with message "Test preflight context"'
-        )
-    )
-
-    assert_equal(
-        response["status"],
-        "requires_approval",
-        "Git preflight workflow should require approval",
-    )
-
-    assert_equal(
-        response["pending_action"],
-        "git_tool:stage_all",
-        "Git preflight pending action should be stage_all",
-    )
-
-    approval_context = response.get("approval_context")
-
-    assert_true(
-        isinstance(approval_context, dict),
-        "Approval context should exist",
-    )
-
-    assert_equal(
-        approval_context.get("type"),
-        "git_write_preflight",
-        "Approval context type",
-    )
-
-    assert_equal(
-        approval_context.get("tool_name"),
-        "git_tool",
-        "Approval context tool name",
-    )
-
-    assert_equal(
-        approval_context.get("tool_action"),
-        "stage_all",
-        "Approval context tool action",
-    )
-
-    assert_equal(
-        approval_context.get("pending_action"),
-        "git_tool:stage_all",
-        "Approval context pending action",
-    )
-
-    assert_true(
-        "branch" in approval_context,
-        "Approval context contains branch",
-    )
-
-    assert_true(
-        "changed_files" in approval_context,
-        "Approval context contains changed files",
-    )
-
-    assert_true(
-        "diff_summary" in approval_context,
-        "Approval context contains diff summary",
-    )
-
-    assert_true(
-        "branch_success" in approval_context,
-        "Approval context contains branch success flag",
-    )
-
-    assert_true(
-        "status_success" in approval_context,
-        "Approval context contains status success flag",
-    )
-
-    assert_true(
-        "diff_success" in approval_context,
-        "Approval context contains diff success flag",
-    )
-
-    print("✅ Git preflight approval context passed")
-
-    return response
-
-import sys
-from pathlib import Path
-import asyncio
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -865,6 +431,197 @@ async def test_git_preflight_context():
     )
 
     print("✅ Git preflight approval context passed")
+
+    return response
+
+
+async def test_git_push_requires_approval():
+    print("Testing Git push approval requirement...")
+
+    response = await run_aira_x(AiraXRunRequest(goal="git push"))
+
+    assert_equal(
+        response["status"],
+        "requires_approval",
+        "Git push should require approval",
+    )
+
+    assert_equal(
+        response["decision"],
+        "stop_approval_required",
+        "Git push approval decision",
+    )
+
+    assert_equal(
+        response["pending_action"],
+        "git_tool:push origin current_branch",
+        "Git push pending action",
+    )
+
+    first_step = response["plan"][0]
+
+    assert_equal(first_step["tool_name"], "git_tool", "Git push tool selection")
+    assert_equal(first_step["tool_action"], "push", "Git push action selection")
+
+    assert_equal(
+        first_step["tool_payload"]["remote"],
+        "origin",
+        "Git push default remote",
+    )
+
+    assert_equal(
+        first_step["tool_payload"]["branch"],
+        None,
+        "Git push default branch should be resolved later",
+    )
+
+    approval_context = response.get("approval_context")
+
+    assert_true(
+        isinstance(approval_context, dict),
+        "Git push approval context should exist",
+    )
+
+    assert_equal(
+        approval_context.get("type"),
+        "git_push_preflight",
+        "Git push approval context type",
+    )
+
+    assert_equal(
+        approval_context.get("tool_name"),
+        "git_tool",
+        "Git push approval context tool name",
+    )
+
+    assert_equal(
+        approval_context.get("tool_action"),
+        "push",
+        "Git push approval context tool action",
+    )
+
+    assert_equal(
+        approval_context.get("pending_action"),
+        "git_tool:push origin current_branch",
+        "Git push approval context pending action",
+    )
+
+    assert_equal(
+        approval_context.get("target_remote"),
+        "origin",
+        "Git push approval context target remote",
+    )
+
+    assert_true(
+        "target_branch" in approval_context,
+        "Git push approval context contains target branch",
+    )
+
+    assert_true(
+        "branch" in approval_context,
+        "Git push approval context contains current branch",
+    )
+
+    assert_true(
+        "status_branch" in approval_context,
+        "Git push approval context contains status branch",
+    )
+
+    assert_true(
+        "remote_info" in approval_context,
+        "Git push approval context contains remote info",
+    )
+
+    assert_true(
+        "last_commit" in approval_context,
+        "Git push approval context contains latest commit",
+    )
+
+    assert_true(
+        "recent_commits" in approval_context,
+        "Git push approval context contains recent commits",
+    )
+
+    print("✅ Git push approval requirement passed")
+
+    return response
+
+
+async def test_git_push_custom_target_requires_approval():
+    print("Testing Git push custom target approval requirement...")
+
+    response = await run_aira_x(AiraXRunRequest(goal="git push origin main"))
+
+    assert_equal(
+        response["status"],
+        "requires_approval",
+        "Git push custom target should require approval",
+    )
+
+    assert_equal(
+        response["decision"],
+        "stop_approval_required",
+        "Git push custom target approval decision",
+    )
+
+    assert_equal(
+        response["pending_action"],
+        "git_tool:push origin main",
+        "Git push custom target pending action",
+    )
+
+    first_step = response["plan"][0]
+
+    assert_equal(
+        first_step["tool_name"],
+        "git_tool",
+        "Git push custom target tool selection",
+    )
+
+    assert_equal(
+        first_step["tool_action"],
+        "push",
+        "Git push custom target action selection",
+    )
+
+    assert_equal(
+        first_step["tool_payload"]["remote"],
+        "origin",
+        "Git push custom target remote",
+    )
+
+    assert_equal(
+        first_step["tool_payload"]["branch"],
+        "main",
+        "Git push custom target branch",
+    )
+
+    approval_context = response.get("approval_context")
+
+    assert_true(
+        isinstance(approval_context, dict),
+        "Git push custom target approval context should exist",
+    )
+
+    assert_equal(
+        approval_context.get("type"),
+        "git_push_preflight",
+        "Git push custom target approval context type",
+    )
+
+    assert_equal(
+        approval_context.get("target_remote"),
+        "origin",
+        "Git push custom target approval context remote",
+    )
+
+    assert_equal(
+        approval_context.get("target_branch"),
+        "main",
+        "Git push custom target approval context branch",
+    )
+
+    print("✅ Git push custom target approval requirement passed")
 
     return response
 
@@ -1350,6 +1107,24 @@ async def test_tool_registry_api():
         tool for tool in response["tools"] if tool["tool_name"] == "git_tool"
     )
 
+    assert_true("status" in git_tool["actions"], "git_tool status action exists")
+    assert_true(
+        "status_branch" in git_tool["actions"],
+        "git_tool status_branch action exists",
+    )
+    assert_true("branch" in git_tool["actions"], "git_tool branch action exists")
+    assert_true(
+        "remote_info" in git_tool["actions"],
+        "git_tool remote_info action exists",
+    )
+    assert_true(
+        "recent_commits" in git_tool["actions"],
+        "git_tool recent_commits action exists",
+    )
+    assert_true(
+        "last_commit" in git_tool["actions"],
+        "git_tool last_commit action exists",
+    )
     assert_true("diff" in git_tool["actions"], "git_tool diff action exists")
     assert_true(
         "full_diff" in git_tool["actions"],
@@ -1375,6 +1150,22 @@ async def test_tool_registry_api():
         "git_tool unstage_all action exists",
     )
     assert_true("commit" in git_tool["actions"], "git_tool commit action exists")
+    assert_true("push" in git_tool["actions"], "git_tool push action exists")
+
+    assert_true(
+        git_tool["policy"]["status_branch"]["requires_approval"] is False,
+        "git_tool status_branch does not require approval",
+    )
+
+    assert_true(
+        git_tool["policy"]["remote_info"]["requires_approval"] is False,
+        "git_tool remote_info does not require approval",
+    )
+
+    assert_true(
+        git_tool["policy"]["last_commit"]["requires_approval"] is False,
+        "git_tool last_commit does not require approval",
+    )
 
     assert_true(
         git_tool["policy"]["stage_all"]["requires_approval"] is True,
@@ -1384,6 +1175,11 @@ async def test_tool_registry_api():
     assert_true(
         git_tool["policy"]["commit"]["requires_approval"] is True,
         "git_tool commit requires approval",
+    )
+
+    assert_true(
+        git_tool["policy"]["push"]["requires_approval"] is True,
+        "git_tool push requires approval",
     )
 
     assert_true(
@@ -1509,6 +1305,8 @@ async def main():
     await test_git_commit_custom_message_requires_approval()
     await test_multi_step_commit_requires_stage_approval()
     await test_git_preflight_context()
+    await test_git_push_requires_approval()
+    await test_git_push_custom_target_requires_approval()
     await test_workflow_runs_include_git_preflight_summary()
     await test_overview_latest_runs_include_git_preflight_summary()
     await test_commit_rejection_triggers_unstage_cleanup()

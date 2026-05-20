@@ -106,6 +106,19 @@ class PlannerAgent(BaseAgent):
                 )
             )
 
+        elif "git remote" in goal or "remote info" in goal:
+            plan.append(
+                AiraXStep(
+                    id=1,
+                    title="Show Git remotes",
+                    description="Show configured Git remotes using the Git tool.",
+                    assigned_agent="execution_agent",
+                    tool_name="git_tool",
+                    tool_action="remote_info",
+                    tool_payload={},
+                )
+            )
+
         elif "git log" in goal or "recent commits" in goal:
             plan.append(
                 AiraXStep(
@@ -116,6 +129,19 @@ class PlannerAgent(BaseAgent):
                     tool_name="git_tool",
                     tool_action="recent_commits",
                     tool_payload={"limit": 5},
+                )
+            )
+
+        elif "last commit" in goal:
+            plan.append(
+                AiraXStep(
+                    id=1,
+                    title="Show latest Git commit",
+                    description="Show the latest local Git commit using the Git tool.",
+                    assigned_agent="execution_agent",
+                    tool_name="git_tool",
+                    tool_action="last_commit",
+                    tool_payload={},
                 )
             )
 
@@ -205,16 +231,21 @@ class PlannerAgent(BaseAgent):
                 )
             )
 
-        elif "git push" in goal:
+        elif "git push" in goal or goal.strip() == "push":
+            push_target = self._extract_push_target(user_goal)
+
             plan.append(
                 AiraXStep(
                     id=1,
                     title="Push Git changes",
-                    description="Attempt to push Git changes. This should require approval.",
+                    description="Push local commits to a remote Git repository. This requires approval.",
                     assigned_agent="execution_agent",
-                    tool_name="shell_tool",
-                    tool_action="run",
-                    tool_payload={"command": "git push"},
+                    tool_name="git_tool",
+                    tool_action="push",
+                    tool_payload={
+                        "remote": push_target["remote"],
+                        "branch": push_target["branch"],
+                    },
                 )
             )
 
@@ -320,3 +351,35 @@ class PlannerAgent(BaseAgent):
                     return message
 
         return "AIRA-X automated commit"
+
+    def _extract_push_target(self, user_goal: str) -> dict:
+        goal = user_goal.strip()
+
+        match = re.search(
+            r"git\s+push\s+([A-Za-z0-9._/-]+)\s+([A-Za-z0-9._/-]+)",
+            goal,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+            return {
+                "remote": match.group(1).strip(),
+                "branch": match.group(2).strip(),
+            }
+
+        match = re.search(
+            r"push\s+to\s+([A-Za-z0-9._/-]+)\s+([A-Za-z0-9._/-]+)",
+            goal,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+            return {
+                "remote": match.group(1).strip(),
+                "branch": match.group(2).strip(),
+            }
+
+        return {
+            "remote": "origin",
+            "branch": None,
+        }

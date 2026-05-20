@@ -63,11 +63,14 @@ class ToolRegistry:
             },
         },
         "git_tool": {
-            "description": "Reads Git repository state and performs approval-gated local Git writes.",
+            "description": "Reads Git repository state and performs approval-gated local/remote Git writes.",
             "actions": [
                 "status",
+                "status_branch",
                 "branch",
+                "remote_info",
                 "recent_commits",
+                "last_commit",
                 "diff",
                 "full_diff",
                 "staged_files",
@@ -76,11 +79,15 @@ class ToolRegistry:
                 "stage_all",
                 "unstage_all",
                 "commit",
+                "push",
             ],
             "examples": [
                 "git status --short",
+                "git status -sb",
                 "git branch --show-current",
+                "git remote -v",
                 "git log --oneline -5",
+                "git log -1 --oneline",
                 "git diff --stat",
                 "git diff",
                 "git diff --cached --name-status",
@@ -89,6 +96,7 @@ class ToolRegistry:
                 "git add .",
                 "git restore --staged .",
                 "git commit -m \"message\"",
+                "git push origin main",
             ],
             "policy": {
                 "status": {
@@ -96,15 +104,30 @@ class ToolRegistry:
                     "requires_approval": False,
                     "description": "Reads current repository status.",
                 },
+                "status_branch": {
+                    "risk_level": "safe",
+                    "requires_approval": False,
+                    "description": "Reads current repository status with branch tracking information.",
+                },
                 "branch": {
                     "risk_level": "safe",
                     "requires_approval": False,
                     "description": "Reads the current Git branch.",
                 },
+                "remote_info": {
+                    "risk_level": "safe",
+                    "requires_approval": False,
+                    "description": "Reads configured Git remotes.",
+                },
                 "recent_commits": {
                     "risk_level": "safe",
                     "requires_approval": False,
                     "description": "Reads recent Git commit history.",
+                },
+                "last_commit": {
+                    "risk_level": "safe",
+                    "requires_approval": False,
+                    "description": "Reads the latest local Git commit.",
                 },
                 "diff": {
                     "risk_level": "safe",
@@ -145,6 +168,11 @@ class ToolRegistry:
                     "risk_level": "sensitive",
                     "requires_approval": True,
                     "description": "Creates a local Git commit. Requires user approval.",
+                },
+                "push": {
+                    "risk_level": "high",
+                    "requires_approval": True,
+                    "description": "Pushes local commits to a remote Git repository. Requires user approval.",
                 },
             },
         },

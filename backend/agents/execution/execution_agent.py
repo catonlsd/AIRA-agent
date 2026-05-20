@@ -232,6 +232,12 @@ class ExecutionAgent(BaseAgent):
                     f"{payload.get('message', 'AIRA-X automated commit')}"
                 )
 
+            if action == "push":
+                remote = payload.get("remote", "origin")
+                branch = payload.get("branch") or "current_branch"
+
+                return f"git_tool:push {remote} {branch}"
+
             return f"git_tool:{action}"
 
         return f"{tool_name}:{action}"
@@ -304,6 +310,60 @@ class ExecutionAgent(BaseAgent):
                 "branch_success": branch_result.get("success", False),
                 "status_success": staged_files_result.get("success", False),
                 "diff_success": staged_diff_result.get("success", False),
+            }
+
+        if tool_name == "git_tool" and action == "push":
+            branch_result = ToolRouter.run(
+                tool_name="git_tool",
+                action="branch",
+                payload={},
+            )
+
+            status_branch_result = ToolRouter.run(
+                tool_name="git_tool",
+                action="status_branch",
+                payload={},
+            )
+
+            remote_info_result = ToolRouter.run(
+                tool_name="git_tool",
+                action="remote_info",
+                payload={},
+            )
+
+            last_commit_result = ToolRouter.run(
+                tool_name="git_tool",
+                action="last_commit",
+                payload={},
+            )
+
+            recent_commits_result = ToolRouter.run(
+                tool_name="git_tool",
+                action="recent_commits",
+                payload={"limit": 3},
+            )
+
+            target_remote = payload.get("remote", "origin")
+            target_branch = payload.get("branch") or branch_result.get("output", "")
+
+            return {
+                "type": "git_push_preflight",
+                "preflight_scope": "remote_push_before_execution",
+                "tool_name": tool_name,
+                "tool_action": action,
+                "pending_action": pending_action,
+                "target_remote": target_remote,
+                "target_branch": target_branch,
+                "branch": branch_result.get("output", ""),
+                "status_branch": status_branch_result.get("output", ""),
+                "remote_info": remote_info_result.get("output", ""),
+                "last_commit": last_commit_result.get("output", ""),
+                "recent_commits": recent_commits_result.get("output", ""),
+                "branch_success": branch_result.get("success", False),
+                "status_branch_success": status_branch_result.get("success", False),
+                "remote_info_success": remote_info_result.get("success", False),
+                "last_commit_success": last_commit_result.get("success", False),
+                "recent_commits_success": recent_commits_result.get("success", False),
             }
 
         return {

@@ -10,6 +10,8 @@ import {
   History,
   ShieldCheck,
   XCircle,
+  GitBranch,
+  UploadCloud,
 } from "lucide-react";
 import { CitationList } from "@/components/citation-list";
 import {
@@ -35,16 +37,30 @@ type WorkflowLog = {
 
 type ApprovalContext = {
   type?: string;
+  preflight_scope?: string;
   tool_name?: string;
   tool_action?: string;
   pending_action?: string;
+
   commit_message?: string | null;
   branch?: string;
   changed_files?: string;
   diff_summary?: string;
+
+  target_remote?: string;
+  target_branch?: string;
+  status_branch?: string;
+  remote_info?: string;
+  last_commit?: string;
+  recent_commits?: string;
+
   branch_success?: boolean;
   status_success?: boolean;
   diff_success?: boolean;
+  status_branch_success?: boolean;
+  remote_info_success?: boolean;
+  last_commit_success?: boolean;
+  recent_commits_success?: boolean;
 };
 
 type AiraXResponse = {
@@ -177,15 +193,15 @@ function renderLogMessage(log: WorkflowLog) {
 
     case "git_staging_cleanup_after_rejection":
       return (
-      <p>
-        AIRA-X automatically unstaged Git changes after the commit approval was
-        rejected. Cleanup status:{" "}
-        <strong>
-          {log.details.cleanup_success ? "successful" : "failed"}
-        </strong>
-        .
+        <p>
+          AIRA-X automatically unstaged Git changes after the commit approval was
+          rejected. Cleanup status:{" "}
+          <strong>
+            {log.details.cleanup_success ? "successful" : "failed"}
+          </strong>
+          .
         </p>
-        );
+      );
 
     case "execution_started":
       return <p>Execution started for step: {log.details.step_title}</p>;
@@ -274,13 +290,7 @@ function renderLogMessage(log: WorkflowLog) {
   }
 }
 
-function renderApprovalContext(context?: ApprovalContext | null) {
-  if (!context) return null;
-
-  if (context.type !== "git_write_preflight") {
-    return null;
-  }
-
+function renderGitWritePreflight(context: ApprovalContext) {
   return (
     <div className="mt-4 rounded-2xl border border-orange-200 bg-white p-4">
       <div className="mb-3">
@@ -349,6 +359,125 @@ function renderApprovalContext(context?: ApprovalContext | null) {
       </div>
     </div>
   );
+}
+
+function renderGitPushPreflight(context: ApprovalContext) {
+  return (
+    <div className="mt-4 rounded-2xl border border-red-200 bg-white p-4">
+      <div className="mb-3 flex items-start gap-3">
+        <div className="rounded-xl bg-red-50 p-2 text-red-700">
+          <UploadCloud className="h-4 w-4" />
+        </div>
+
+        <div>
+          <h4 className="text-sm font-bold text-red-900">
+            Git Push Preflight Summary
+          </h4>
+
+          <p className="mt-1 text-xs leading-5 text-red-700">
+            This action can modify your remote repository. Review the target
+            remote, branch, and latest commits before approving.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Target Remote
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {context.target_remote || "origin"}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Target Branch
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {context.target_branch || context.branch || "Unknown branch"}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Current Branch
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {context.branch || "Unknown branch"}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Git Action
+          </p>
+
+          <p className="mt-1 break-words text-sm font-semibold text-slate-900">
+            {context.pending_action || "Unknown action"}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Branch Tracking Status
+        </p>
+
+        <pre className="max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-100">
+          {context.status_branch?.trim() || "No branch tracking status available."}
+        </pre>
+      </div>
+
+      <div className="mt-3">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Remote Info
+        </p>
+
+        <pre className="max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-100">
+          {context.remote_info?.trim() || "No remote info available."}
+        </pre>
+      </div>
+
+      <div className="mt-3">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Latest Local Commit
+        </p>
+
+        <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-100">
+          {context.last_commit?.trim() || "No latest commit available."}
+        </pre>
+      </div>
+
+      <div className="mt-3">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Recent Local Commits
+        </p>
+
+        <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-100">
+          {context.recent_commits?.trim() || "No recent commits available."}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+function renderApprovalContext(context?: ApprovalContext | null) {
+  if (!context) return null;
+
+  if (context.type === "git_write_preflight") {
+    return renderGitWritePreflight(context);
+  }
+
+  if (context.type === "git_push_preflight") {
+    return renderGitPushPreflight(context);
+  }
+
+  return null;
 }
 
 function renderCleanupActions(memory: any) {

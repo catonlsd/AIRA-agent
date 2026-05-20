@@ -61,12 +61,21 @@ class ToolRouter:
             if action == "status":
                 return GitTool.status()
 
+            if action == "status_branch":
+                return GitTool.status_branch()
+
             if action == "branch":
                 return GitTool.branch()
+
+            if action == "remote_info":
+                return GitTool.remote_info()
 
             if action == "recent_commits":
                 limit = payload.get("limit", 5)
                 return GitTool.recent_commits(limit=limit)
+
+            if action == "last_commit":
+                return GitTool.last_commit()
 
             if action == "diff":
                 return GitTool.diff()
@@ -92,6 +101,11 @@ class ToolRouter:
             if action == "commit":
                 message = payload.get("message", "AIRA-X automated commit")
                 return GitTool.commit(message=message)
+
+            if action == "push":
+                remote = payload.get("remote", "origin")
+                branch = payload.get("branch")
+                return GitTool.push(remote=remote, branch=branch)
 
         return {
             "success": False,
