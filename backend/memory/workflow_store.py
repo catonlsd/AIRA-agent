@@ -130,16 +130,26 @@ class WorkflowStore:
         cleanup_runs = sum(
             1 for run in runs if len(run.memory.get("cleanup_actions", [])) > 0
         )
+
         total_cleanup_actions = sum(
             len(run.memory.get("cleanup_actions", [])) for run in runs
         )
 
-        git_preflight_runs = sum(
+        git_write_preflight_runs = sum(
             1
             for run in runs
             if run.memory.get("approval_context", {}).get("type")
             == "git_write_preflight"
         )
+
+        git_push_preflight_runs = sum(
+            1
+            for run in runs
+            if run.memory.get("approval_context", {}).get("type")
+            == "git_push_preflight"
+        )
+
+        git_preflight_runs = git_write_preflight_runs + git_push_preflight_runs
 
         latest_runs = cls.list_runs()[-5:]
 
@@ -153,6 +163,8 @@ class WorkflowStore:
             "total_tool_calls": total_tool_calls,
             "total_logs": total_logs,
             "git_preflight_runs": git_preflight_runs,
+            "git_write_preflight_runs": git_write_preflight_runs,
+            "git_push_preflight_runs": git_push_preflight_runs,
             "cleanup_runs": cleanup_runs,
             "total_cleanup_actions": total_cleanup_actions,
             "latest_runs": latest_runs,
