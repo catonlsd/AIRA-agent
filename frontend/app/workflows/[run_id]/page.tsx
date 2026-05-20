@@ -11,6 +11,7 @@ import {
   GitBranch,
   History,
   ShieldAlert,
+  UploadCloud,
   Workflow,
   XCircle,
 } from "lucide-react";
@@ -18,16 +19,30 @@ import { getAiraXRun } from "@/lib/api";
 
 type ApprovalContext = {
   type?: string;
+  preflight_scope?: string;
   tool_name?: string;
   tool_action?: string;
   pending_action?: string;
+
   commit_message?: string | null;
   branch?: string;
   changed_files?: string;
   diff_summary?: string;
+
+  target_remote?: string;
+  target_branch?: string;
+  status_branch?: string;
+  remote_info?: string;
+  last_commit?: string;
+  recent_commits?: string;
+
   branch_success?: boolean;
   status_success?: boolean;
   diff_success?: boolean;
+  status_branch_success?: boolean;
+  remote_info_success?: boolean;
+  last_commit_success?: boolean;
+  recent_commits_success?: boolean;
 };
 
 type WorkflowLog = {
@@ -97,11 +112,7 @@ function getStatusIcon(status: string) {
   return <Clock className="h-4 w-4" />;
 }
 
-function renderApprovalContext(context?: ApprovalContext | null) {
-  if (!context || context.type !== "git_write_preflight") {
-    return null;
-  }
-
+function renderGitWritePreflight(context: ApprovalContext) {
   return (
     <section className="sarvam-card rounded-[1.5rem] border border-orange-200 bg-orange-50/40 p-5">
       <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-orange-900">
@@ -169,6 +180,122 @@ function renderApprovalContext(context?: ApprovalContext | null) {
       </div>
     </section>
   );
+}
+
+function renderGitPushPreflight(context: ApprovalContext) {
+  return (
+    <section className="sarvam-card rounded-[1.5rem] border border-red-200 bg-red-50/40 p-5">
+      <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-red-900">
+        <UploadCloud className="h-4 w-4" />
+        Git Push Preflight Summary
+      </div>
+
+      <p className="mb-4 text-sm leading-6 text-red-800">
+        This workflow required approval for a remote Git push. AIRA-X captured
+        the target remote, branch, tracking status, and recent commits before
+        asking for permission.
+      </p>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Target Remote
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {context.target_remote || "origin"}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Target Branch
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {context.target_branch || context.branch || "Unknown branch"}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Current Branch
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {context.branch || "Unknown branch"}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Git Action
+          </p>
+
+          <p className="mt-1 break-words text-sm font-semibold text-slate-900">
+            {context.pending_action || "Unknown action"}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Branch Tracking Status
+        </p>
+
+        <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-4 text-xs leading-5 text-slate-100">
+          {context.status_branch?.trim() ||
+            "No branch tracking status available."}
+        </pre>
+      </div>
+
+      <div className="mt-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Remote Info
+        </p>
+
+        <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-4 text-xs leading-5 text-slate-100">
+          {context.remote_info?.trim() || "No remote info available."}
+        </pre>
+      </div>
+
+      <div className="mt-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Latest Local Commit
+        </p>
+
+        <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-4 text-xs leading-5 text-slate-100">
+          {context.last_commit?.trim() || "No latest commit available."}
+        </pre>
+      </div>
+
+      <div className="mt-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Recent Local Commits
+        </p>
+
+        <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-4 text-xs leading-5 text-slate-100">
+          {context.recent_commits?.trim() || "No recent commits available."}
+        </pre>
+      </div>
+    </section>
+  );
+}
+
+function renderApprovalContext(context?: ApprovalContext | null) {
+  if (!context) {
+    return null;
+  }
+
+  if (context.type === "git_write_preflight") {
+    return renderGitWritePreflight(context);
+  }
+
+  if (context.type === "git_push_preflight") {
+    return renderGitPushPreflight(context);
+  }
+
+  return null;
 }
 
 function renderCleanupActions(memory: any) {
