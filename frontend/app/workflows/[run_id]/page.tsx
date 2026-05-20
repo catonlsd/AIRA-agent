@@ -15,7 +15,7 @@ import {
   Workflow,
   XCircle,
 } from "lucide-react";
-import { getAiraXRun } from "@/lib/api";
+import { approveAiraX, getAiraXRun, rejectAiraX } from "@/lib/api";
 
 type ApprovalContext = {
   type?: string;
@@ -110,6 +110,18 @@ function getStatusIcon(status: string) {
   }
 
   return <Clock className="h-4 w-4" />;
+}
+
+function getActionLabel(status: string) {
+  if (status === "rejected") {
+    return "Rejected Action";
+  }
+
+  if (status === "requires_approval") {
+    return "Pending Action";
+  }
+
+  return "Action";
 }
 
 function renderGitWritePreflight(context: ApprovalContext) {
@@ -354,6 +366,8 @@ export default function WorkflowDetailPage() {
 
   const [run, setRun] = useState<WorkflowRun | null>(null);
   const [loading, setLoading] = useState(true);
+  const [approvalLoading, setApprovalLoading] = useState(false);
+  const [rejectionLoading, setRejectionLoading] = useState(false);
   const [error, setError] = useState("");
 
   async function loadRun() {
@@ -383,9 +397,50 @@ export default function WorkflowDetailPage() {
     }
   }
 
+  async function handleApprove() {
+    if (!run?.run_id) return;
+
+    setApprovalLoading(true);
+    setError("");
+
+    try {
+      const updatedRun = await approveAiraX(run.run_id);
+      setRun(updatedRun);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to approve workflow.";
+
+      setError(message);
+    } finally {
+      setApprovalLoading(false);
+    }
+  }
+
+  async function handleReject() {
+    if (!run?.run_id) return;
+
+    setRejectionLoading(true);
+    setError("");
+
+    try {
+      const updatedRun = await rejectAiraX(run.run_id);
+      setRun(updatedRun);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to reject workflow.";
+
+      setError(message);
+    } finally {
+      setRejectionLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadRun();
   }, [runId]);
+
+  const isWaitingForApproval =
+    run?.requires_approval || run?.status === "requires_approval";
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-6xl flex-col gap-6">
@@ -462,18 +517,51 @@ export default function WorkflowDetailPage() {
 
               {run.pending_action && (
                 <p>
-                  <strong>
-                    {run.status === "rejected"
-                      ? "Rejected Action"
-                      : run.status === "requires_approval"
-                        ? "Pending Action"
-                        : "Action"}
-                    :
-                  </strong>{" "}
+                  <strong>{getActionLabel(run.status)}:</strong>{" "}
                   {run.pending_action}
                 </p>
               )}
             </div>
+
+            {isWaitingForApproval && (
+              <div className="mt-5 rounded-2xl border border-orange-200 bg-orange-50 p-4">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-orange-900">
+                      Approval Required
+                    </h3>
+
+                    <p className="mt-1 text-sm leading-6 text-orange-800">
+                      This workflow is paused. Approve to continue execution, or
+                      reject to stop it safely.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={handleApprove}
+                      disabled={approvalLoading || rejectionLoading}
+                      className="rounded-xl bg-orange-600 px-5 py-3 text-sm font-bold text-white shadow-md transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {approvalLoading
+                        ? "Approving..."
+                        : "Approve & Continue"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleReject}
+                      disabled={approvalLoading || rejectionLoading}
+                      className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-5 py-3 text-sm font-bold text-red-700 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      {rejectionLoading ? "Rejecting..." : "Reject Action"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </section>
 
           {renderApprovalContext(run.approval_context)}
