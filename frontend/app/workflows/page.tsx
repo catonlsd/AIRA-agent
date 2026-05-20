@@ -97,6 +97,18 @@ function getStatusIcon(status: string) {
   return <Clock className="h-4 w-4" />;
 }
 
+function getActionLabel(status: string) {
+  if (status === "rejected") {
+    return "Rejected Action";
+  }
+
+  if (status === "requires_approval") {
+    return "Pending Action";
+  }
+
+  return "Action";
+}
+
 function isGitWritePreflight(run: WorkflowRunSummary) {
   return (
     run.approval_context_type === "git_write_preflight" ||
@@ -229,9 +241,7 @@ export default function WorkflowsPage() {
             </div>
 
             <div className="sarvam-card rounded-[1.5rem] p-5">
-              <p className="text-sm font-semibold text-slate-500">
-                Cleanups
-              </p>
+              <p className="text-sm font-semibold text-slate-500">Cleanups</p>
 
               <h2 className="mt-1 text-3xl font-semibold text-green-700">
                 {cleanupRunCount}
@@ -322,7 +332,7 @@ export default function WorkflowsPage() {
 
                             {run.pending_action && (
                               <p className="mt-1 text-xs text-slate-600">
-                                <strong>Pending Action:</strong>{" "}
+                                <strong>{getActionLabel(run.status)}:</strong>{" "}
                                 {run.pending_action}
                               </p>
                             )}
