@@ -24,6 +24,12 @@ type ApprovalContext = {
   branch?: string;
   changed_files?: string;
   diff_summary?: string;
+  target_remote?: string;
+  target_branch?: string;
+  status_branch?: string;
+  remote_info?: string;
+  last_commit?: string;
+  recent_commits?: string;
 };
 
 type CleanupAction = {
@@ -111,10 +117,31 @@ function getStatusIcon(status: string) {
   return <Clock className="h-4 w-4" />;
 }
 
+function getActionLabel(status: string) {
+  if (status === "rejected") {
+    return "Rejected Action";
+  }
+
+  if (status === "requires_approval") {
+    return "Pending Action";
+  }
+
+  return "Action";
+}
+
 function hasGitPreflight(run: LatestRun) {
   return (
     run.approval_context_type === "git_write_preflight" ||
-    run.approval_context?.type === "git_write_preflight"
+    run.approval_context?.type === "git_write_preflight" ||
+    run.approval_context_type === "git_push_preflight" ||
+    run.approval_context?.type === "git_push_preflight"
+  );
+}
+
+function isGitPushPreflight(run: LatestRun) {
+  return (
+    run.approval_context_type === "git_push_preflight" ||
+    run.approval_context?.type === "git_push_preflight"
   );
 }
 
@@ -363,6 +390,7 @@ export default function OverviewPage() {
               <div className="space-y-3">
                 {metrics.latest_runs.map((run) => {
                   const gitPreflight = hasGitPreflight(run);
+                  const gitPushPreflight = isGitPushPreflight(run);
                   const cleanupPerformed = Boolean(run.has_cleanup);
 
                   return (
@@ -391,9 +419,17 @@ export default function OverviewPage() {
                             </span>
 
                             {gitPreflight && (
-                              <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700">
+                              <span
+                                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
+                                  gitPushPreflight
+                                    ? "border-red-200 bg-red-50 text-red-700"
+                                    : "border-orange-200 bg-orange-50 text-orange-700"
+                                }`}
+                              >
                                 <ShieldAlert className="h-3.5 w-3.5" />
-                                Git Preflight
+                                {gitPushPreflight
+                                  ? "Git Push Preflight"
+                                  : "Git Preflight"}
                               </span>
                             )}
 
@@ -420,41 +456,79 @@ export default function OverviewPage() {
 
                           {run.pending_action && (
                             <p className="mt-1 text-xs text-slate-600">
-                              <strong>Pending Action:</strong>{" "}
+                              <strong>{getActionLabel(run.status)}:</strong>{" "}
                               {run.pending_action}
                             </p>
                           )}
 
                           {gitPreflight && (
-                            <div className="mt-3 rounded-xl border border-orange-100 bg-white p-3">
-                              <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-orange-700">
+                            <div
+                              className={`mt-3 rounded-xl border bg-white p-3 ${
+                                gitPushPreflight
+                                  ? "border-red-100"
+                                  : "border-orange-100"
+                              }`}
+                            >
+                              <div
+                                className={`mb-2 flex items-center gap-2 text-xs font-semibold ${
+                                  gitPushPreflight
+                                    ? "text-red-700"
+                                    : "text-orange-700"
+                                }`}
+                              >
                                 <GitBranch className="h-3.5 w-3.5" />
-                                Git Approval Preview
+                                {gitPushPreflight
+                                  ? "Git Push Approval Preview"
+                                  : "Git Approval Preview"}
                               </div>
 
                               <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-2">
-                                <p>
-                                  <strong>Branch:</strong>{" "}
-                                  {run.approval_context?.branch ||
-                                    "Unknown branch"}
-                                </p>
+                                {gitPushPreflight ? (
+                                  <>
+                                    <p>
+                                      <strong>Target Remote:</strong>{" "}
+                                      {run.approval_context?.target_remote ||
+                                        "origin"}
+                                    </p>
 
-                                <p>
-                                  <strong>Action:</strong>{" "}
-                                  {run.approval_context?.pending_action ||
-                                    run.pending_action ||
-                                    "Unknown action"}
-                                </p>
+                                    <p>
+                                      <strong>Target Branch:</strong>{" "}
+                                      {run.approval_context?.target_branch ||
+                                        run.approval_context?.branch ||
+                                        "Unknown branch"}
+                                    </p>
+                                  </>
+                                ) : (
+                                  <>
+                                    <p>
+                                      <strong>Branch:</strong>{" "}
+                                      {run.approval_context?.branch ||
+                                        "Unknown branch"}
+                                    </p>
+
+                                    <p>
+                                      <strong>Action:</strong>{" "}
+                                      {run.approval_context?.pending_action ||
+                                        run.pending_action ||
+                                        "Unknown action"}
+                                    </p>
+                                  </>
+                                )}
                               </div>
 
                               <div className="mt-3">
                                 <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                  Diff Summary
+                                  {gitPushPreflight
+                                    ? "Latest Local Commit"
+                                    : "Diff Summary"}
                                 </p>
 
                                 <pre className="max-h-36 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">
-                                  {run.approval_context?.diff_summary?.trim() ||
-                                    "No diff summary available."}
+                                  {gitPushPreflight
+                                    ? run.approval_context?.last_commit?.trim() ||
+                                      "No latest commit available."
+                                    : run.approval_context?.diff_summary?.trim() ||
+                                      "No diff summary available."}
                                 </pre>
                               </div>
                             </div>
