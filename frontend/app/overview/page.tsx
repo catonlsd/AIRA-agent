@@ -10,6 +10,7 @@ import {
   Database,
   GitBranch,
   ShieldAlert,
+  UploadCloud,
   Wrench,
   XCircle,
 } from "lucide-react";
@@ -79,6 +80,8 @@ type OverviewResponse = {
     total_tool_calls: number;
     total_logs: number;
     git_preflight_runs?: number;
+    git_write_preflight_runs?: number;
+    git_push_preflight_runs?: number;
     cleanup_runs?: number;
     total_cleanup_actions?: number;
     latest_runs: LatestRun[];
@@ -129,12 +132,10 @@ function getActionLabel(status: string) {
   return "Action";
 }
 
-function hasGitPreflight(run: LatestRun) {
+function isGitWritePreflight(run: LatestRun) {
   return (
     run.approval_context_type === "git_write_preflight" ||
-    run.approval_context?.type === "git_write_preflight" ||
-    run.approval_context_type === "git_push_preflight" ||
-    run.approval_context?.type === "git_push_preflight"
+    run.approval_context?.type === "git_write_preflight"
   );
 }
 
@@ -143,6 +144,10 @@ function isGitPushPreflight(run: LatestRun) {
     run.approval_context_type === "git_push_preflight" ||
     run.approval_context?.type === "git_push_preflight"
   );
+}
+
+function hasGitPreflight(run: LatestRun) {
+  return isGitWritePreflight(run) || isGitPushPreflight(run);
 }
 
 export default function OverviewPage() {
@@ -177,6 +182,12 @@ export default function OverviewPage() {
   const latestGitPreflightCount =
     metrics?.latest_runs.filter((run) => hasGitPreflight(run)).length || 0;
 
+  const latestGitWritePreflightCount =
+    metrics?.latest_runs.filter((run) => isGitWritePreflight(run)).length || 0;
+
+  const latestGitPushPreflightCount =
+    metrics?.latest_runs.filter((run) => isGitPushPreflight(run)).length || 0;
+
   const latestCleanupCount =
     metrics?.latest_runs.filter((run) => run.has_cleanup).length || 0;
 
@@ -198,8 +209,8 @@ export default function OverviewPage() {
 
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
               Monitor AIRA-X agents, tools, workflow runs, retries, approvals,
-              execution activity, Git preflight summaries, cleanup actions, and
-              platform health.
+              execution activity, Git write preflights, Git push preflights,
+              cleanup actions, and platform health.
             </p>
           </div>
 
@@ -333,15 +344,49 @@ export default function OverviewPage() {
             </div>
           </section>
 
-          <section className="grid gap-4 md:grid-cols-4">
+          <section className="grid gap-4 md:grid-cols-5">
             <div className="sarvam-card rounded-[1.5rem] p-5">
               <p className="text-sm font-semibold text-slate-500">
                 Git Preflights
               </p>
 
-              <h2 className="mt-1 text-3xl font-semibold text-orange-700">
+              <h2 className="mt-1 text-3xl font-semibold text-purple-700">
                 {metrics.git_preflight_runs ?? latestGitPreflightCount}
               </h2>
+            </div>
+
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
+                Git Write Preflights
+              </p>
+
+              <div className="mt-2 flex items-center justify-between">
+                <h2 className="text-3xl font-semibold text-orange-700">
+                  {metrics.git_write_preflight_runs ??
+                    latestGitWritePreflightCount}
+                </h2>
+
+                <div className="rounded-2xl bg-orange-50 p-3 text-orange-600">
+                  <ShieldAlert className="h-6 w-6" />
+                </div>
+              </div>
+            </div>
+
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
+                Git Push Preflights
+              </p>
+
+              <div className="mt-2 flex items-center justify-between">
+                <h2 className="text-3xl font-semibold text-red-700">
+                  {metrics.git_push_preflight_runs ??
+                    latestGitPushPreflightCount}
+                </h2>
+
+                <div className="rounded-2xl bg-red-50 p-3 text-red-600">
+                  <UploadCloud className="h-6 w-6" />
+                </div>
+              </div>
             </div>
 
             <div className="sarvam-card rounded-[1.5rem] p-5">
@@ -362,17 +407,6 @@ export default function OverviewPage() {
               <h2 className="mt-1 text-3xl font-semibold text-green-700">
                 {metrics.total_cleanup_actions ?? 0}
               </h2>
-            </div>
-
-            <div className="sarvam-card rounded-[1.5rem] p-5">
-              <p className="text-sm font-semibold text-slate-500">
-                Storage Mode
-              </p>
-
-              <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">
-                <Database className="h-4 w-4" />
-                Local JSON
-              </div>
             </div>
           </section>
 
@@ -426,10 +460,15 @@ export default function OverviewPage() {
                                     : "border-orange-200 bg-orange-50 text-orange-700"
                                 }`}
                               >
-                                <ShieldAlert className="h-3.5 w-3.5" />
+                                {gitPushPreflight ? (
+                                  <UploadCloud className="h-3.5 w-3.5" />
+                                ) : (
+                                  <ShieldAlert className="h-3.5 w-3.5" />
+                                )}
+
                                 {gitPushPreflight
                                   ? "Git Push Preflight"
-                                  : "Git Preflight"}
+                                  : "Git Write Preflight"}
                               </span>
                             )}
 
@@ -476,10 +515,15 @@ export default function OverviewPage() {
                                     : "text-orange-700"
                                 }`}
                               >
-                                <GitBranch className="h-3.5 w-3.5" />
+                                {gitPushPreflight ? (
+                                  <UploadCloud className="h-3.5 w-3.5" />
+                                ) : (
+                                  <GitBranch className="h-3.5 w-3.5" />
+                                )}
+
                                 {gitPushPreflight
                                   ? "Git Push Approval Preview"
-                                  : "Git Approval Preview"}
+                                  : "Git Write Approval Preview"}
                               </div>
 
                               <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-2">
@@ -577,6 +621,19 @@ export default function OverviewPage() {
                 })}
               </div>
             )}
+          </section>
+
+          <section className="grid gap-4 md:grid-cols-1">
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
+                Storage Mode
+              </p>
+
+              <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">
+                <Database className="h-4 w-4" />
+                Local JSON
+              </div>
+            </div>
           </section>
         </>
       )}
