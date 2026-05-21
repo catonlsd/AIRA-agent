@@ -815,6 +815,232 @@ async def test_approved_git_push_success_uses_git_tool_without_real_push():
     return True
 
 
+async def test_double_approval_is_blocked_after_completion():
+    print("Testing double approval is blocked after completion...")
+
+    original_tool_run = aira_x_routes.ToolRouter.run
+    tool_calls = []
+    created_run_id = None
+
+    def fake_tool_run(tool_name, action, payload=None):
+        payload = payload or {}
+
+        tool_calls.append(
+            {
+                "tool_name": tool_name,
+                "action": action,
+                "payload": payload,
+            }
+        )
+
+        if tool_name == "git_tool" and action == "branch":
+            return {
+                "success": True,
+                "tool_name": "git_tool",
+                "action": "branch",
+                "command": "git branch --show-current",
+                "output": "main",
+                "return_code": 0,
+            }
+
+        if tool_name == "git_tool" and action == "status_branch":
+            return {
+                "success": True,
+                "tool_name": "git_tool",
+                "action": "status_branch",
+                "command": "git status --short --branch",
+                "output": "## main...origin/main",
+                "return_code": 0,
+            }
+
+        if tool_name == "git_tool" and action == "remote_info":
+            return {
+                "success": True,
+                "tool_name": "git_tool",
+                "action": "remote_info",
+                "command": "git remote -v",
+                "output": (
+                    "origin https://github.com/example/repo.git (fetch)\n"
+                    "origin https://github.com/example/repo.git (push)"
+                ),
+                "return_code": 0,
+            }
+
+        if tool_name == "git_tool" and action == "last_commit":
+            return {
+                "success": True,
+                "tool_name": "git_tool",
+                "action": "last_commit",
+                "command": "git log -1 --oneline",
+                "output": "abc1234 Mock latest commit",
+                "return_code": 0,
+            }
+
+        if tool_name == "git_tool" and action == "recent_commits":
+            return {
+                "success": True,
+                "tool_name": "git_tool",
+                "action": "recent_commits",
+                "command": "git log --oneline -3",
+                "output": "abc1234 Mock latest commit",
+                "return_code": 0,
+            }
+
+        if tool_name == "git_tool" and action == "push":
+            return {
+                "success": True,
+                "tool_name": "git_tool",
+                "action": "push",
+                "command": "git push origin main",
+                "output": "Everything up-to-date",
+                "return_code": 0,
+            }
+
+        return {
+            "success": False,
+            "tool_name": tool_name,
+            "action": action,
+            "output": "",
+            "error": f"Unexpected mocked tool call: {tool_name}.{action}",
+            "return_code": 1,
+        }
+
+    try:
+        aira_x_routes.ToolRouter.run = staticmethod(fake_tool_run)
+
+        initial_response = await run_aira_x(AiraXRunRequest(goal="git push"))
+        created_run_id = initial_response["run_id"]
+
+        assert_equal(
+            initial_response["status"],
+            "requires_approval",
+            "Double approval initial status",
+        )
+
+        first_approval = await approve_aira_x_action(
+            AiraXApproveRequest(run_id=created_run_id)
+        )
+
+        assert_equal(
+            first_approval["status"],
+            "completed",
+            "First approval should complete workflow",
+        )
+
+        second_approval = await approve_aira_x_action(
+            AiraXApproveRequest(run_id=created_run_id)
+        )
+
+        assert_equal(
+            second_approval["success"],
+            False,
+            "Second approval should be rejected safely",
+        )
+
+        assert_equal(
+            second_approval["current_status"],
+            "completed",
+            "Second approval should report completed status",
+        )
+
+        assert_contains(
+            second_approval["error"],
+            "already be handled",
+            "Second approval error should explain action is already handled",
+        )
+
+        push_calls = [
+            call
+            for call in tool_calls
+            if call["tool_name"] == "git_tool" and call["action"] == "push"
+        ]
+
+        assert_equal(
+            len(push_calls),
+            1,
+            "Double approval should not execute git push twice",
+        )
+
+    finally:
+        aira_x_routes.ToolRouter.run = original_tool_run
+
+        if created_run_id:
+            WorkflowStore.delete(created_run_id)
+
+    print("✅ Double approval block passed")
+
+    return True
+
+
+async def test_double_rejection_is_blocked_after_rejection():
+    print("Testing double rejection is blocked after rejection...")
+
+    initial_response = await run_aira_x(AiraXRunRequest(goal="git push"))
+    run_id = initial_response["run_id"]
+
+    try:
+        assert_equal(
+            initial_response["status"],
+            "requires_approval",
+            "Double rejection initial status",
+        )
+
+        first_rejection = await reject_aira_x_action(
+            AiraXRejectRequest(run_id=run_id)
+        )
+
+        assert_equal(
+            first_rejection["status"],
+            "rejected",
+            "First rejection should reject workflow",
+        )
+
+        second_rejection = await reject_aira_x_action(
+            AiraXRejectRequest(run_id=run_id)
+        )
+
+        assert_equal(
+            second_rejection["success"],
+            False,
+            "Second rejection should be rejected safely",
+        )
+
+        assert_equal(
+            second_rejection["current_status"],
+            "rejected",
+            "Second rejection should report rejected status",
+        )
+
+        assert_contains(
+            second_rejection["error"],
+            "already be handled",
+            "Second rejection error should explain action is already handled",
+        )
+
+        approval_after_rejection = await approve_aira_x_action(
+            AiraXApproveRequest(run_id=run_id)
+        )
+
+        assert_equal(
+            approval_after_rejection["success"],
+            False,
+            "Approval after rejection should be rejected safely",
+        )
+
+        assert_equal(
+            approval_after_rejection["current_status"],
+            "rejected",
+            "Approval after rejection should report rejected status",
+        )
+
+    finally:
+        WorkflowStore.delete(run_id)
+
+    print("✅ Double rejection block passed")
+
+    return True
+
+
 async def test_git_push_failure_is_non_retryable():
     print("Testing Git push failure is non-retryable...")
 
@@ -1751,6 +1977,8 @@ async def main():
     await test_git_push_requires_approval()
     await test_git_push_custom_target_requires_approval()
     await test_approved_git_push_success_uses_git_tool_without_real_push()
+    await test_double_approval_is_blocked_after_completion()
+    await test_double_rejection_is_blocked_after_rejection()
     await test_git_push_failure_is_non_retryable()
     await test_workflow_runs_include_git_preflight_summary()
     await test_overview_latest_runs_include_git_preflight_summary()
