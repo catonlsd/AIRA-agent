@@ -27,6 +27,7 @@ class DecisionAgent(BaseAgent):
             if current_step.tool_name == "git_tool" and current_step.tool_action in {
                 "stage_all",
                 "commit",
+                "push",
             }:
                 state.decision = "stop_non_retryable_failure"
                 state.status = "failed"

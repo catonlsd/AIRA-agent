@@ -8,6 +8,7 @@ import app.routes.aira_x as aira_x_routes
 
 from schemas.aira_state import AiraXState, AiraXStep
 from memory.workflow_store import WorkflowStore
+from agents.decision.decision_agent import DecisionAgent
 
 from app.routes.aira_x import (
     AiraXApproveRequest,
@@ -624,6 +625,66 @@ async def test_git_push_custom_target_requires_approval():
     print("✅ Git push custom target approval requirement passed")
 
     return response
+
+
+async def test_git_push_failure_is_non_retryable():
+    print("Testing Git push failure is non-retryable...")
+
+    state = AiraXState(
+        user_goal="git push",
+        run_id="test-git-push-non-retryable-failure",
+    )
+
+    state.status = "failed"
+    state.decision = "execution_failed"
+    state.current_step = 1
+    state.retry_count = 0
+    state.max_retries = 3
+
+    state.plan = [
+        AiraXStep(
+            id=1,
+            title="Push Git changes",
+            description="Push local commits to a remote Git repository.",
+            assigned_agent="execution_agent",
+            tool_name="git_tool",
+            tool_action="push",
+            tool_payload={"remote": "origin", "branch": "main"},
+            status="failed",
+            error="remote rejected push during test",
+        )
+    ]
+
+    decision_agent = DecisionAgent()
+    response_state = await decision_agent.run(state)
+
+    assert_equal(
+        response_state.decision,
+        "stop_non_retryable_failure",
+        "Git push failure should stop as non-retryable",
+    )
+
+    assert_equal(
+        response_state.status,
+        "failed",
+        "Git push non-retryable failure status",
+    )
+
+    assert_contains(
+        response_state.final_answer,
+        "remote rejected push during test",
+        "Git push non-retryable final answer should include real error",
+    )
+
+    assert_equal(
+        response_state.retry_count,
+        0,
+        "Git push failure should not increment retry count",
+    )
+
+    print("✅ Git push non-retryable failure passed")
+
+    return response_state
 
 
 async def test_workflow_runs_include_git_preflight_summary():
@@ -1501,6 +1562,7 @@ async def main():
     await test_git_preflight_context()
     await test_git_push_requires_approval()
     await test_git_push_custom_target_requires_approval()
+    await test_git_push_failure_is_non_retryable()
     await test_workflow_runs_include_git_preflight_summary()
     await test_overview_latest_runs_include_git_preflight_summary()
     await test_git_preflight_metrics_in_overview()
