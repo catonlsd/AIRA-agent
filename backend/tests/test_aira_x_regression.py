@@ -627,6 +627,194 @@ async def test_git_push_custom_target_requires_approval():
     return response
 
 
+async def test_approved_git_push_success_uses_git_tool_without_real_push():
+    print("Testing approved Git push success with mocked Git tool...")
+
+    original_tool_run = aira_x_routes.ToolRouter.run
+    tool_calls = []
+
+    def fake_tool_run(tool_name, action, payload=None):
+        payload = payload or {}
+
+        tool_calls.append(
+            {
+                "tool_name": tool_name,
+                "action": action,
+                "payload": payload,
+            }
+        )
+
+        if tool_name == "git_tool" and action == "branch":
+            return {
+                "success": True,
+                "tool_name": "git_tool",
+                "action": "branch",
+                "command": "git branch --show-current",
+                "output": "main",
+                "return_code": 0,
+            }
+
+        if tool_name == "git_tool" and action == "status_branch":
+            return {
+                "success": True,
+                "tool_name": "git_tool",
+                "action": "status_branch",
+                "command": "git status --short --branch",
+                "output": "## main...origin/main",
+                "return_code": 0,
+            }
+
+        if tool_name == "git_tool" and action == "remote_info":
+            return {
+                "success": True,
+                "tool_name": "git_tool",
+                "action": "remote_info",
+                "command": "git remote -v",
+                "output": (
+                    "origin https://github.com/example/repo.git (fetch)\n"
+                    "origin https://github.com/example/repo.git (push)"
+                ),
+                "return_code": 0,
+            }
+
+        if tool_name == "git_tool" and action == "last_commit":
+            return {
+                "success": True,
+                "tool_name": "git_tool",
+                "action": "last_commit",
+                "command": "git log -1 --oneline",
+                "output": "abc1234 Mock latest commit",
+                "return_code": 0,
+            }
+
+        if tool_name == "git_tool" and action == "recent_commits":
+            return {
+                "success": True,
+                "tool_name": "git_tool",
+                "action": "recent_commits",
+                "command": "git log --oneline -3",
+                "output": "abc1234 Mock latest commit",
+                "return_code": 0,
+            }
+
+        if tool_name == "git_tool" and action == "push":
+            return {
+                "success": True,
+                "tool_name": "git_tool",
+                "action": "push",
+                "command": "git push origin main",
+                "output": "Everything up-to-date",
+                "return_code": 0,
+            }
+
+        return {
+            "success": False,
+            "tool_name": tool_name,
+            "action": action,
+            "output": "",
+            "error": f"Unexpected mocked tool call: {tool_name}.{action}",
+            "return_code": 1,
+        }
+
+    try:
+        aira_x_routes.ToolRouter.run = staticmethod(fake_tool_run)
+
+        initial_response = await run_aira_x(AiraXRunRequest(goal="git push"))
+
+        assert_equal(
+            initial_response["status"],
+            "requires_approval",
+            "Mocked Git push should first require approval",
+        )
+
+        assert_equal(
+            initial_response["pending_action"],
+            "git_tool:push origin current_branch",
+            "Mocked Git push pending action",
+        )
+
+        approval_context = initial_response.get("approval_context")
+
+        assert_true(
+            isinstance(approval_context, dict),
+            "Mocked Git push approval context should exist",
+        )
+
+        assert_equal(
+            approval_context.get("type"),
+            "git_push_preflight",
+            "Mocked Git push approval context type",
+        )
+
+        run_id = initial_response["run_id"]
+
+        approved_response = await approve_aira_x_action(
+            AiraXApproveRequest(run_id=run_id)
+        )
+
+        assert_equal(
+            approved_response["status"],
+            "completed",
+            "Approved mocked Git push workflow should complete",
+        )
+
+        assert_contains(
+            approved_response["final_answer"],
+            "Workflow completed successfully",
+            "Approved mocked Git push final answer",
+        )
+
+        first_step = approved_response["plan"][0]
+
+        assert_equal(
+            first_step["tool_name"],
+            "git_tool",
+            "Approved mocked Git push tool selection",
+        )
+
+        assert_equal(
+            first_step["tool_action"],
+            "push",
+            "Approved mocked Git push action selection",
+        )
+
+        assert_contains(
+            first_step.get("result") or "",
+            "Everything up-to-date",
+            "Approved mocked Git push result",
+        )
+
+        assert_true(
+            any(
+                call["tool_name"] == "git_tool" and call["action"] == "push"
+                for call in tool_calls
+            ),
+            "Approved mocked Git push should execute git_tool.push",
+        )
+
+        push_calls = [
+            call
+            for call in tool_calls
+            if call["tool_name"] == "git_tool" and call["action"] == "push"
+        ]
+
+        assert_equal(
+            len(push_calls),
+            1,
+            "Approved mocked Git push should execute exactly one push call",
+        )
+
+    finally:
+        aira_x_routes.ToolRouter.run = original_tool_run
+
+        if "initial_response" in locals() and initial_response.get("run_id"):
+            WorkflowStore.delete(initial_response["run_id"])
+
+    print("✅ Approved Git push success path passed")
+
+    return True
+
+
 async def test_git_push_failure_is_non_retryable():
     print("Testing Git push failure is non-retryable...")
 
@@ -1562,6 +1750,7 @@ async def main():
     await test_git_preflight_context()
     await test_git_push_requires_approval()
     await test_git_push_custom_target_requires_approval()
+    await test_approved_git_push_success_uses_git_tool_without_real_push()
     await test_git_push_failure_is_non_retryable()
     await test_workflow_runs_include_git_preflight_summary()
     await test_overview_latest_runs_include_git_preflight_summary()
