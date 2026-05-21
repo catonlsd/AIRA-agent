@@ -72,6 +72,17 @@ export type AiraXApprovalContext = {
   [key: string]: any;
 };
 
+export type AiraXApprovalResolution = {
+  status?: string;
+  action?: string;
+  requested_at?: string;
+  completed_at?: string;
+  final_status?: string;
+  final_decision?: string;
+  error?: string;
+  [key: string]: any;
+};
+
 export type AiraXCleanupAction = {
   reason: string;
   tool_name: string;
@@ -110,11 +121,19 @@ export type AiraXWorkflowRun = {
   retry_count: number;
   requires_approval: boolean;
   pending_action?: string;
+
   approval_context?: AiraXApprovalContext;
   approval_context_type?: string;
+
+  approval_in_progress?: boolean;
+  approval_resolution?: AiraXApprovalResolution;
+  approval_resolution_status?: string;
+  approval_resolution_action?: string;
+
   cleanup_actions?: AiraXCleanupAction[];
   cleanup_count?: number;
   has_cleanup?: boolean;
+
   step_count: number;
   log_count: number;
   plan: AiraXWorkflowStep[];
@@ -122,6 +141,7 @@ export type AiraXWorkflowRun = {
   memory: Record<string, any>;
   workflow_logs?: any[];
   workflow_summary?: Record<string, any>;
+
   success?: boolean;
   error?: string;
   [key: string]: any;
@@ -178,14 +198,24 @@ export type AiraXOverviewResponse = {
     failed_runs: number;
     requires_approval_runs: number;
     rejected_runs: number;
+
     total_retries: number;
     total_tool_calls: number;
     total_logs: number;
+
     git_preflight_runs?: number;
     git_write_preflight_runs?: number;
     git_push_preflight_runs?: number;
+
     cleanup_runs?: number;
     total_cleanup_actions?: number;
+
+    approval_in_progress_runs?: number;
+    approval_resolved_runs?: number;
+    approval_approved_runs?: number;
+    approval_rejected_runs?: number;
+    approval_resume_failed_runs?: number;
+
     latest_runs: AiraXWorkflowRun[];
   };
 };
