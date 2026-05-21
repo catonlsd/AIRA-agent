@@ -754,6 +754,188 @@ async def test_overview_latest_runs_include_git_preflight_summary():
     return matching_run
 
 
+async def test_git_preflight_metrics_in_overview():
+    print("Testing Git preflight metrics in Overview API...")
+
+    write_run_id = "test-git-write-preflight-metrics"
+    push_run_id = "test-git-push-preflight-metrics"
+
+    WorkflowStore.delete(write_run_id)
+    WorkflowStore.delete(push_run_id)
+
+    write_state = AiraXState(
+        user_goal='commit all changes with message "Metrics write preflight"',
+        run_id=write_run_id,
+    )
+    write_state.status = "requires_approval"
+    write_state.decision = "stop_approval_required"
+    write_state.current_step = 1
+    write_state.final_answer = "Approval required before executing: git_tool:stage_all"
+
+    write_state.plan = [
+        AiraXStep(
+            id=1,
+            title="Stage Git changes",
+            description="Stage all current Git changes.",
+            assigned_agent="execution_agent",
+            tool_name="git_tool",
+            tool_action="stage_all",
+            tool_payload={},
+            status="blocked",
+            error="This action requires user approval.",
+        ),
+        AiraXStep(
+            id=2,
+            title="Commit Git changes",
+            description="Create a local Git commit after staging.",
+            assigned_agent="execution_agent",
+            tool_name="git_tool",
+            tool_action="commit",
+            tool_payload={"message": "Metrics write preflight"},
+            status="pending",
+        ),
+    ]
+    write_state.memory["pending_action"] = "git_tool:stage_all"
+    write_state.memory["approval_context"] = {
+        "type": "git_write_preflight",
+        "tool_name": "git_tool",
+        "tool_action": "stage_all",
+        "pending_action": "git_tool:stage_all",
+        "commit_message": "Metrics write preflight",
+        "branch": "main",
+        "changed_files": "M backend/example.py",
+        "diff_summary": "backend/example.py | 1 +",
+    }
+
+    push_state = AiraXState(
+        user_goal="git push",
+        run_id=push_run_id,
+    )
+    push_state.status = "requires_approval"
+    push_state.decision = "stop_approval_required"
+    push_state.current_step = 1
+    push_state.final_answer = (
+        "Approval required before executing: git_tool:push origin current_branch"
+    )
+
+    push_state.plan = [
+        AiraXStep(
+            id=1,
+            title="Push Git changes",
+            description="Push local commits to a remote Git repository.",
+            assigned_agent="execution_agent",
+            tool_name="git_tool",
+            tool_action="push",
+            tool_payload={"remote": "origin", "branch": None},
+            status="blocked",
+            error="This action requires user approval.",
+        )
+    ]
+    push_state.memory["pending_action"] = "git_tool:push origin current_branch"
+    push_state.memory["approval_context"] = {
+        "type": "git_push_preflight",
+        "tool_name": "git_tool",
+        "tool_action": "push",
+        "pending_action": "git_tool:push origin current_branch",
+        "target_remote": "origin",
+        "target_branch": "main",
+        "branch": "main",
+        "status_branch": "## main...origin/main",
+        "remote_info": "origin https://github.com/example/repo.git (fetch)",
+        "last_commit": "abc1234 Test commit",
+        "recent_commits": "abc1234 Test commit",
+    }
+
+    try:
+        WorkflowStore.save(write_state)
+        WorkflowStore.save(push_state)
+
+        overview_response = await get_aira_x_overview()
+        metrics = overview_response["workflow_metrics"]
+
+        assert_true(
+            "git_preflight_runs" in metrics,
+            "Overview metrics git_preflight_runs exists",
+        )
+
+        assert_true(
+            "git_write_preflight_runs" in metrics,
+            "Overview metrics git_write_preflight_runs exists",
+        )
+
+        assert_true(
+            "git_push_preflight_runs" in metrics,
+            "Overview metrics git_push_preflight_runs exists",
+        )
+
+        assert_true(
+            metrics["git_write_preflight_runs"] >= 1,
+            "Overview should count Git write preflight runs",
+        )
+
+        assert_true(
+            metrics["git_push_preflight_runs"] >= 1,
+            "Overview should count Git push preflight runs",
+        )
+
+        assert_true(
+            metrics["git_preflight_runs"]
+            >= metrics["git_write_preflight_runs"]
+            + metrics["git_push_preflight_runs"],
+            "Total Git preflight runs should include write and push preflights",
+        )
+
+        latest_runs = metrics["latest_runs"]
+
+        latest_write_run = next(
+            (
+                run
+                for run in latest_runs
+                if run["run_id"] == write_run_id
+            ),
+            None,
+        )
+
+        latest_push_run = next(
+            (
+                run
+                for run in latest_runs
+                if run["run_id"] == push_run_id
+            ),
+            None,
+        )
+
+        assert_true(
+            latest_write_run is not None,
+            "Overview latest runs should include Git write preflight test run",
+        )
+
+        assert_true(
+            latest_push_run is not None,
+            "Overview latest runs should include Git push preflight test run",
+        )
+
+        assert_equal(
+            latest_write_run["approval_context_type"],
+            "git_write_preflight",
+            "Latest write run should include git_write_preflight type",
+        )
+
+        assert_equal(
+            latest_push_run["approval_context_type"],
+            "git_push_preflight",
+            "Latest push run should include git_push_preflight type",
+        )
+
+    finally:
+        WorkflowStore.delete(write_run_id)
+        WorkflowStore.delete(push_run_id)
+
+    print("✅ Git preflight metrics in overview passed")
+
+    return True
+
+
 async def test_commit_rejection_triggers_unstage_cleanup():
     print("Testing commit rejection triggers unstage cleanup...")
 
@@ -1252,6 +1434,18 @@ async def test_platform_overview_api():
         "total_cleanup_actions" in metrics,
         "Overview metrics total_cleanup_actions exists",
     )
+    assert_true(
+        "git_preflight_runs" in metrics,
+        "Overview metrics git_preflight_runs exists",
+    )
+    assert_true(
+        "git_write_preflight_runs" in metrics,
+        "Overview metrics git_write_preflight_runs exists",
+    )
+    assert_true(
+        "git_push_preflight_runs" in metrics,
+        "Overview metrics git_push_preflight_runs exists",
+    )
 
     print("✅ Platform Overview API passed")
 
@@ -1309,6 +1503,7 @@ async def main():
     await test_git_push_custom_target_requires_approval()
     await test_workflow_runs_include_git_preflight_summary()
     await test_overview_latest_runs_include_git_preflight_summary()
+    await test_git_preflight_metrics_in_overview()
     await test_commit_rejection_triggers_unstage_cleanup()
     await test_cleanup_metrics_in_runs_and_overview()
 
