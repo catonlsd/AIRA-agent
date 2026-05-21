@@ -14,7 +14,7 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
-import { getAiraXOverview } from "@/lib/api";
+import { approveAiraX, getAiraXOverview, rejectAiraX } from "@/lib/api";
 
 type ApprovalContext = {
   type?: string;
@@ -150,9 +150,17 @@ function hasGitPreflight(run: LatestRun) {
   return isGitWritePreflight(run) || isGitPushPreflight(run);
 }
 
+function isWaitingForApproval(run: LatestRun) {
+  return run.requires_approval || run.status === "requires_approval";
+}
+
 export default function OverviewPage() {
   const [overview, setOverview] = useState<OverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [actionRunId, setActionRunId] = useState<string | null>(null);
+  const [actionType, setActionType] = useState<"approve" | "reject" | null>(
+    null
+  );
   const [error, setError] = useState("");
 
   async function loadOverview() {
@@ -170,6 +178,44 @@ export default function OverviewPage() {
       setError(message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleApprove(runId: string) {
+    try {
+      setActionRunId(runId);
+      setActionType("approve");
+      setError("");
+
+      await approveAiraX(runId);
+      await loadOverview();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to approve workflow.";
+
+      setError(message);
+    } finally {
+      setActionRunId(null);
+      setActionType(null);
+    }
+  }
+
+  async function handleReject(runId: string) {
+    try {
+      setActionRunId(runId);
+      setActionType("reject");
+      setError("");
+
+      await rejectAiraX(runId);
+      await loadOverview();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to reject workflow.";
+
+      setError(message);
+    } finally {
+      setActionRunId(null);
+      setActionType(null);
     }
   }
 
@@ -426,6 +472,8 @@ export default function OverviewPage() {
                   const gitPreflight = hasGitPreflight(run);
                   const gitPushPreflight = isGitPushPreflight(run);
                   const cleanupPerformed = Boolean(run.has_cleanup);
+                  const waitingForApproval = isWaitingForApproval(run);
+                  const actionInProgress = actionRunId === run.run_id;
 
                   return (
                     <div
@@ -607,6 +655,46 @@ export default function OverviewPage() {
                                     </p>
                                   </>
                                 )}
+                              </div>
+                            </div>
+                          )}
+
+                          {waitingForApproval && (
+                            <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-orange-100 bg-white p-4 md:flex-row md:items-center md:justify-between">
+                              <div>
+                                <p className="text-sm font-bold text-orange-900">
+                                  Approval Required
+                                </p>
+
+                                <p className="mt-1 text-xs leading-5 text-orange-700">
+                                  Approve to continue this workflow, or reject
+                                  to stop it safely.
+                                </p>
+                              </div>
+
+                              <div className="flex flex-wrap gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => handleApprove(run.run_id)}
+                                  disabled={Boolean(actionRunId)}
+                                  className="rounded-xl bg-orange-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {actionInProgress && actionType === "approve"
+                                    ? "Approving..."
+                                    : "Approve & Continue"}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleReject(run.run_id)}
+                                  disabled={Boolean(actionRunId)}
+                                  className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-xs font-bold text-red-700 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  <XCircle className="h-3.5 w-3.5" />
+                                  {actionInProgress && actionType === "reject"
+                                    ? "Rejecting..."
+                                    : "Reject Action"}
+                                </button>
                               </div>
                             </div>
                           )}
