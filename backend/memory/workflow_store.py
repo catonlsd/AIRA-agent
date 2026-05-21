@@ -85,6 +85,7 @@ class WorkflowStore:
 
         for run_id, state in cls.runs.items():
             approval_context = state.memory.get("approval_context", {})
+            approval_resolution = state.memory.get("approval_resolution", {})
             cleanup_actions = state.memory.get("cleanup_actions", [])
 
             summaries.append(
@@ -98,11 +99,22 @@ class WorkflowStore:
                     "retry_count": state.retry_count,
                     "requires_approval": state.status == "requires_approval",
                     "pending_action": state.memory.get("pending_action"),
+
                     "approval_context": approval_context,
                     "approval_context_type": approval_context.get("type"),
+
+                    "approval_in_progress": state.memory.get(
+                        "approval_in_progress",
+                        False,
+                    ),
+                    "approval_resolution": approval_resolution,
+                    "approval_resolution_status": approval_resolution.get("status"),
+                    "approval_resolution_action": approval_resolution.get("action"),
+
                     "cleanup_actions": cleanup_actions,
                     "cleanup_count": len(cleanup_actions),
                     "has_cleanup": len(cleanup_actions) > 0,
+
                     "step_count": len(state.plan),
                     "log_count": len(state.memory.get("workflow_logs", [])),
                 }
@@ -151,6 +163,40 @@ class WorkflowStore:
 
         git_preflight_runs = git_write_preflight_runs + git_push_preflight_runs
 
+        approval_in_progress_runs = sum(
+            1
+            for run in runs
+            if run.memory.get("approval_in_progress") is True
+        )
+
+        approval_resolved_runs = sum(
+            1
+            for run in runs
+            if isinstance(run.memory.get("approval_resolution"), dict)
+            and bool(run.memory.get("approval_resolution"))
+        )
+
+        approval_approved_runs = sum(
+            1
+            for run in runs
+            if run.memory.get("approval_resolution", {}).get("status")
+            == "approved"
+        )
+
+        approval_rejected_runs = sum(
+            1
+            for run in runs
+            if run.memory.get("approval_resolution", {}).get("status")
+            == "rejected"
+        )
+
+        approval_resume_failed_runs = sum(
+            1
+            for run in runs
+            if run.memory.get("approval_resolution", {}).get("status")
+            == "approved_but_resume_failed"
+        )
+
         latest_runs = cls.list_runs()[-5:]
 
         return {
@@ -159,13 +205,23 @@ class WorkflowStore:
             "failed_runs": failed,
             "requires_approval_runs": requires_approval,
             "rejected_runs": rejected,
+
             "total_retries": total_retries,
             "total_tool_calls": total_tool_calls,
             "total_logs": total_logs,
+
             "git_preflight_runs": git_preflight_runs,
             "git_write_preflight_runs": git_write_preflight_runs,
             "git_push_preflight_runs": git_push_preflight_runs,
+
             "cleanup_runs": cleanup_runs,
             "total_cleanup_actions": total_cleanup_actions,
+
+            "approval_in_progress_runs": approval_in_progress_runs,
+            "approval_resolved_runs": approval_resolved_runs,
+            "approval_approved_runs": approval_approved_runs,
+            "approval_rejected_runs": approval_rejected_runs,
+            "approval_resume_failed_runs": approval_resume_failed_runs,
+
             "latest_runs": latest_runs,
         }
