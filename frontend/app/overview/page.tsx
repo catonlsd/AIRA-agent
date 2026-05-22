@@ -172,7 +172,10 @@ function getApprovalResolutionStyle(status?: string) {
     return "border-red-200 bg-red-50 text-red-700";
   }
 
-  if (status === "approved_but_resume_failed") {
+  if (
+    status === "approved_but_resume_failed" ||
+    status === "stale_processing_recovered"
+  ) {
     return "border-red-200 bg-red-50 text-red-700";
   }
 
@@ -188,7 +191,11 @@ function getApprovalResolutionIcon(status?: string) {
     return <CheckCircle2 className="h-3.5 w-3.5" />;
   }
 
-  if (status === "rejected" || status === "approved_but_resume_failed") {
+  if (
+    status === "rejected" ||
+    status === "approved_but_resume_failed" ||
+    status === "stale_processing_recovered"
+  ) {
     return <XCircle className="h-3.5 w-3.5" />;
   }
 
@@ -210,6 +217,10 @@ function getApprovalResolutionLabel(status?: string) {
 
   if (status === "approved_but_resume_failed") {
     return "approved but resume failed";
+  }
+
+  if (status === "stale_processing_recovered") {
+    return "stale approval recovered";
   }
 
   if (status === "processing" || status === "in_progress") {
@@ -883,6 +894,16 @@ export default function OverviewPage() {
                                     "Not recorded"}
                                 </p>
                               </div>
+
+                              {approvalStatus ===
+                                "stale_processing_recovered" && (
+                                <div className="mt-3 rounded-lg border border-red-100 bg-red-50 p-3 text-xs leading-5 text-red-700">
+                                  <strong>Stale approval recovered:</strong>{" "}
+                                  AIRA-X detected approval processing stayed
+                                  active for too long and stopped the workflow
+                                  safely to prevent duplicate execution.
+                                </div>
+                              )}
 
                               {approvalResolution.error && (
                                 <p className="mt-2 text-xs text-red-700">
