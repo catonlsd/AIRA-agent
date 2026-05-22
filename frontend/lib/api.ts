@@ -74,12 +74,23 @@ export type AiraXApprovalContext = {
 
 export type AiraXApprovalResolution = {
   status?: string;
+  previous_status?: string;
   action?: string;
   requested_at?: string;
   completed_at?: string;
   final_status?: string;
   final_decision?: string;
   error?: string;
+  [key: string]: any;
+};
+
+export type AiraXApprovalRecoveryEvent = {
+  reason?: string;
+  action?: string;
+  started_at?: string;
+  recovered_at?: string;
+  stale_after_seconds?: number;
+  previous_resolution_status?: string;
   [key: string]: any;
 };
 
@@ -129,6 +140,11 @@ export type AiraXWorkflowRun = {
   approval_resolution?: AiraXApprovalResolution;
   approval_resolution_status?: string;
   approval_resolution_action?: string;
+
+  approval_stale_recovered?: boolean;
+  approval_recovery_events?: AiraXApprovalRecoveryEvent[];
+  approval_recovery_count?: number;
+  has_approval_recovery?: boolean;
 
   cleanup_actions?: AiraXCleanupAction[];
   cleanup_count?: number;
@@ -184,6 +200,32 @@ export type AiraXRunDetailResponse = {
   error?: string;
 };
 
+export type AiraXDeletedRunSummary = {
+  run_id: string;
+  user_goal?: string;
+  status?: string;
+  decision?: string;
+  final_answer?: string | null;
+  [key: string]: any;
+};
+
+export type AiraXDeleteRunResponse = {
+  success: boolean;
+  deleted_run_id?: string;
+  deleted_run?: AiraXDeletedRunSummary;
+  remaining_run_count?: number;
+
+  error?: string;
+  run_id?: string;
+  current_status?: string;
+  decision?: string;
+  approval_in_progress?: boolean;
+  approval_resolution?: AiraXApprovalResolution;
+  workflow?: AiraXWorkflowRun;
+
+  [key: string]: any;
+};
+
 export type AiraXOverviewResponse = {
   platform: string;
   focus: string;
@@ -215,6 +257,10 @@ export type AiraXOverviewResponse = {
     approval_approved_runs?: number;
     approval_rejected_runs?: number;
     approval_resume_failed_runs?: number;
+
+    stale_approval_recovery_runs?: number;
+    approval_stale_recovered_runs?: number;
+    total_approval_recovery_events?: number;
 
     latest_runs: AiraXWorkflowRun[];
   };
@@ -443,13 +489,24 @@ export async function getAiraXRuns(): Promise<AiraXRunsResponse> {
 export async function getAiraXRun(
   runId: string
 ): Promise<AiraXRunDetailResponse> {
-  const response = await fetch(`${API_URL}/aira-x/runs/${runId}`, {
-    cache: "no-store",
-  });
+  const response = await fetch(
+    `${API_URL}/aira-x/runs/${encodeURIComponent(runId)}`,
+    {
+      cache: "no-store",
+    }
+  );
 
   return parseApiResponse<AiraXRunDetailResponse>(
     response,
     "Failed to fetch AIRA-X workflow run"
+  );
+}
+
+export async function deleteAiraXRun(
+  runId: string
+): Promise<AiraXDeleteRunResponse> {
+  return apiDelete<AiraXDeleteRunResponse>(
+    `/aira-x/runs/${encodeURIComponent(runId)}`
   );
 }
 
