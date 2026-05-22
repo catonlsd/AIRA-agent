@@ -226,6 +226,29 @@ export type AiraXDeleteRunResponse = {
   [key: string]: any;
 };
 
+export type AiraXSafeCleanupSkippedRun = {
+  run_id: string;
+  user_goal?: string;
+  status?: string;
+  decision?: string;
+  reason?: string;
+  approval_in_progress?: boolean;
+  [key: string]: any;
+};
+
+export type AiraXSafeCleanupResponse = {
+  success: boolean;
+  deleted_count: number;
+  skipped_count: number;
+  deleted_runs: AiraXDeletedRunSummary[];
+  skipped_runs: AiraXSafeCleanupSkippedRun[];
+  remaining_run_count: number;
+  safe_statuses: string[];
+
+  error?: string;
+  [key: string]: any;
+};
+
 export type AiraXOverviewResponse = {
   platform: string;
   focus: string;
@@ -508,6 +531,10 @@ export async function deleteAiraXRun(
   return apiDelete<AiraXDeleteRunResponse>(
     `/aira-x/runs/${encodeURIComponent(runId)}`
   );
+}
+
+export async function deleteSafeAiraXRuns(): Promise<AiraXSafeCleanupResponse> {
+  return apiDelete<AiraXSafeCleanupResponse>("/aira-x/runs/maintenance/safe");
 }
 
 export async function getAiraXOverview(): Promise<AiraXOverviewResponse> {
