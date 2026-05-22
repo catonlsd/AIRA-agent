@@ -126,6 +126,10 @@ function getActionLabel(status: string) {
   return "Action";
 }
 
+function isApprovalProcessing(run?: WorkflowRunSummary | null) {
+  return run?.approval_in_progress === true;
+}
+
 function getApprovalResolutionStyle(status?: string) {
   if (status === "approved") {
     return "border-green-200 bg-green-50 text-green-700";
@@ -196,7 +200,9 @@ function formatDateTime(value?: string) {
   return date.toLocaleString();
 }
 
-function getApprovalResolution(run: WorkflowRunSummary): ApprovalResolution | null {
+function getApprovalResolution(
+  run: WorkflowRunSummary
+): ApprovalResolution | null {
   if (
     run.approval_resolution &&
     typeof run.approval_resolution === "object" &&
@@ -205,7 +211,7 @@ function getApprovalResolution(run: WorkflowRunSummary): ApprovalResolution | nu
     return run.approval_resolution;
   }
 
-  if (run.approval_in_progress) {
+  if (isApprovalProcessing(run)) {
     return {
       status: "processing",
       action: run.pending_action,
@@ -271,6 +277,12 @@ export default function WorkflowsPage() {
   }
 
   async function handleApprove(runId: string) {
+    const currentRun = runs.find((run) => run.run_id === runId);
+
+    if (isApprovalProcessing(currentRun)) {
+      return;
+    }
+
     try {
       setActionRunId(runId);
       setActionType("approve");
@@ -291,6 +303,12 @@ export default function WorkflowsPage() {
   }
 
   async function handleReject(runId: string) {
+    const currentRun = runs.find((run) => run.run_id === runId);
+
+    if (isApprovalProcessing(currentRun)) {
+      return;
+    }
+
     try {
       setActionRunId(runId);
       setActionType("reject");
@@ -322,6 +340,9 @@ export default function WorkflowsPage() {
   const approvalResolvedCount = runs.filter((run) =>
     hasApprovalResolution(run)
   ).length;
+  const approvalProcessingCount = runs.filter((run) =>
+    isApprovalProcessing(run)
+  ).length;
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-6xl flex-col gap-6">
@@ -341,7 +362,8 @@ export default function WorkflowsPage() {
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
             Review previous AIRA-X workflow executions, approval states,
             decisions, retry counts, Git write preflights, Git push preflights,
-            approval resolutions, cleanup actions, and execution outcomes.
+            approval resolutions, approval processing state, cleanup actions,
+            and execution outcomes.
           </p>
         </div>
       </section>
@@ -360,7 +382,7 @@ export default function WorkflowsPage() {
 
       {!loading && !error && (
         <>
-          <section className="grid gap-4 md:grid-cols-6">
+          <section className="grid gap-4 md:grid-cols-7">
             <div className="sarvam-card rounded-[1.5rem] p-5">
               <p className="text-sm font-semibold text-slate-500">
                 Total Runs
@@ -383,8 +405,16 @@ export default function WorkflowsPage() {
 
             <div className="sarvam-card rounded-[1.5rem] p-5">
               <p className="text-sm font-semibold text-slate-500">
-                Resolved
+                Processing
               </p>
+
+              <h2 className="mt-1 text-3xl font-semibold text-orange-700">
+                {approvalProcessingCount}
+              </h2>
+            </div>
+
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">Resolved</p>
 
               <h2 className="mt-1 text-3xl font-semibold text-blue-700">
                 {approvalResolvedCount}
@@ -440,7 +470,10 @@ export default function WorkflowsPage() {
                     const gitPushPreflight = isGitPushPreflight(run);
                     const cleanupPerformed = Boolean(run.has_cleanup);
                     const waitingForApproval = isWaitingForApproval(run);
+                    const approvalProcessing = isApprovalProcessing(run);
                     const actionInProgress = actionRunId === run.run_id;
+                    const actionButtonsDisabled =
+                      Boolean(actionRunId) || approvalProcessing;
                     const approvalResolution = getApprovalResolution(run);
                     const approvalStatus = approvalResolution?.status;
 
@@ -461,6 +494,13 @@ export default function WorkflowsPage() {
                                   {getStatusIcon(run.status)}
                                   {run.status}
                                 </span>
+
+                                {approvalProcessing && (
+                                  <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700">
+                                    <Clock className="h-3.5 w-3.5" />
+                                    Approval Processing
+                                  </span>
+                                )}
 
                                 <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600">
                                   Decision: {run.decision}
@@ -522,6 +562,21 @@ export default function WorkflowsPage() {
                                   <strong>{getActionLabel(run.status)}:</strong>{" "}
                                   {run.pending_action}
                                 </p>
+                              )}
+
+                              {approvalProcessing && (
+                                <div className="mt-3 rounded-xl border border-orange-100 bg-white p-3">
+                                  <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-orange-700">
+                                    <Clock className="h-3.5 w-3.5" />
+                                    Approval Processing
+                                  </div>
+
+                                  <p className="text-xs leading-5 text-orange-700">
+                                    AIRA-X is already processing this
+                                    approval-gated action. Approval controls are
+                                    disabled to prevent duplicate execution.
+                                  </p>
+                                </div>
                               )}
 
                               {approvalResolution && (
@@ -684,13 +739,19 @@ export default function WorkflowsPage() {
                         {waitingForApproval && (
                           <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-orange-100 bg-white p-4 md:flex-row md:items-center md:justify-between">
                             <div>
-                              <p className="text-sm font-bold text-orange-900">
-                                Approval Required
+                              <p className="flex items-center gap-2 text-sm font-bold text-orange-900">
+                                {approvalProcessing && (
+                                  <Clock className="h-4 w-4" />
+                                )}
+                                {approvalProcessing
+                                  ? "Approval is being processed"
+                                  : "Approval Required"}
                               </p>
 
                               <p className="mt-1 text-xs leading-5 text-orange-700">
-                                Approve to continue this workflow, or reject to
-                                stop it safely.
+                                {approvalProcessing
+                                  ? "AIRA-X is already processing this workflow action. Buttons are disabled until processing finishes."
+                                  : "Approve to continue this workflow, or reject to stop it safely."}
                               </p>
                             </div>
 
@@ -698,24 +759,28 @@ export default function WorkflowsPage() {
                               <button
                                 type="button"
                                 onClick={() => handleApprove(run.run_id)}
-                                disabled={Boolean(actionRunId)}
+                                disabled={actionButtonsDisabled}
                                 className="rounded-xl bg-orange-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
                               >
-                                {actionInProgress && actionType === "approve"
-                                  ? "Approving..."
-                                  : "Approve & Continue"}
+                                {approvalProcessing
+                                  ? "Processing..."
+                                  : actionInProgress && actionType === "approve"
+                                    ? "Approving..."
+                                    : "Approve & Continue"}
                               </button>
 
                               <button
                                 type="button"
                                 onClick={() => handleReject(run.run_id)}
-                                disabled={Boolean(actionRunId)}
+                                disabled={actionButtonsDisabled}
                                 className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-xs font-bold text-red-700 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 <XCircle className="h-3.5 w-3.5" />
-                                {actionInProgress && actionType === "reject"
-                                  ? "Rejecting..."
-                                  : "Reject Action"}
+                                {approvalProcessing
+                                  ? "Processing..."
+                                  : actionInProgress && actionType === "reject"
+                                    ? "Rejecting..."
+                                    : "Reject Action"}
                               </button>
                             </div>
                           </div>
