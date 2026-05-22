@@ -22,6 +22,7 @@ from app.routes.aira_x import (
     list_aira_x_runs,
     get_aira_x_run,
     get_aira_x_overview,
+    delete_aira_x_run,
 )
 
 
@@ -2999,6 +3000,292 @@ async def test_cleanup_metrics_in_runs_and_overview():
     return True
 
 
+async def test_delete_existing_workflow_run():
+    print("Testing delete existing workflow run endpoint...")
+
+    run_id = "test-delete-existing-workflow-run"
+
+    WorkflowStore.delete(run_id)
+
+    state = AiraXState(
+        user_goal="temporary workflow to delete",
+        run_id=run_id,
+    )
+
+    state.status = "completed"
+    state.decision = "finish"
+    state.current_step = 1
+    state.final_answer = "Workflow completed successfully."
+
+    state.plan = [
+        AiraXStep(
+            id=1,
+            title="Run temporary workflow",
+            description="Temporary workflow used to test delete endpoint.",
+            assigned_agent="execution_agent",
+            tool_name="python_tool",
+            tool_action="run",
+            tool_payload={},
+            status="completed",
+            result="Temporary workflow completed.",
+        )
+    ]
+
+    try:
+        WorkflowStore.save(state)
+
+        saved_state = WorkflowStore.get(run_id)
+
+        assert_true(
+            saved_state is not None,
+            "Delete existing workflow setup should save test run",
+        )
+
+        delete_response = await delete_aira_x_run(run_id)
+
+        assert_equal(
+            delete_response["success"],
+            True,
+            "Delete existing workflow response success",
+        )
+
+        assert_equal(
+            delete_response["deleted_run_id"],
+            run_id,
+            "Delete existing workflow deleted run id",
+        )
+
+        assert_equal(
+            delete_response["deleted_run"]["status"],
+            "completed",
+            "Delete existing workflow should return deleted summary",
+        )
+
+        assert_true(
+            WorkflowStore.get(run_id) is None,
+            "Deleted workflow should be removed from store",
+        )
+
+        runs_response = await list_aira_x_runs()
+        run_ids = [run["run_id"] for run in runs_response["runs"]]
+
+        assert_true(
+            run_id not in run_ids,
+            "Deleted workflow should not appear in workflow runs API",
+        )
+
+    finally:
+        WorkflowStore.delete(run_id)
+
+        if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
+            aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
+
+    print("✅ Delete existing workflow run passed")
+
+    return True
+
+
+async def test_delete_missing_workflow_run():
+    print("Testing delete missing workflow run endpoint...")
+
+    run_id = "test-delete-missing-workflow-run"
+
+    WorkflowStore.delete(run_id)
+
+    if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
+        aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
+
+    response = await delete_aira_x_run(run_id)
+
+    assert_equal(
+        response["success"],
+        False,
+        "Delete missing workflow should fail safely",
+    )
+
+    assert_equal(
+        response["run_id"],
+        run_id,
+        "Delete missing workflow should return requested run id",
+    )
+
+    assert_contains(
+        response["error"],
+        "No workflow found",
+        "Delete missing workflow error message",
+    )
+
+    print("✅ Delete missing workflow run passed")
+
+    return True
+
+
+async def test_delete_blocks_approval_in_progress_workflow():
+    print("Testing delete blocks approval-in-progress workflow...")
+
+    run_id = "test-delete-blocks-approval-in-progress"
+
+    WorkflowStore.delete(run_id)
+
+    state = AiraXState(
+        user_goal="git push",
+        run_id=run_id,
+    )
+
+    state.status = "requires_approval"
+    state.decision = "stop_approval_required"
+    state.current_step = 1
+    state.final_answer = (
+        "Approval required before executing: git_tool:push origin current_branch"
+    )
+
+    state.plan = [
+        AiraXStep(
+            id=1,
+            title="Push Git changes",
+            description="Push local commits to a remote Git repository.",
+            assigned_agent="execution_agent",
+            tool_name="git_tool",
+            tool_action="push",
+            tool_payload={"remote": "origin", "branch": None},
+            status="blocked",
+            error="This action requires user approval.",
+        )
+    ]
+
+    state.memory["pending_action"] = "git_tool:push origin current_branch"
+    state.memory["approval_in_progress"] = True
+    state.memory["approval_resolution"] = {
+        "status": "approved",
+        "action": "git_tool:push origin current_branch",
+    }
+    state.memory["approval_context"] = {
+        "type": "git_push_preflight",
+        "tool_name": "git_tool",
+        "tool_action": "push",
+        "pending_action": "git_tool:push origin current_branch",
+        "target_remote": "origin",
+        "target_branch": "main",
+        "branch": "main",
+    }
+
+    try:
+        WorkflowStore.save(state)
+
+        delete_response = await delete_aira_x_run(run_id)
+
+        assert_equal(
+            delete_response["success"],
+            False,
+            "Delete approval-in-progress workflow should fail safely",
+        )
+
+        assert_equal(
+            delete_response["run_id"],
+            run_id,
+            "Delete approval-in-progress workflow run id",
+        )
+
+        assert_equal(
+            delete_response["current_status"],
+            "requires_approval",
+            "Delete approval-in-progress should preserve status",
+        )
+
+        assert_true(
+            delete_response["approval_in_progress"] is True,
+            "Delete approval-in-progress should report approval_in_progress",
+        )
+
+        assert_contains(
+            delete_response["error"],
+            "cannot be deleted",
+            "Delete approval-in-progress error message",
+        )
+
+        saved_state = WorkflowStore.get(run_id)
+
+        assert_true(
+            saved_state is not None,
+            "Blocked delete should keep workflow in store",
+        )
+
+        assert_true(
+            saved_state.memory.get("approval_in_progress") is True,
+            "Blocked delete should preserve approval_in_progress",
+        )
+
+    finally:
+        WorkflowStore.delete(run_id)
+
+        if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
+            aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
+
+    print("✅ Delete approval-in-progress block passed")
+
+    return True
+
+
+async def test_delete_allows_after_stale_approval_recovery():
+    print("Testing delete allows workflow after stale approval recovery...")
+
+    run_id = "test-delete-after-stale-approval-recovery"
+
+    WorkflowStore.delete(run_id)
+
+    try:
+        WorkflowStore.save(build_stale_approval_processing_state(run_id))
+
+        delete_response = await delete_aira_x_run(run_id)
+
+        assert_equal(
+            delete_response["success"],
+            True,
+            "Delete stale approval workflow should succeed after recovery",
+        )
+
+        assert_equal(
+            delete_response["deleted_run_id"],
+            run_id,
+            "Delete stale approval workflow deleted run id",
+        )
+
+        assert_equal(
+            delete_response["deleted_run"]["status"],
+            "failed",
+            "Delete stale approval should recover before deletion",
+        )
+
+        assert_equal(
+            delete_response["deleted_run"]["decision"],
+            "approval_processing_stale",
+            "Delete stale approval should record stale decision before deletion",
+        )
+
+        assert_true(
+            WorkflowStore.get(run_id) is None,
+            "Delete stale approval workflow should remove recovered run",
+        )
+
+        runs_response = await list_aira_x_runs()
+        run_ids = [run["run_id"] for run in runs_response["runs"]]
+
+        assert_true(
+            run_id not in run_ids,
+            "Deleted stale approval workflow should not appear in workflow runs API",
+        )
+
+    finally:
+        WorkflowStore.delete(run_id)
+
+        if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
+            aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
+
+    print("✅ Delete after stale approval recovery passed")
+
+    return True
+
+
 async def test_tool_registry_api():
     print("Testing Tool Registry API...")
 
@@ -3258,6 +3545,10 @@ async def main():
     await test_commit_rejection_triggers_unstage_cleanup()
     await test_approval_resolution_fields_in_runs_and_overview()
     await test_cleanup_metrics_in_runs_and_overview()
+    await test_delete_existing_workflow_run()
+    await test_delete_missing_workflow_run()
+    await test_delete_blocks_approval_in_progress_workflow()
+    await test_delete_allows_after_stale_approval_recovery()
 
     await test_tool_registry_api()
     await test_agent_registry_api()
