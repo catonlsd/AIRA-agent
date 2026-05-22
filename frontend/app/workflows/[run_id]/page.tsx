@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -591,34 +591,44 @@ export default function WorkflowDetailPage() {
   const [loading, setLoading] = useState(true);
   const [approvalLoading, setApprovalLoading] = useState(false);
   const [rejectionLoading, setRejectionLoading] = useState(false);
+  const [polling, setPolling] = useState(false);
   const [error, setError] = useState("");
 
-  async function loadRun() {
-    if (!runId) return;
+  const loadRun = useCallback(
+    async (options?: { showLoading?: boolean }) => {
+      if (!runId) return;
 
-    try {
-      setLoading(true);
+      const showLoading = options?.showLoading ?? true;
 
-      const data = await getAiraXRun(runId);
+      try {
+        if (showLoading) {
+          setLoading(true);
+        }
 
-      if (!data.success) {
-        setError(data.error || "Workflow run not found.");
+        const data = await getAiraXRun(runId);
+
+        if (!data.success) {
+          setError(data.error || "Workflow run not found.");
+          setRun(null);
+          return;
+        }
+
+        setRun(data.run);
+        setError("");
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to load workflow run.";
+
+        setError(message);
         setRun(null);
-        return;
+      } finally {
+        if (showLoading) {
+          setLoading(false);
+        }
       }
-
-      setRun(data.run);
-      setError("");
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to load workflow run.";
-
-      setError(message);
-      setRun(null);
-    } finally {
-      setLoading(false);
-    }
-  }
+    },
+    [runId]
+  );
 
   async function handleApprove() {
     if (!run?.run_id || isApprovalProcessing(run)) return;
@@ -634,7 +644,7 @@ export default function WorkflowDetailPage() {
         err instanceof Error ? err.message : "Failed to approve workflow.";
 
       setError(message);
-      await loadRun();
+      await loadRun({ showLoading: false });
     } finally {
       setApprovalLoading(false);
     }
@@ -654,7 +664,7 @@ export default function WorkflowDetailPage() {
         err instanceof Error ? err.message : "Failed to reject workflow.";
 
       setError(message);
-      await loadRun();
+      await loadRun({ showLoading: false });
     } finally {
       setRejectionLoading(false);
     }
@@ -662,13 +672,30 @@ export default function WorkflowDetailPage() {
 
   useEffect(() => {
     loadRun();
-  }, [runId]);
+  }, [loadRun]);
 
   const approvalProcessing = isApprovalProcessing(run);
   const actionLoading = approvalLoading || rejectionLoading;
   const approvalButtonsDisabled = approvalProcessing || actionLoading;
   const isWaitingForApproval =
     run?.requires_approval || run?.status === "requires_approval";
+
+  useEffect(() => {
+    if (!approvalProcessing) {
+      setPolling(false);
+      return;
+    }
+
+    setPolling(true);
+
+    const intervalId = window.setInterval(() => {
+      loadRun({ showLoading: false });
+    }, 2000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [approvalProcessing, loadRun]);
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-6xl flex-col gap-6">
@@ -731,6 +758,13 @@ export default function WorkflowDetailPage() {
                 </span>
               )}
 
+              {polling && (
+                <span className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                  <Activity className="h-4 w-4" />
+                  Auto-refreshing
+                </span>
+              )}
+
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
                 Decision: {run.decision}
               </span>
@@ -759,13 +793,7 @@ export default function WorkflowDetailPage() {
             </div>
 
             {isWaitingForApproval && (
-              <div
-                className={`mt-5 rounded-2xl border p-4 ${
-                  approvalProcessing
-                    ? "border-orange-200 bg-orange-50"
-                    : "border-orange-200 bg-orange-50"
-                }`}
-              >
+              <div className="mt-5 rounded-2xl border border-orange-200 bg-orange-50 p-4">
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h3 className="flex items-center gap-2 text-sm font-bold text-orange-900">
@@ -783,8 +811,8 @@ export default function WorkflowDetailPage() {
 
                     {approvalProcessing && (
                       <p className="mt-2 text-xs font-semibold text-orange-700">
-                        Refresh this page in a moment to see the final workflow
-                        status.
+                        This page is auto-refreshing every 2 seconds until the
+                        workflow reaches its final status.
                       </p>
                     )}
                   </div>
