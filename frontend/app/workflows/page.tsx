@@ -34,6 +34,16 @@ type ApprovalContext = {
   recent_commits?: string;
 };
 
+type ApprovalResolution = {
+  status?: string;
+  action?: string;
+  requested_at?: string;
+  completed_at?: string;
+  final_status?: string;
+  final_decision?: string;
+  error?: string;
+};
+
 type CleanupAction = {
   reason: string;
   tool_name: string;
@@ -56,8 +66,15 @@ type WorkflowRunSummary = {
   retry_count: number;
   requires_approval: boolean;
   pending_action?: string;
+
   approval_context?: ApprovalContext;
   approval_context_type?: string;
+
+  approval_in_progress?: boolean;
+  approval_resolution?: ApprovalResolution;
+  approval_resolution_status?: string;
+  approval_resolution_action?: string;
+
   cleanup_actions?: CleanupAction[];
   cleanup_count?: number;
   has_cleanup?: boolean;
@@ -109,6 +126,95 @@ function getActionLabel(status: string) {
   return "Action";
 }
 
+function getApprovalResolutionStyle(status?: string) {
+  if (status === "approved") {
+    return "border-green-200 bg-green-50 text-green-700";
+  }
+
+  if (status === "rejected") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  if (status === "approved_but_resume_failed") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  if (status === "processing" || status === "in_progress") {
+    return "border-orange-200 bg-orange-50 text-orange-700";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function getApprovalResolutionIcon(status?: string) {
+  if (status === "approved") {
+    return <CheckCircle2 className="h-3.5 w-3.5" />;
+  }
+
+  if (status === "rejected" || status === "approved_but_resume_failed") {
+    return <XCircle className="h-3.5 w-3.5" />;
+  }
+
+  if (status === "processing" || status === "in_progress") {
+    return <Clock className="h-3.5 w-3.5" />;
+  }
+
+  return <ShieldAlert className="h-3.5 w-3.5" />;
+}
+
+function getApprovalResolutionLabel(status?: string) {
+  if (status === "approved") {
+    return "approved";
+  }
+
+  if (status === "rejected") {
+    return "rejected";
+  }
+
+  if (status === "approved_but_resume_failed") {
+    return "approved but resume failed";
+  }
+
+  if (status === "processing" || status === "in_progress") {
+    return "processing";
+  }
+
+  return "not resolved";
+}
+
+function formatDateTime(value?: string) {
+  if (!value) {
+    return "Not recorded";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString();
+}
+
+function getApprovalResolution(run: WorkflowRunSummary): ApprovalResolution | null {
+  if (
+    run.approval_resolution &&
+    typeof run.approval_resolution === "object" &&
+    Object.keys(run.approval_resolution).length > 0
+  ) {
+    return run.approval_resolution;
+  }
+
+  if (run.approval_in_progress) {
+    return {
+      status: "processing",
+      action: run.pending_action,
+    };
+  }
+
+  return null;
+}
+
 function isGitWritePreflight(run: WorkflowRunSummary) {
   return (
     run.approval_context_type === "git_write_preflight" ||
@@ -125,6 +231,10 @@ function isGitPushPreflight(run: WorkflowRunSummary) {
 
 function hasAnyGitPreflight(run: WorkflowRunSummary) {
   return isGitWritePreflight(run) || isGitPushPreflight(run);
+}
+
+function hasApprovalResolution(run: WorkflowRunSummary) {
+  return getApprovalResolution(run) !== null;
 }
 
 function isWaitingForApproval(run: WorkflowRunSummary) {
@@ -173,6 +283,7 @@ export default function WorkflowsPage() {
         err instanceof Error ? err.message : "Failed to approve workflow.";
 
       setError(message);
+      await loadRuns();
     } finally {
       setActionRunId(null);
       setActionType(null);
@@ -192,6 +303,7 @@ export default function WorkflowsPage() {
         err instanceof Error ? err.message : "Failed to reject workflow.";
 
       setError(message);
+      await loadRuns();
     } finally {
       setActionRunId(null);
       setActionType(null);
@@ -206,6 +318,9 @@ export default function WorkflowsPage() {
   const gitPreflightCount = runs.filter((run) => hasAnyGitPreflight(run)).length;
   const gitPushPreflightCount = runs.filter((run) =>
     isGitPushPreflight(run)
+  ).length;
+  const approvalResolvedCount = runs.filter((run) =>
+    hasApprovalResolution(run)
   ).length;
 
   return (
@@ -226,7 +341,7 @@ export default function WorkflowsPage() {
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
             Review previous AIRA-X workflow executions, approval states,
             decisions, retry counts, Git write preflights, Git push preflights,
-            cleanup actions, and execution outcomes.
+            approval resolutions, cleanup actions, and execution outcomes.
           </p>
         </div>
       </section>
@@ -245,7 +360,7 @@ export default function WorkflowsPage() {
 
       {!loading && !error && (
         <>
-          <section className="grid gap-4 md:grid-cols-5">
+          <section className="grid gap-4 md:grid-cols-6">
             <div className="sarvam-card rounded-[1.5rem] p-5">
               <p className="text-sm font-semibold text-slate-500">
                 Total Runs
@@ -263,6 +378,16 @@ export default function WorkflowsPage() {
 
               <h2 className="mt-1 text-3xl font-semibold text-orange-700">
                 {runs.filter((run) => run.requires_approval).length}
+              </h2>
+            </div>
+
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
+                Resolved
+              </p>
+
+              <h2 className="mt-1 text-3xl font-semibold text-blue-700">
+                {approvalResolvedCount}
               </h2>
             </div>
 
@@ -316,6 +441,8 @@ export default function WorkflowsPage() {
                     const cleanupPerformed = Boolean(run.has_cleanup);
                     const waitingForApproval = isWaitingForApproval(run);
                     const actionInProgress = actionRunId === run.run_id;
+                    const approvalResolution = getApprovalResolution(run);
+                    const approvalStatus = approvalResolution?.status;
 
                     return (
                       <div
@@ -346,6 +473,18 @@ export default function WorkflowsPage() {
                                 <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600">
                                   Logs: {run.log_count}
                                 </span>
+
+                                {approvalResolution && (
+                                  <span
+                                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${getApprovalResolutionStyle(
+                                      approvalStatus
+                                    )}`}
+                                  >
+                                    {getApprovalResolutionIcon(approvalStatus)}
+                                    Approval:{" "}
+                                    {getApprovalResolutionLabel(approvalStatus)}
+                                  </span>
+                                )}
 
                                 {gitWritePreflight && (
                                   <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700">
@@ -383,6 +522,51 @@ export default function WorkflowsPage() {
                                   <strong>{getActionLabel(run.status)}:</strong>{" "}
                                   {run.pending_action}
                                 </p>
+                              )}
+
+                              {approvalResolution && (
+                                <div className="mt-3 rounded-xl border border-blue-100 bg-white p-3">
+                                  <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-blue-700">
+                                    <ShieldAlert className="h-3.5 w-3.5" />
+                                    Approval Resolution
+                                  </div>
+
+                                  <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-2">
+                                    <p>
+                                      <strong>Status:</strong>{" "}
+                                      {approvalResolution.status ||
+                                        "Not recorded"}
+                                    </p>
+
+                                    <p>
+                                      <strong>Action:</strong>{" "}
+                                      {approvalResolution.action ||
+                                        run.pending_action ||
+                                        "No action recorded"}
+                                    </p>
+
+                                    <p>
+                                      <strong>Completed:</strong>{" "}
+                                      {formatDateTime(
+                                        approvalResolution.completed_at
+                                      )}
+                                    </p>
+
+                                    <p>
+                                      <strong>Final Decision:</strong>{" "}
+                                      {approvalResolution.final_decision ||
+                                        run.decision ||
+                                        "Not recorded"}
+                                    </p>
+                                  </div>
+
+                                  {approvalResolution.error && (
+                                    <p className="mt-2 text-xs text-red-700">
+                                      <strong>Error:</strong>{" "}
+                                      {approvalResolution.error}
+                                    </p>
+                                  )}
+                                </div>
                               )}
 
                               {gitWritePreflight && (
