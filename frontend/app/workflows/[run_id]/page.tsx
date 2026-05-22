@@ -45,6 +45,16 @@ type ApprovalContext = {
   recent_commits_success?: boolean;
 };
 
+type ApprovalResolution = {
+  status?: string;
+  action?: string;
+  requested_at?: string;
+  completed_at?: string;
+  final_status?: string;
+  final_decision?: string;
+  error?: string;
+};
+
 type WorkflowLog = {
   timestamp: string;
   agent: string;
@@ -78,6 +88,10 @@ type WorkflowRun = {
   requires_approval?: boolean;
   pending_action?: string;
   approval_context?: ApprovalContext | null;
+  approval_in_progress?: boolean;
+  approval_resolution?: ApprovalResolution;
+  approval_resolution_status?: string;
+  approval_resolution_action?: string;
 };
 
 function getStatusStyle(status: string) {
@@ -122,6 +136,212 @@ function getActionLabel(status: string) {
   }
 
   return "Action";
+}
+
+function getApprovalResolutionStyle(status?: string) {
+  if (status === "approved") {
+    return "border-green-200 bg-green-50 text-green-700";
+  }
+
+  if (status === "rejected") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  if (status === "approved_but_resume_failed") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  if (status === "processing" || status === "in_progress") {
+    return "border-orange-200 bg-orange-50 text-orange-700";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function getApprovalResolutionIcon(status?: string) {
+  if (status === "approved") {
+    return <CheckCircle2 className="h-4 w-4" />;
+  }
+
+  if (status === "rejected" || status === "approved_but_resume_failed") {
+    return <XCircle className="h-4 w-4" />;
+  }
+
+  if (status === "processing" || status === "in_progress") {
+    return <Clock className="h-4 w-4" />;
+  }
+
+  return <ShieldAlert className="h-4 w-4" />;
+}
+
+function getApprovalResolutionLabel(status?: string) {
+  if (status === "approved") {
+    return "Approved";
+  }
+
+  if (status === "rejected") {
+    return "Rejected";
+  }
+
+  if (status === "approved_but_resume_failed") {
+    return "Approved, but resume failed";
+  }
+
+  if (status === "processing" || status === "in_progress") {
+    return "Processing";
+  }
+
+  return "Not resolved";
+}
+
+function formatDateTime(value?: string) {
+  if (!value) {
+    return "Not recorded";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString();
+}
+
+function getApprovalResolution(run: WorkflowRun): ApprovalResolution | null {
+  const directResolution = run.approval_resolution;
+  const memoryResolution = run.memory?.approval_resolution;
+
+  if (
+    directResolution &&
+    typeof directResolution === "object" &&
+    Object.keys(directResolution).length > 0
+  ) {
+    return directResolution;
+  }
+
+  if (
+    memoryResolution &&
+    typeof memoryResolution === "object" &&
+    Object.keys(memoryResolution).length > 0
+  ) {
+    return memoryResolution;
+  }
+
+  const approvalInProgress =
+    run.approval_in_progress === true ||
+    run.memory?.approval_in_progress === true;
+
+  if (approvalInProgress) {
+    return {
+      status: "processing",
+      action: run.pending_action || run.memory?.pending_action,
+    };
+  }
+
+  return null;
+}
+
+function renderApprovalResolution(run: WorkflowRun) {
+  const resolution = getApprovalResolution(run);
+
+  if (!resolution) {
+    return null;
+  }
+
+  const status = resolution.status || "unknown";
+
+  return (
+    <section className="sarvam-card rounded-[1.5rem] border border-blue-200 bg-blue-50/40 p-5">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+          <ShieldAlert className="h-4 w-4 text-blue-600" />
+          Approval Resolution
+        </div>
+
+        <span
+          className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${getApprovalResolutionStyle(
+            status
+          )}`}
+        >
+          {getApprovalResolutionIcon(status)}
+          {getApprovalResolutionLabel(status)}
+        </span>
+      </div>
+
+      <p className="mb-4 text-sm leading-6 text-slate-600">
+        This section records how the approval-gated action was handled.
+      </p>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Resolution Status
+          </p>
+
+          <p className="mt-1 break-words text-sm font-semibold text-slate-900">
+            {status}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Approval Action
+          </p>
+
+          <p className="mt-1 break-words text-sm font-semibold text-slate-900">
+            {resolution.action || run.pending_action || "No action recorded"}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Requested At
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {formatDateTime(resolution.requested_at)}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Completed At
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {formatDateTime(resolution.completed_at)}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Final Status
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {resolution.final_status || run.status || "Not recorded"}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Final Decision
+          </p>
+
+          <p className="mt-1 break-words text-sm font-semibold text-slate-900">
+            {resolution.final_decision || run.decision || "Not recorded"}
+          </p>
+        </div>
+      </div>
+
+      {resolution.error && (
+        <div className="mt-4 rounded-xl border border-red-200 bg-white p-3 text-sm text-red-700">
+          <strong>Error:</strong> {resolution.error}
+        </div>
+      )}
+    </section>
+  );
 }
 
 function renderGitWritePreflight(context: ApprovalContext) {
@@ -411,6 +631,7 @@ export default function WorkflowDetailPage() {
         err instanceof Error ? err.message : "Failed to approve workflow.";
 
       setError(message);
+      await loadRun();
     } finally {
       setApprovalLoading(false);
     }
@@ -430,6 +651,7 @@ export default function WorkflowDetailPage() {
         err instanceof Error ? err.message : "Failed to reject workflow.";
 
       setError(message);
+      await loadRun();
     } finally {
       setRejectionLoading(false);
     }
@@ -563,6 +785,8 @@ export default function WorkflowDetailPage() {
               </div>
             )}
           </section>
+
+          {renderApprovalResolution(run)}
 
           {renderApprovalContext(run.approval_context)}
 
