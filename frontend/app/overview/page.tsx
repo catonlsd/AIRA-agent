@@ -77,6 +77,11 @@ type LatestRun = {
   cleanup_actions?: CleanupAction[];
   cleanup_count?: number;
   has_cleanup?: boolean;
+
+  approval_stale_recovered?: boolean;
+  approval_recovery_count?: number;
+  has_approval_recovery?: boolean;
+
   step_count: number;
   log_count: number;
 };
@@ -110,6 +115,9 @@ type OverviewResponse = {
     approval_approved_runs?: number;
     approval_rejected_runs?: number;
     approval_resume_failed_runs?: number;
+    stale_approval_recovery_runs?: number;
+    approval_stale_recovered_runs?: number;
+    total_approval_recovery_events?: number;
 
     latest_runs: LatestRun[];
   };
@@ -285,6 +293,14 @@ function hasApprovalResolution(run: LatestRun) {
   return getApprovalResolution(run) !== null;
 }
 
+function hasStaleApprovalRecovery(run: LatestRun) {
+  return (
+    run.approval_stale_recovered === true ||
+    run.has_approval_recovery === true ||
+    run.approval_resolution?.status === "stale_processing_recovered"
+  );
+}
+
 function isWaitingForApproval(run: LatestRun) {
   return run.requires_approval || run.status === "requires_approval";
 }
@@ -405,6 +421,15 @@ export default function OverviewPage() {
 
   const latestApprovalProcessingCount =
     metrics?.latest_runs.filter((run) => isApprovalProcessing(run)).length || 0;
+
+  const latestStaleApprovalRecoveryCount =
+    metrics?.latest_runs.filter((run) => hasStaleApprovalRecovery(run)).length ||
+    0;
+
+  const staleApprovalRecoveryCount =
+    metrics?.stale_approval_recovery_runs ??
+    metrics?.approval_stale_recovered_runs ??
+    latestStaleApprovalRecoveryCount;
 
   const approvalProcessingCount =
     metrics?.approval_in_progress_runs ?? latestApprovalProcessingCount;
@@ -673,7 +698,7 @@ export default function OverviewPage() {
             </div>
           </section>
 
-          <section className="grid gap-4 md:grid-cols-4">
+          <section className="grid gap-4 md:grid-cols-5">
             <div className="sarvam-card rounded-[1.5rem] p-5">
               <p className="text-sm font-semibold text-slate-500">
                 Approvals In Progress
@@ -713,6 +738,20 @@ export default function OverviewPage() {
                 {metrics.approval_resume_failed_runs ?? 0}
               </h2>
             </div>
+
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
+                Stale Recoveries
+              </p>
+
+              <h2 className="mt-1 text-3xl font-semibold text-red-700">
+                {staleApprovalRecoveryCount}
+              </h2>
+
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                Deadlocked approvals safely stopped
+              </p>
+            </div>
           </section>
 
           <section className="sarvam-card rounded-[1.5rem] p-5">
@@ -747,6 +786,7 @@ export default function OverviewPage() {
                     Boolean(actionRunId) || approvalProcessing;
                   const approvalResolution = getApprovalResolution(run);
                   const approvalStatus = approvalResolution?.status;
+                  const staleApprovalRecovery = hasStaleApprovalRecovery(run);
 
                   return (
                     <div
@@ -789,6 +829,13 @@ export default function OverviewPage() {
                                 {getApprovalResolutionIcon(approvalStatus)}
                                 Approval:{" "}
                                 {getApprovalResolutionLabel(approvalStatus)}
+                              </span>
+                            )}
+
+                            {staleApprovalRecovery && (
+                              <span className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
+                                <XCircle className="h-3.5 w-3.5" />
+                                Stale Recovery
                               </span>
                             )}
 
