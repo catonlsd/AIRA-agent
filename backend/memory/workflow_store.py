@@ -86,6 +86,10 @@ class WorkflowStore:
         for run_id, state in cls.runs.items():
             approval_context = state.memory.get("approval_context", {})
             approval_resolution = state.memory.get("approval_resolution", {})
+            approval_recovery_events = state.memory.get(
+                "approval_recovery_events",
+                [],
+            )
             cleanup_actions = state.memory.get("cleanup_actions", [])
 
             summaries.append(
@@ -110,6 +114,14 @@ class WorkflowStore:
                     "approval_resolution": approval_resolution,
                     "approval_resolution_status": approval_resolution.get("status"),
                     "approval_resolution_action": approval_resolution.get("action"),
+
+                    "approval_stale_recovered": state.memory.get(
+                        "approval_stale_recovered",
+                        False,
+                    ),
+                    "approval_recovery_events": approval_recovery_events,
+                    "approval_recovery_count": len(approval_recovery_events),
+                    "has_approval_recovery": len(approval_recovery_events) > 0,
 
                     "cleanup_actions": cleanup_actions,
                     "cleanup_count": len(cleanup_actions),
@@ -197,6 +209,19 @@ class WorkflowStore:
             == "approved_but_resume_failed"
         )
 
+        stale_approval_recovery_runs = sum(
+            1
+            for run in runs
+            if run.memory.get("approval_stale_recovered") is True
+            or run.memory.get("approval_resolution", {}).get("status")
+            == "stale_processing_recovered"
+        )
+
+        total_approval_recovery_events = sum(
+            len(run.memory.get("approval_recovery_events", []))
+            for run in runs
+        )
+
         latest_runs = cls.list_runs()[-5:]
 
         return {
@@ -222,6 +247,10 @@ class WorkflowStore:
             "approval_approved_runs": approval_approved_runs,
             "approval_rejected_runs": approval_rejected_runs,
             "approval_resume_failed_runs": approval_resume_failed_runs,
+
+            "stale_approval_recovery_runs": stale_approval_recovery_runs,
+            "approval_stale_recovered_runs": stale_approval_recovery_runs,
+            "total_approval_recovery_events": total_approval_recovery_events,
 
             "latest_runs": latest_runs,
         }
