@@ -33,6 +33,16 @@ type ApprovalContext = {
   recent_commits?: string;
 };
 
+type ApprovalResolution = {
+  status?: string;
+  action?: string;
+  requested_at?: string;
+  completed_at?: string;
+  final_status?: string;
+  final_decision?: string;
+  error?: string;
+};
+
 type CleanupAction = {
   reason: string;
   tool_name: string;
@@ -55,8 +65,15 @@ type LatestRun = {
   retry_count: number;
   requires_approval: boolean;
   pending_action?: string;
+
   approval_context?: ApprovalContext;
   approval_context_type?: string;
+
+  approval_in_progress?: boolean;
+  approval_resolution?: ApprovalResolution;
+  approval_resolution_status?: string;
+  approval_resolution_action?: string;
+
   cleanup_actions?: CleanupAction[];
   cleanup_count?: number;
   has_cleanup?: boolean;
@@ -76,14 +93,24 @@ type OverviewResponse = {
     failed_runs: number;
     requires_approval_runs: number;
     rejected_runs: number;
+
     total_retries: number;
     total_tool_calls: number;
     total_logs: number;
+
     git_preflight_runs?: number;
     git_write_preflight_runs?: number;
     git_push_preflight_runs?: number;
+
     cleanup_runs?: number;
     total_cleanup_actions?: number;
+
+    approval_in_progress_runs?: number;
+    approval_resolved_runs?: number;
+    approval_approved_runs?: number;
+    approval_rejected_runs?: number;
+    approval_resume_failed_runs?: number;
+
     latest_runs: LatestRun[];
   };
 };
@@ -132,6 +159,95 @@ function getActionLabel(status: string) {
   return "Action";
 }
 
+function getApprovalResolutionStyle(status?: string) {
+  if (status === "approved") {
+    return "border-green-200 bg-green-50 text-green-700";
+  }
+
+  if (status === "rejected") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  if (status === "approved_but_resume_failed") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  if (status === "processing" || status === "in_progress") {
+    return "border-orange-200 bg-orange-50 text-orange-700";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function getApprovalResolutionIcon(status?: string) {
+  if (status === "approved") {
+    return <CheckCircle2 className="h-3.5 w-3.5" />;
+  }
+
+  if (status === "rejected" || status === "approved_but_resume_failed") {
+    return <XCircle className="h-3.5 w-3.5" />;
+  }
+
+  if (status === "processing" || status === "in_progress") {
+    return <Clock className="h-3.5 w-3.5" />;
+  }
+
+  return <ShieldAlert className="h-3.5 w-3.5" />;
+}
+
+function getApprovalResolutionLabel(status?: string) {
+  if (status === "approved") {
+    return "approved";
+  }
+
+  if (status === "rejected") {
+    return "rejected";
+  }
+
+  if (status === "approved_but_resume_failed") {
+    return "approved but resume failed";
+  }
+
+  if (status === "processing" || status === "in_progress") {
+    return "processing";
+  }
+
+  return "not resolved";
+}
+
+function formatDateTime(value?: string) {
+  if (!value) {
+    return "Not recorded";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString();
+}
+
+function getApprovalResolution(run: LatestRun): ApprovalResolution | null {
+  if (
+    run.approval_resolution &&
+    typeof run.approval_resolution === "object" &&
+    Object.keys(run.approval_resolution).length > 0
+  ) {
+    return run.approval_resolution;
+  }
+
+  if (run.approval_in_progress) {
+    return {
+      status: "processing",
+      action: run.pending_action,
+    };
+  }
+
+  return null;
+}
+
 function isGitWritePreflight(run: LatestRun) {
   return (
     run.approval_context_type === "git_write_preflight" ||
@@ -148,6 +264,10 @@ function isGitPushPreflight(run: LatestRun) {
 
 function hasGitPreflight(run: LatestRun) {
   return isGitWritePreflight(run) || isGitPushPreflight(run);
+}
+
+function hasApprovalResolution(run: LatestRun) {
+  return getApprovalResolution(run) !== null;
 }
 
 function isWaitingForApproval(run: LatestRun) {
@@ -194,6 +314,7 @@ export default function OverviewPage() {
         err instanceof Error ? err.message : "Failed to approve workflow.";
 
       setError(message);
+      await loadOverview();
     } finally {
       setActionRunId(null);
       setActionType(null);
@@ -213,6 +334,7 @@ export default function OverviewPage() {
         err instanceof Error ? err.message : "Failed to reject workflow.";
 
       setError(message);
+      await loadOverview();
     } finally {
       setActionRunId(null);
       setActionType(null);
@@ -237,6 +359,9 @@ export default function OverviewPage() {
   const latestCleanupCount =
     metrics?.latest_runs.filter((run) => run.has_cleanup).length || 0;
 
+  const latestApprovalResolvedCount =
+    metrics?.latest_runs.filter((run) => hasApprovalResolution(run)).length || 0;
+
   return (
     <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-6xl flex-col gap-6">
       <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-6">
@@ -256,7 +381,7 @@ export default function OverviewPage() {
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
               Monitor AIRA-X agents, tools, workflow runs, retries, approvals,
               execution activity, Git write preflights, Git push preflights,
-              cleanup actions, and platform health.
+              approval resolutions, cleanup actions, and platform health.
             </p>
           </div>
 
@@ -354,7 +479,7 @@ export default function OverviewPage() {
             </div>
           </section>
 
-          <section className="grid gap-4 md:grid-cols-4">
+          <section className="grid gap-4 md:grid-cols-5">
             <div className="sarvam-card rounded-[1.5rem] p-5">
               <p className="text-sm font-semibold text-slate-500">Completed</p>
 
@@ -386,6 +511,16 @@ export default function OverviewPage() {
 
               <h2 className="mt-1 text-3xl font-semibold text-red-700">
                 {metrics.rejected_runs}
+              </h2>
+            </div>
+
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
+                Approval Resolved
+              </p>
+
+              <h2 className="mt-1 text-3xl font-semibold text-blue-700">
+                {metrics.approval_resolved_runs ?? latestApprovalResolvedCount}
               </h2>
             </div>
           </section>
@@ -456,6 +591,48 @@ export default function OverviewPage() {
             </div>
           </section>
 
+          <section className="grid gap-4 md:grid-cols-4">
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
+                Approvals In Progress
+              </p>
+
+              <h2 className="mt-1 text-3xl font-semibold text-orange-700">
+                {metrics.approval_in_progress_runs ?? 0}
+              </h2>
+            </div>
+
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
+                Approved Actions
+              </p>
+
+              <h2 className="mt-1 text-3xl font-semibold text-green-700">
+                {metrics.approval_approved_runs ?? 0}
+              </h2>
+            </div>
+
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
+                Rejected Actions
+              </p>
+
+              <h2 className="mt-1 text-3xl font-semibold text-red-700">
+                {metrics.approval_rejected_runs ?? 0}
+              </h2>
+            </div>
+
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
+                Resume Failures
+              </p>
+
+              <h2 className="mt-1 text-3xl font-semibold text-red-700">
+                {metrics.approval_resume_failed_runs ?? 0}
+              </h2>
+            </div>
+          </section>
+
           <section className="sarvam-card rounded-[1.5rem] p-5">
             <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
               <Activity className="h-4 w-4 text-blue-600" />
@@ -474,6 +651,8 @@ export default function OverviewPage() {
                   const cleanupPerformed = Boolean(run.has_cleanup);
                   const waitingForApproval = isWaitingForApproval(run);
                   const actionInProgress = actionRunId === run.run_id;
+                  const approvalResolution = getApprovalResolution(run);
+                  const approvalStatus = approvalResolution?.status;
 
                   return (
                     <div
@@ -499,6 +678,18 @@ export default function OverviewPage() {
                             <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600">
                               Logs: {run.log_count}
                             </span>
+
+                            {approvalResolution && (
+                              <span
+                                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${getApprovalResolutionStyle(
+                                  approvalStatus
+                                )}`}
+                              >
+                                {getApprovalResolutionIcon(approvalStatus)}
+                                Approval:{" "}
+                                {getApprovalResolutionLabel(approvalStatus)}
+                              </span>
+                            )}
 
                             {gitPreflight && (
                               <span
@@ -546,6 +737,50 @@ export default function OverviewPage() {
                               <strong>{getActionLabel(run.status)}:</strong>{" "}
                               {run.pending_action}
                             </p>
+                          )}
+
+                          {approvalResolution && (
+                            <div className="mt-3 rounded-xl border border-blue-100 bg-white p-3">
+                              <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-blue-700">
+                                <ShieldAlert className="h-3.5 w-3.5" />
+                                Approval Resolution
+                              </div>
+
+                              <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-2">
+                                <p>
+                                  <strong>Status:</strong>{" "}
+                                  {approvalResolution.status || "Not recorded"}
+                                </p>
+
+                                <p>
+                                  <strong>Action:</strong>{" "}
+                                  {approvalResolution.action ||
+                                    run.pending_action ||
+                                    "No action recorded"}
+                                </p>
+
+                                <p>
+                                  <strong>Completed:</strong>{" "}
+                                  {formatDateTime(
+                                    approvalResolution.completed_at
+                                  )}
+                                </p>
+
+                                <p>
+                                  <strong>Final Decision:</strong>{" "}
+                                  {approvalResolution.final_decision ||
+                                    run.decision ||
+                                    "Not recorded"}
+                                </p>
+                              </div>
+
+                              {approvalResolution.error && (
+                                <p className="mt-2 text-xs text-red-700">
+                                  <strong>Error:</strong>{" "}
+                                  {approvalResolution.error}
+                                </p>
+                              )}
+                            </div>
                           )}
 
                           {gitPreflight && (
