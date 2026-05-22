@@ -1,5 +1,7 @@
+import asyncio
 from uuid import uuid4
 from datetime import datetime, timezone
+from typing import Dict
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -15,6 +17,8 @@ from agents.memory.memory_agent import MemoryAgent
 
 router = APIRouter(prefix="/aira-x", tags=["AIRA-X"])
 
+_APPROVAL_LOCKS: Dict[str, asyncio.Lock] = {}
+
 
 class AiraXRunRequest(BaseModel):
     goal: str
@@ -29,6 +33,9 @@ class AiraXRejectRequest(BaseModel):
 
 
 def serialize_state(state):
+    approval_context = state.memory.get("approval_context", {})
+    approval_resolution = state.memory.get("approval_resolution", {})
+
     return {
         "run_id": state.run_id,
         "status": state.status,
@@ -41,8 +48,20 @@ def serialize_state(state):
         "workflow_summary": state.memory.get("workflow_summary", {}),
         "requires_approval": state.status == "requires_approval",
         "pending_action": state.memory.get("pending_action"),
-        "approval_context": state.memory.get("approval_context", {}),
+        "approval_context": approval_context,
+        "approval_context_type": approval_context.get("type"),
+        "approval_in_progress": state.memory.get("approval_in_progress", False),
+        "approval_resolution": approval_resolution,
+        "approval_resolution_status": approval_resolution.get("status"),
+        "approval_resolution_action": approval_resolution.get("action"),
     }
+
+
+def _get_approval_lock(run_id: str) -> asyncio.Lock:
+    if run_id not in _APPROVAL_LOCKS:
+        _APPROVAL_LOCKS[run_id] = asyncio.Lock()
+
+    return _APPROVAL_LOCKS[run_id]
 
 
 def _utc_now_iso() -> str:
@@ -172,227 +191,233 @@ async def run_aira_x(request: AiraXRunRequest):
 
 @router.post("/approve")
 async def approve_aira_x_action(request: AiraXApproveRequest):
-    state = WorkflowStore.get(request.run_id)
+    approval_lock = _get_approval_lock(request.run_id)
 
-    if not state:
-        return {
-            "success": False,
-            "error": f"No workflow found for run_id: {request.run_id}",
-        }
+    async with approval_lock:
+        state = WorkflowStore.get(request.run_id)
 
-    if _approval_is_being_processed(state):
-        return _approval_processing_response(
-            state=state,
-            run_id=request.run_id,
-            requested_action="approval",
-        )
+        if not state:
+            return {
+                "success": False,
+                "error": f"No workflow found for run_id: {request.run_id}",
+            }
 
-    if state.status != "requires_approval":
-        return _approval_not_available_response(
-            state=state,
-            run_id=request.run_id,
-            requested_action="approved",
-        )
+        if _approval_is_being_processed(state):
+            return _approval_processing_response(
+                state=state,
+                run_id=request.run_id,
+                requested_action="approval",
+            )
 
-    pending_action = state.memory.get("pending_action")
+        if state.status != "requires_approval":
+            return _approval_not_available_response(
+                state=state,
+                run_id=request.run_id,
+                requested_action="approved",
+            )
 
-    if not pending_action:
-        return {
-            "success": False,
-            "error": "No pending action found for approval.",
-            "run_id": request.run_id,
-            "workflow": serialize_state(state),
-        }
+        pending_action = state.memory.get("pending_action")
 
-    state.memory["approval_in_progress"] = True
-    state.memory["approval_resolution"] = {
-        "status": "approved",
-        "action": pending_action,
-        "requested_at": _utc_now_iso(),
-    }
+        if not pending_action:
+            return {
+                "success": False,
+                "error": "No pending action found for approval.",
+                "run_id": request.run_id,
+                "workflow": serialize_state(state),
+            }
 
-    WorkflowStore.save(state)
-
-    state.memory.setdefault("approved_actions", [])
-    state.memory["approved_actions"].append(pending_action)
-
-    WorkflowMemory.add_log(
-        state,
-        agent="approval_agent",
-        event="approval_granted_by_user",
-        details={
-            "run_id": request.run_id,
-            "approved_action": pending_action,
-        },
-    )
-
-    current_step = next(
-        (step for step in state.plan if step.id == state.current_step),
-        None,
-    )
-
-    if current_step:
-        current_step.status = "pending"
-        current_step.error = None
-
-    state.status = "retrying"
-    state.decision = "retry_prepared"
-    state.final_answer = None
-
-    workflow = AiraXWorkflow()
-
-    try:
-        resumed_state = await workflow.resume(state)
-
-    except Exception as exc:
-        state.status = "failed"
-        state.decision = "approval_resume_failed"
-        state.final_answer = f"Workflow failed after approval: {exc}"
-        state.memory["approval_in_progress"] = False
+        state.memory["approval_in_progress"] = True
         state.memory["approval_resolution"] = {
-            "status": "approved_but_resume_failed",
+            "status": "approved",
             "action": pending_action,
-            "completed_at": _utc_now_iso(),
-            "error": str(exc),
+            "requested_at": _utc_now_iso(),
         }
+
+        WorkflowStore.save(state)
+
+        state.memory.setdefault("approved_actions", [])
+        state.memory["approved_actions"].append(pending_action)
 
         WorkflowMemory.add_log(
             state,
             agent="approval_agent",
-            event="approval_resume_failed",
+            event="approval_granted_by_user",
             details={
                 "run_id": request.run_id,
                 "approved_action": pending_action,
-                "error": str(exc),
             },
         )
 
-        WorkflowStore.save(state)
+        current_step = next(
+            (step for step in state.plan if step.id == state.current_step),
+            None,
+        )
 
-        return serialize_state(state)
+        if current_step:
+            current_step.status = "pending"
+            current_step.error = None
 
-    resumed_state.memory["approval_in_progress"] = False
-    resumed_state.memory["approval_resolution"] = {
-        "status": "approved",
-        "action": pending_action,
-        "completed_at": _utc_now_iso(),
-        "final_status": resumed_state.status,
-        "final_decision": resumed_state.decision,
-    }
+        state.status = "retrying"
+        state.decision = "retry_prepared"
+        state.final_answer = None
 
-    WorkflowStore.save(resumed_state)
+        workflow = AiraXWorkflow()
 
-    return serialize_state(resumed_state)
+        try:
+            resumed_state = await workflow.resume(state)
+
+        except Exception as exc:
+            state.status = "failed"
+            state.decision = "approval_resume_failed"
+            state.final_answer = f"Workflow failed after approval: {exc}"
+            state.memory["approval_in_progress"] = False
+            state.memory["approval_resolution"] = {
+                "status": "approved_but_resume_failed",
+                "action": pending_action,
+                "completed_at": _utc_now_iso(),
+                "error": str(exc),
+            }
+
+            WorkflowMemory.add_log(
+                state,
+                agent="approval_agent",
+                event="approval_resume_failed",
+                details={
+                    "run_id": request.run_id,
+                    "approved_action": pending_action,
+                    "error": str(exc),
+                },
+            )
+
+            WorkflowStore.save(state)
+
+            return serialize_state(state)
+
+        resumed_state.memory["approval_in_progress"] = False
+        resumed_state.memory["approval_resolution"] = {
+            "status": "approved",
+            "action": pending_action,
+            "completed_at": _utc_now_iso(),
+            "final_status": resumed_state.status,
+            "final_decision": resumed_state.decision,
+        }
+
+        WorkflowStore.save(resumed_state)
+
+        return serialize_state(resumed_state)
 
 
 @router.post("/reject")
 async def reject_aira_x_action(request: AiraXRejectRequest):
-    state = WorkflowStore.get(request.run_id)
+    approval_lock = _get_approval_lock(request.run_id)
 
-    if not state:
-        return {
-            "success": False,
-            "error": f"No workflow found for run_id: {request.run_id}",
-        }
+    async with approval_lock:
+        state = WorkflowStore.get(request.run_id)
 
-    if _approval_is_being_processed(state):
-        return _approval_processing_response(
-            state=state,
-            run_id=request.run_id,
-            requested_action="rejection",
-        )
+        if not state:
+            return {
+                "success": False,
+                "error": f"No workflow found for run_id: {request.run_id}",
+            }
 
-    if state.status != "requires_approval":
-        return _approval_not_available_response(
-            state=state,
-            run_id=request.run_id,
-            requested_action="rejected",
-        )
-
-    pending_action = state.memory.get("pending_action")
-
-    if not pending_action:
-        return {
-            "success": False,
-            "error": "No pending action found for rejection.",
-            "run_id": request.run_id,
-            "workflow": serialize_state(state),
-        }
-
-    state.memory["approval_in_progress"] = True
-    state.memory["approval_resolution"] = {
-        "status": "rejected",
-        "action": pending_action,
-        "requested_at": _utc_now_iso(),
-    }
-
-    WorkflowStore.save(state)
-
-    current_step = next(
-        (step for step in state.plan if step.id == state.current_step),
-        None,
-    )
-
-    cleanup_result = None
-
-    if _should_cleanup_staged_changes_after_rejection(state):
-        cleanup_result = _cleanup_staged_changes_after_rejection(state)
-
-    rejection_message = f"User rejected the action: {pending_action}."
-
-    if cleanup_result:
-        if cleanup_result.get("success"):
-            rejection_message += (
-                " AIRA-X also unstaged changes that it staged for this workflow."
-            )
-        else:
-            rejection_message += (
-                " AIRA-X attempted to unstage changes, but cleanup failed."
+        if _approval_is_being_processed(state):
+            return _approval_processing_response(
+                state=state,
+                run_id=request.run_id,
+                requested_action="rejection",
             )
 
-    if current_step:
-        current_step.status = "rejected"
-        current_step.error = rejection_message
+        if state.status != "requires_approval":
+            return _approval_not_available_response(
+                state=state,
+                run_id=request.run_id,
+                requested_action="rejected",
+            )
 
-    state.status = "rejected"
-    state.decision = "approval_rejected"
-    state.final_answer = rejection_message
+        pending_action = state.memory.get("pending_action")
 
-    WorkflowMemory.add_log(
-        state,
-        agent="approval_agent",
-        event="approval_rejected_by_user",
-        details={
-            "run_id": request.run_id,
-            "rejected_action": pending_action,
-            "cleanup_attempted": cleanup_result is not None,
-        },
-    )
+        if not pending_action:
+            return {
+                "success": False,
+                "error": "No pending action found for rejection.",
+                "run_id": request.run_id,
+                "workflow": serialize_state(state),
+            }
 
-    WorkflowMemory.add_log(
-        state,
-        agent="aira_x_workflow",
-        event="workflow_stopped_after_rejection",
-        details={
-            "final_answer": rejection_message,
-        },
-    )
+        state.memory["approval_in_progress"] = True
+        state.memory["approval_resolution"] = {
+            "status": "rejected",
+            "action": pending_action,
+            "requested_at": _utc_now_iso(),
+        }
 
-    memory_agent = MemoryAgent()
-    state = await memory_agent.run(state)
+        WorkflowStore.save(state)
 
-    state.memory["approval_in_progress"] = False
-    state.memory["approval_resolution"] = {
-        "status": "rejected",
-        "action": pending_action,
-        "completed_at": _utc_now_iso(),
-        "final_status": state.status,
-        "final_decision": state.decision,
-    }
+        current_step = next(
+            (step for step in state.plan if step.id == state.current_step),
+            None,
+        )
 
-    WorkflowStore.save(state)
+        cleanup_result = None
 
-    return serialize_state(state)
+        if _should_cleanup_staged_changes_after_rejection(state):
+            cleanup_result = _cleanup_staged_changes_after_rejection(state)
+
+        rejection_message = f"User rejected the action: {pending_action}."
+
+        if cleanup_result:
+            if cleanup_result.get("success"):
+                rejection_message += (
+                    " AIRA-X also unstaged changes that it staged for this workflow."
+                )
+            else:
+                rejection_message += (
+                    " AIRA-X attempted to unstage changes, but cleanup failed."
+                )
+
+        if current_step:
+            current_step.status = "rejected"
+            current_step.error = rejection_message
+
+        state.status = "rejected"
+        state.decision = "approval_rejected"
+        state.final_answer = rejection_message
+
+        WorkflowMemory.add_log(
+            state,
+            agent="approval_agent",
+            event="approval_rejected_by_user",
+            details={
+                "run_id": request.run_id,
+                "rejected_action": pending_action,
+                "cleanup_attempted": cleanup_result is not None,
+            },
+        )
+
+        WorkflowMemory.add_log(
+            state,
+            agent="aira_x_workflow",
+            event="workflow_stopped_after_rejection",
+            details={
+                "final_answer": rejection_message,
+            },
+        )
+
+        memory_agent = MemoryAgent()
+        state = await memory_agent.run(state)
+
+        state.memory["approval_in_progress"] = False
+        state.memory["approval_resolution"] = {
+            "status": "rejected",
+            "action": pending_action,
+            "completed_at": _utc_now_iso(),
+            "final_status": state.status,
+            "final_decision": state.decision,
+        }
+
+        WorkflowStore.save(state)
+
+        return serialize_state(state)
 
 
 @router.get("/runs")
