@@ -44,6 +44,62 @@ def assert_true(condition, label):
         raise AssertionError(f"{label} failed.")
 
 
+
+def build_stale_approval_processing_state(run_id: str) -> AiraXState:
+    pending_action = "git_tool:push origin current_branch"
+    stale_timestamp = "2000-01-01T00:00:00+00:00"
+
+    state = AiraXState(
+        user_goal="git push",
+        run_id=run_id,
+    )
+
+    state.status = "requires_approval"
+    state.decision = "stop_approval_required"
+    state.current_step = 1
+    state.final_answer = (
+        "Approval required before executing: git_tool:push origin current_branch"
+    )
+
+    state.plan = [
+        AiraXStep(
+            id=1,
+            title="Push Git changes",
+            description="Push local commits to a remote Git repository.",
+            assigned_agent="execution_agent",
+            tool_name="git_tool",
+            tool_action="push",
+            tool_payload={"remote": "origin", "branch": None},
+            status="blocked",
+            error="This action requires user approval.",
+        )
+    ]
+
+    state.memory["pending_action"] = pending_action
+    state.memory["approval_in_progress"] = True
+    state.memory["approval_processing_started_at"] = stale_timestamp
+    state.memory["approval_resolution"] = {
+        "status": "approved",
+        "action": pending_action,
+        "requested_at": stale_timestamp,
+    }
+    state.memory["approval_context"] = {
+        "type": "git_push_preflight",
+        "tool_name": "git_tool",
+        "tool_action": "push",
+        "pending_action": pending_action,
+        "target_remote": "origin",
+        "target_branch": "main",
+        "branch": "main",
+        "status_branch": "## main...origin/main",
+        "remote_info": "origin https://github.com/example/repo.git (fetch)",
+        "last_commit": "abc1234 Test commit",
+        "recent_commits": "abc1234 Test commit",
+    }
+
+    return state
+
+
 async def test_normal_python_execution():
     print("Testing normal Python execution...")
 
@@ -1895,6 +1951,381 @@ async def test_commit_rejection_triggers_unstage_cleanup():
     return response
 
 
+
+async def test_stale_approval_processing_recovered_in_detail_api():
+    print("Testing stale approval processing recovery in detail API...")
+
+    run_id = "test-stale-approval-detail-recovery"
+
+    WorkflowStore.delete(run_id)
+
+    try:
+        WorkflowStore.save(build_stale_approval_processing_state(run_id))
+
+        response = await get_aira_x_run(run_id)
+
+        assert_equal(
+            response["success"],
+            True,
+            "Stale approval detail response success",
+        )
+
+        run = response["run"]
+
+        assert_equal(
+            run["status"],
+            "failed",
+            "Stale approval detail recovered status",
+        )
+
+        assert_equal(
+            run["decision"],
+            "approval_processing_stale",
+            "Stale approval detail recovered decision",
+        )
+
+        assert_equal(
+            run["approval_in_progress"],
+            False,
+            "Stale approval detail should clear approval_in_progress",
+        )
+
+        assert_true(
+            run["approval_stale_recovered"] is True,
+            "Stale approval detail should mark stale recovery",
+        )
+
+        assert_equal(
+            run["approval_resolution_status"],
+            "stale_processing_recovered",
+            "Stale approval detail resolution status",
+        )
+
+        assert_contains(
+            run["final_answer"],
+            "Approval processing became stale",
+            "Stale approval detail final answer",
+        )
+
+        assert_equal(
+            run["plan"][0]["status"],
+            "failed",
+            "Stale approval detail current step status",
+        )
+
+        assert_contains(
+            run["plan"][0]["error"],
+            "Approval processing became stale",
+            "Stale approval detail current step error",
+        )
+
+        recovery_events = run["memory"].get("approval_recovery_events", [])
+
+        assert_true(
+            len(recovery_events) >= 1,
+            "Stale approval detail should record recovery event",
+        )
+
+        assert_equal(
+            recovery_events[-1]["reason"],
+            "stale_approval_processing",
+            "Stale approval detail recovery reason",
+        )
+
+        saved_state = WorkflowStore.get(run_id)
+
+        assert_true(
+            saved_state is not None,
+            "Stale approval detail saved state should exist",
+        )
+
+        assert_equal(
+            saved_state.status,
+            "failed",
+            "Stale approval detail saved status",
+        )
+
+        assert_true(
+            saved_state.memory.get("approval_in_progress") is False,
+            "Stale approval detail saved state should clear approval_in_progress",
+        )
+
+    finally:
+        WorkflowStore.delete(run_id)
+
+        if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
+            aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
+
+    print("✅ Stale approval detail recovery passed")
+
+    return True
+
+
+async def test_stale_approval_processing_recovered_in_runs_and_overview():
+    print("Testing stale approval processing recovery in runs and overview...")
+
+    run_id = "test-stale-approval-runs-overview-recovery"
+
+    WorkflowStore.delete(run_id)
+
+    try:
+        WorkflowStore.save(build_stale_approval_processing_state(run_id))
+
+        runs_response = await list_aira_x_runs()
+
+        matching_run = next(
+            (
+                run
+                for run in runs_response["runs"]
+                if run["run_id"] == run_id
+            ),
+            None,
+        )
+
+        assert_true(
+            matching_run is not None,
+            "Stale approval run should appear in workflow runs list",
+        )
+
+        assert_equal(
+            matching_run["status"],
+            "failed",
+            "Stale approval runs summary recovered status",
+        )
+
+        assert_equal(
+            matching_run["decision"],
+            "approval_processing_stale",
+            "Stale approval runs summary recovered decision",
+        )
+
+        assert_true(
+            matching_run["approval_in_progress"] is False,
+            "Stale approval runs summary should clear approval_in_progress",
+        )
+
+        assert_equal(
+            matching_run["approval_resolution_status"],
+            "stale_processing_recovered",
+            "Stale approval runs summary resolution status",
+        )
+
+        overview_response = await get_aira_x_overview()
+        latest_runs = overview_response["workflow_metrics"]["latest_runs"]
+
+        latest_matching_run = next(
+            (
+                run
+                for run in latest_runs
+                if run["run_id"] == run_id
+            ),
+            None,
+        )
+
+        assert_true(
+            latest_matching_run is not None,
+            "Stale approval run should appear in overview latest runs",
+        )
+
+        assert_equal(
+            latest_matching_run["status"],
+            "failed",
+            "Stale approval overview recovered status",
+        )
+
+        assert_equal(
+            latest_matching_run["decision"],
+            "approval_processing_stale",
+            "Stale approval overview recovered decision",
+        )
+
+        assert_true(
+            latest_matching_run["approval_in_progress"] is False,
+            "Stale approval overview should clear approval_in_progress",
+        )
+
+        assert_equal(
+            latest_matching_run["approval_resolution_status"],
+            "stale_processing_recovered",
+            "Stale approval overview resolution status",
+        )
+
+    finally:
+        WorkflowStore.delete(run_id)
+
+        if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
+            aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
+
+    print("✅ Stale approval runs and overview recovery passed")
+
+    return True
+
+
+async def test_stale_approval_processing_blocks_late_approval_action():
+    print("Testing stale approval processing blocks late approval action...")
+
+    approve_run_id = "test-stale-approval-late-approve"
+    reject_run_id = "test-stale-approval-late-reject"
+
+    for run_id in [approve_run_id, reject_run_id]:
+        WorkflowStore.delete(run_id)
+
+    try:
+        WorkflowStore.save(build_stale_approval_processing_state(approve_run_id))
+
+        approval_response = await approve_aira_x_action(
+            AiraXApproveRequest(run_id=approve_run_id)
+        )
+
+        assert_equal(
+            approval_response["success"],
+            False,
+            "Late approval after stale recovery should fail safely",
+        )
+
+        assert_equal(
+            approval_response["current_status"],
+            "failed",
+            "Late approval after stale recovery current status",
+        )
+
+        assert_equal(
+            approval_response["decision"],
+            "approval_processing_stale",
+            "Late approval after stale recovery decision",
+        )
+
+        assert_true(
+            approval_response["approval_in_progress"] is False,
+            "Late approval after stale recovery should clear approval_in_progress",
+        )
+
+        assert_equal(
+            approval_response["workflow"]["approval_resolution_status"],
+            "stale_processing_recovered",
+            "Late approval after stale recovery resolution status",
+        )
+
+        assert_contains(
+            approval_response["workflow"]["final_answer"],
+            "Approval processing became stale",
+            "Late approval after stale recovery final answer",
+        )
+
+        WorkflowStore.save(build_stale_approval_processing_state(reject_run_id))
+
+        rejection_response = await reject_aira_x_action(
+            AiraXRejectRequest(run_id=reject_run_id)
+        )
+
+        assert_equal(
+            rejection_response["success"],
+            False,
+            "Late rejection after stale recovery should fail safely",
+        )
+
+        assert_equal(
+            rejection_response["current_status"],
+            "failed",
+            "Late rejection after stale recovery current status",
+        )
+
+        assert_equal(
+            rejection_response["decision"],
+            "approval_processing_stale",
+            "Late rejection after stale recovery decision",
+        )
+
+        assert_true(
+            rejection_response["approval_in_progress"] is False,
+            "Late rejection after stale recovery should clear approval_in_progress",
+        )
+
+        assert_equal(
+            rejection_response["workflow"]["approval_resolution_status"],
+            "stale_processing_recovered",
+            "Late rejection after stale recovery resolution status",
+        )
+
+    finally:
+        for run_id in [approve_run_id, reject_run_id]:
+            WorkflowStore.delete(run_id)
+
+            if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
+                aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
+
+    print("✅ Stale approval late action block passed")
+
+    return True
+
+
+async def test_active_approval_lock_prevents_stale_recovery():
+    print("Testing active approval lock prevents stale recovery...")
+
+    run_id = "test-active-approval-lock-prevents-stale-recovery"
+
+    WorkflowStore.delete(run_id)
+
+    approval_lock = aira_x_routes._get_approval_lock(run_id)
+
+    try:
+        WorkflowStore.save(build_stale_approval_processing_state(run_id))
+
+        await approval_lock.acquire()
+
+        response = await get_aira_x_run(run_id)
+
+        assert_equal(
+            response["success"],
+            True,
+            "Active lock stale approval detail response success",
+        )
+
+        run = response["run"]
+
+        assert_equal(
+            run["status"],
+            "requires_approval",
+            "Active lock should prevent stale recovery status change",
+        )
+
+        assert_equal(
+            run["decision"],
+            "stop_approval_required",
+            "Active lock should preserve decision",
+        )
+
+        assert_true(
+            run["approval_in_progress"] is True,
+            "Active lock should preserve approval_in_progress",
+        )
+
+        assert_equal(
+            run["approval_resolution_status"],
+            "approved",
+            "Active lock should preserve original approval resolution",
+        )
+
+        assert_true(
+            run.get("approval_stale_recovered") is False,
+            "Active lock should not mark stale recovery",
+        )
+
+    finally:
+        if approval_lock.locked():
+            approval_lock.release()
+
+        WorkflowStore.delete(run_id)
+
+        if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
+            aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
+
+    print("✅ Active approval lock stale recovery guard passed")
+
+    return True
+
+
+
 async def test_approval_resolution_fields_in_runs_and_overview():
     print("Testing approval resolution fields in runs and overview...")
 
@@ -2664,6 +3095,10 @@ async def main():
     await test_concurrent_approve_reject_uses_per_run_lock()
     await test_double_approval_is_blocked_after_completion()
     await test_double_rejection_is_blocked_after_rejection()
+    await test_stale_approval_processing_recovered_in_detail_api()
+    await test_stale_approval_processing_recovered_in_runs_and_overview()
+    await test_stale_approval_processing_blocks_late_approval_action()
+    await test_active_approval_lock_prevents_stale_recovery()
     await test_git_push_failure_is_non_retryable()
     await test_workflow_runs_include_git_preflight_summary()
     await test_overview_latest_runs_include_git_preflight_summary()
