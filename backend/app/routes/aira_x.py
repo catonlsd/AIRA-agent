@@ -78,6 +78,13 @@ def _approval_lock_is_active(run_id: Optional[str]) -> bool:
     return approval_lock.locked() if approval_lock else False
 
 
+def _remove_inactive_approval_lock(run_id: str) -> None:
+    approval_lock = _APPROVAL_LOCKS.get(run_id)
+
+    if approval_lock and not approval_lock.locked():
+        _APPROVAL_LOCKS.pop(run_id, None)
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -240,6 +247,33 @@ def _recover_stale_approval_processing_runs() -> None:
 
         if _recover_stale_approval_processing_state(state):
             WorkflowStore.save(state)
+
+
+def _workflow_can_be_deleted(state) -> bool:
+    if _approval_lock_is_active(state.run_id):
+        return False
+
+    if _approval_is_being_processed(state):
+        return False
+
+    return True
+
+
+def _workflow_delete_blocked_response(state, run_id: str):
+    return {
+        "success": False,
+        "error": (
+            "Workflow cannot be deleted while an approval-gated action is "
+            "being processed. Wait for it to finish, or let stale approval "
+            "recovery mark it safe first."
+        ),
+        "run_id": run_id,
+        "current_status": state.status,
+        "decision": state.decision,
+        "approval_in_progress": state.memory.get("approval_in_progress", False),
+        "approval_resolution": state.memory.get("approval_resolution"),
+        "workflow": serialize_state(state),
+    }
 
 
 def _approval_not_available_response(state, run_id: str, requested_action: str):
@@ -653,6 +687,42 @@ async def get_aira_x_run(run_id: str):
     return {
         "success": True,
         "run": serialize_state(state),
+    }
+
+
+@router.delete("/runs/{run_id}")
+async def delete_aira_x_run(run_id: str):
+    state = WorkflowStore.get(run_id)
+
+    if not state:
+        return {
+            "success": False,
+            "error": f"No workflow found for run_id: {run_id}",
+            "run_id": run_id,
+        }
+
+    if _recover_stale_approval_processing_state(state):
+        WorkflowStore.save(state)
+
+    if not _workflow_can_be_deleted(state):
+        return _workflow_delete_blocked_response(state, run_id)
+
+    deleted_summary = {
+        "run_id": run_id,
+        "user_goal": state.user_goal,
+        "status": state.status,
+        "decision": state.decision,
+        "final_answer": state.final_answer,
+    }
+
+    WorkflowStore.delete(run_id)
+    _remove_inactive_approval_lock(run_id)
+
+    return {
+        "success": True,
+        "deleted_run_id": run_id,
+        "deleted_run": deleted_summary,
+        "remaining_run_count": len(WorkflowStore.list_runs()),
     }
 
 
