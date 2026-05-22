@@ -17,6 +17,7 @@ import {
 import {
   approveAiraX,
   deleteAiraXRun,
+  deleteSafeAiraXRuns,
   getAiraXOverview,
   rejectAiraX,
 } from "@/lib/api";
@@ -318,6 +319,8 @@ export default function OverviewPage() {
     null
   );
   const [deleteRunId, setDeleteRunId] = useState<string | null>(null);
+  const [safeCleanupLoading, setSafeCleanupLoading] = useState(false);
+  const [safeCleanupSummary, setSafeCleanupSummary] = useState("");
   const [polling, setPolling] = useState(false);
   const [error, setError] = useState("");
 
@@ -435,6 +438,39 @@ export default function OverviewPage() {
     }
   }
 
+
+  async function handleSafeCleanup() {
+    const confirmed = window.confirm(
+      "Clean workflow history safely?\n\nThis deletes only completed, failed, and rejected workflow runs. Active approval, retrying, executing, and approval-processing runs are skipped."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setSafeCleanupLoading(true);
+      setSafeCleanupSummary("");
+      setError("");
+
+      const response = await deleteSafeAiraXRuns();
+
+      setSafeCleanupSummary(
+        `Safe cleanup complete: deleted ${response.deleted_count} run(s), skipped ${response.skipped_count} run(s).`
+      );
+
+      await loadOverview({ showLoading: false });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to clean workflow history.";
+
+      setError(message);
+      await loadOverview({ showLoading: false });
+    } finally {
+      setSafeCleanupLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadOverview();
   }, [loadOverview]);
@@ -515,8 +551,43 @@ export default function OverviewPage() {
               Monitor AIRA-X agents, tools, workflow runs, retries, approvals,
               execution activity, Git write preflights, Git push preflights,
               approval processing state, approval resolutions, auto-refreshing
-              approvals, cleanup actions, and platform health.
+              approvals, safe cleanup actions, cleanup actions, and platform
+              health.
             </p>
+
+            <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-slate-100 bg-white/80 p-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-sm font-bold text-slate-900">
+                  Dashboard History Maintenance
+                </p>
+
+                <p className="mt-1 text-xs leading-5 text-slate-600">
+                  Safely remove only completed, failed, and rejected runs.
+                  Active approval, retrying, executing, and approval-processing
+                  runs are skipped.
+                </p>
+
+                {safeCleanupSummary && (
+                  <p className="mt-2 text-xs font-semibold text-green-700">
+                    {safeCleanupSummary}
+                  </p>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSafeCleanup}
+                disabled={
+                  safeCleanupLoading ||
+                  Boolean(actionRunId) ||
+                  Boolean(deleteRunId)
+                }
+                className="inline-flex w-fit items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-xs font-bold text-red-700 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <XCircle className="h-3.5 w-3.5" />
+                {safeCleanupLoading ? "Cleaning..." : "Safe Cleanup"}
+              </button>
+            </div>
           </div>
 
           {overview && (
@@ -536,6 +607,12 @@ export default function OverviewPage() {
       {error && (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           {error}
+        </div>
+      )}
+
+      {safeCleanupSummary && !error && (
+        <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-sm font-semibold text-green-700">
+          {safeCleanupSummary}
         </div>
       )}
 
