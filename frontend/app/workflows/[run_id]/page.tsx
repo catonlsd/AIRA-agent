@@ -154,7 +154,10 @@ function getApprovalResolutionStyle(status?: string) {
     return "border-red-200 bg-red-50 text-red-700";
   }
 
-  if (status === "approved_but_resume_failed") {
+  if (
+    status === "approved_but_resume_failed" ||
+    status === "stale_processing_recovered"
+  ) {
     return "border-red-200 bg-red-50 text-red-700";
   }
 
@@ -170,7 +173,11 @@ function getApprovalResolutionIcon(status?: string) {
     return <CheckCircle2 className="h-4 w-4" />;
   }
 
-  if (status === "rejected" || status === "approved_but_resume_failed") {
+  if (
+    status === "rejected" ||
+    status === "approved_but_resume_failed" ||
+    status === "stale_processing_recovered"
+  ) {
     return <XCircle className="h-4 w-4" />;
   }
 
@@ -192,6 +199,10 @@ function getApprovalResolutionLabel(status?: string) {
 
   if (status === "approved_but_resume_failed") {
     return "Approved, but resume failed";
+  }
+
+  if (status === "stale_processing_recovered") {
+    return "Stale approval recovered";
   }
 
   if (status === "processing" || status === "in_progress") {
@@ -275,6 +286,15 @@ function renderApprovalResolution(run: WorkflowRun) {
       <p className="mb-4 text-sm leading-6 text-slate-600">
         This section records how the approval-gated action was handled.
       </p>
+
+      {status === "stale_processing_recovered" && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-white p-3 text-sm leading-6 text-red-700">
+          <strong>Stale approval recovered:</strong> AIRA-X detected that
+          approval processing stayed active for too long and stopped the
+          workflow safely to prevent duplicate execution. Review the workflow
+          state before running the action again.
+        </div>
+      )}
 
       <div className="grid gap-3 md:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-3">
