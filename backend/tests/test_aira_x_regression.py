@@ -1568,6 +1568,362 @@ async def test_commit_rejection_triggers_unstage_cleanup():
     return response
 
 
+async def test_approval_resolution_fields_in_runs_and_overview():
+    print("Testing approval resolution fields in runs and overview...")
+
+    approved_run_id = "test-approval-resolution-approved"
+    rejected_run_id = "test-approval-resolution-rejected"
+    failed_run_id = "test-approval-resolution-resume-failed"
+    processing_run_id = "test-approval-resolution-processing"
+
+    for run_id in [
+        approved_run_id,
+        rejected_run_id,
+        failed_run_id,
+        processing_run_id,
+    ]:
+        WorkflowStore.delete(run_id)
+
+    approved_state = AiraXState(
+        user_goal="git push",
+        run_id=approved_run_id,
+    )
+    approved_state.status = "completed"
+    approved_state.decision = "finish"
+    approved_state.current_step = 1
+    approved_state.final_answer = "Workflow completed successfully."
+    approved_state.memory["pending_action"] = "git_tool:push origin main"
+    approved_state.memory["approval_in_progress"] = False
+    approved_state.memory["approval_resolution"] = {
+        "status": "approved",
+        "action": "git_tool:push origin main",
+        "requested_at": "2026-01-01T00:00:00+00:00",
+        "completed_at": "2026-01-01T00:00:01+00:00",
+        "final_status": "completed",
+        "final_decision": "finish",
+    }
+    approved_state.memory["approval_context"] = {
+        "type": "git_push_preflight",
+        "tool_name": "git_tool",
+        "tool_action": "push",
+        "pending_action": "git_tool:push origin main",
+        "target_remote": "origin",
+        "target_branch": "main",
+        "branch": "main",
+    }
+    approved_state.plan = [
+        AiraXStep(
+            id=1,
+            title="Push Git changes",
+            description="Push local commits to a remote Git repository.",
+            assigned_agent="execution_agent",
+            tool_name="git_tool",
+            tool_action="push",
+            tool_payload={"remote": "origin", "branch": "main"},
+            status="completed",
+            result="Everything up-to-date",
+        )
+    ]
+
+    rejected_state = AiraXState(
+        user_goal="git push",
+        run_id=rejected_run_id,
+    )
+    rejected_state.status = "rejected"
+    rejected_state.decision = "approval_rejected"
+    rejected_state.current_step = 1
+    rejected_state.final_answer = (
+        "User rejected the action: git_tool:push origin current_branch."
+    )
+    rejected_state.memory["pending_action"] = "git_tool:push origin current_branch"
+    rejected_state.memory["approval_in_progress"] = False
+    rejected_state.memory["approval_resolution"] = {
+        "status": "rejected",
+        "action": "git_tool:push origin current_branch",
+        "requested_at": "2026-01-01T00:01:00+00:00",
+        "completed_at": "2026-01-01T00:01:01+00:00",
+        "final_status": "rejected",
+        "final_decision": "approval_rejected",
+    }
+    rejected_state.memory["approval_context"] = {
+        "type": "git_push_preflight",
+        "tool_name": "git_tool",
+        "tool_action": "push",
+        "pending_action": "git_tool:push origin current_branch",
+        "target_remote": "origin",
+        "target_branch": "main",
+        "branch": "main",
+    }
+    rejected_state.plan = [
+        AiraXStep(
+            id=1,
+            title="Push Git changes",
+            description="Push local commits to a remote Git repository.",
+            assigned_agent="execution_agent",
+            tool_name="git_tool",
+            tool_action="push",
+            tool_payload={"remote": "origin", "branch": None},
+            status="rejected",
+            error="User rejected the action.",
+        )
+    ]
+
+    failed_state = AiraXState(
+        user_goal="git push",
+        run_id=failed_run_id,
+    )
+    failed_state.status = "failed"
+    failed_state.decision = "approval_resume_failed"
+    failed_state.current_step = 1
+    failed_state.final_answer = "Workflow failed after approval: mocked failure"
+    failed_state.memory["pending_action"] = "git_tool:push origin main"
+    failed_state.memory["approval_in_progress"] = False
+    failed_state.memory["approval_resolution"] = {
+        "status": "approved_but_resume_failed",
+        "action": "git_tool:push origin main",
+        "completed_at": "2026-01-01T00:02:01+00:00",
+        "error": "mocked failure",
+    }
+    failed_state.plan = [
+        AiraXStep(
+            id=1,
+            title="Push Git changes",
+            description="Push local commits to a remote Git repository.",
+            assigned_agent="execution_agent",
+            tool_name="git_tool",
+            tool_action="push",
+            tool_payload={"remote": "origin", "branch": "main"},
+            status="failed",
+            error="mocked failure",
+        )
+    ]
+
+    processing_state = AiraXState(
+        user_goal="git push",
+        run_id=processing_run_id,
+    )
+    processing_state.status = "requires_approval"
+    processing_state.decision = "stop_approval_required"
+    processing_state.current_step = 1
+    processing_state.final_answer = (
+        "Approval required before executing: git_tool:push origin current_branch"
+    )
+    processing_state.memory["pending_action"] = "git_tool:push origin current_branch"
+    processing_state.memory["approval_in_progress"] = True
+    processing_state.memory["approval_context"] = {
+        "type": "git_push_preflight",
+        "tool_name": "git_tool",
+        "tool_action": "push",
+        "pending_action": "git_tool:push origin current_branch",
+        "target_remote": "origin",
+        "target_branch": "main",
+        "branch": "main",
+    }
+    processing_state.plan = [
+        AiraXStep(
+            id=1,
+            title="Push Git changes",
+            description="Push local commits to a remote Git repository.",
+            assigned_agent="execution_agent",
+            tool_name="git_tool",
+            tool_action="push",
+            tool_payload={"remote": "origin", "branch": None},
+            status="blocked",
+            error="This action requires user approval.",
+        )
+    ]
+
+    try:
+        WorkflowStore.save(approved_state)
+        WorkflowStore.save(rejected_state)
+        WorkflowStore.save(failed_state)
+        WorkflowStore.save(processing_state)
+
+        runs_response = await list_aira_x_runs()
+
+        runs_by_id = {
+            run["run_id"]: run
+            for run in runs_response["runs"]
+            if run["run_id"]
+            in {
+                approved_run_id,
+                rejected_run_id,
+                failed_run_id,
+                processing_run_id,
+            }
+        }
+
+        assert_equal(
+            len(runs_by_id),
+            4,
+            "Workflow runs summary should include all approval resolution test runs",
+        )
+
+        approved_summary = runs_by_id[approved_run_id]
+        rejected_summary = runs_by_id[rejected_run_id]
+        failed_summary = runs_by_id[failed_run_id]
+        processing_summary = runs_by_id[processing_run_id]
+
+        assert_true(
+            approved_summary["approval_in_progress"] is False,
+            "Approved summary should mark approval_in_progress false",
+        )
+
+        assert_equal(
+            approved_summary["approval_resolution_status"],
+            "approved",
+            "Approved summary approval resolution status",
+        )
+
+        assert_equal(
+            approved_summary["approval_resolution_action"],
+            "git_tool:push origin main",
+            "Approved summary approval resolution action",
+        )
+
+        assert_true(
+            isinstance(approved_summary["approval_resolution"], dict),
+            "Approved summary should include approval resolution object",
+        )
+
+        assert_equal(
+            rejected_summary["approval_resolution_status"],
+            "rejected",
+            "Rejected summary approval resolution status",
+        )
+
+        assert_equal(
+            rejected_summary["approval_resolution_action"],
+            "git_tool:push origin current_branch",
+            "Rejected summary approval resolution action",
+        )
+
+        assert_equal(
+            failed_summary["approval_resolution_status"],
+            "approved_but_resume_failed",
+            "Failed summary approval resolution status",
+        )
+
+        assert_true(
+            processing_summary["approval_in_progress"] is True,
+            "Processing summary should mark approval_in_progress true",
+        )
+
+        assert_true(
+            "approval_resolution" in processing_summary,
+            "Processing summary should include approval_resolution key",
+        )
+
+        overview_response = await get_aira_x_overview()
+        metrics = overview_response["workflow_metrics"]
+
+        assert_true(
+            "approval_in_progress_runs" in metrics,
+            "Overview metrics should include approval_in_progress_runs",
+        )
+
+        assert_true(
+            "approval_resolved_runs" in metrics,
+            "Overview metrics should include approval_resolved_runs",
+        )
+
+        assert_true(
+            "approval_approved_runs" in metrics,
+            "Overview metrics should include approval_approved_runs",
+        )
+
+        assert_true(
+            "approval_rejected_runs" in metrics,
+            "Overview metrics should include approval_rejected_runs",
+        )
+
+        assert_true(
+            "approval_resume_failed_runs" in metrics,
+            "Overview metrics should include approval_resume_failed_runs",
+        )
+
+        assert_true(
+            metrics["approval_in_progress_runs"] >= 1,
+            "Overview should count approval_in_progress runs",
+        )
+
+        assert_true(
+            metrics["approval_resolved_runs"] >= 3,
+            "Overview should count approval resolution runs",
+        )
+
+        assert_true(
+            metrics["approval_approved_runs"] >= 1,
+            "Overview should count approved approval resolutions",
+        )
+
+        assert_true(
+            metrics["approval_rejected_runs"] >= 1,
+            "Overview should count rejected approval resolutions",
+        )
+
+        assert_true(
+            metrics["approval_resume_failed_runs"] >= 1,
+            "Overview should count approved-but-resume-failed resolutions",
+        )
+
+        latest_runs = metrics["latest_runs"]
+
+        latest_by_id = {
+            run["run_id"]: run
+            for run in latest_runs
+            if run["run_id"]
+            in {
+                approved_run_id,
+                rejected_run_id,
+                failed_run_id,
+                processing_run_id,
+            }
+        }
+
+        assert_equal(
+            len(latest_by_id),
+            4,
+            "Overview latest runs should include approval resolution test runs",
+        )
+
+        assert_equal(
+            latest_by_id[approved_run_id]["approval_resolution_status"],
+            "approved",
+            "Overview latest run should include approved resolution status",
+        )
+
+        assert_equal(
+            latest_by_id[rejected_run_id]["approval_resolution_status"],
+            "rejected",
+            "Overview latest run should include rejected resolution status",
+        )
+
+        assert_equal(
+            latest_by_id[failed_run_id]["approval_resolution_status"],
+            "approved_but_resume_failed",
+            "Overview latest run should include resume failed resolution status",
+        )
+
+        assert_true(
+            latest_by_id[processing_run_id]["approval_in_progress"] is True,
+            "Overview latest run should include approval_in_progress flag",
+        )
+
+    finally:
+        for run_id in [
+            approved_run_id,
+            rejected_run_id,
+            failed_run_id,
+            processing_run_id,
+        ]:
+            WorkflowStore.delete(run_id)
+
+    print("✅ Approval resolution fields in runs and overview passed")
+
+    return True
+
+
 async def test_cleanup_metrics_in_runs_and_overview():
     print("Testing cleanup metrics in Workflow Runs and Overview APIs...")
 
@@ -1984,6 +2340,7 @@ async def main():
     await test_overview_latest_runs_include_git_preflight_summary()
     await test_git_preflight_metrics_in_overview()
     await test_commit_rejection_triggers_unstage_cleanup()
+    await test_approval_resolution_fields_in_runs_and_overview()
     await test_cleanup_metrics_in_runs_and_overview()
 
     await test_tool_registry_api()
