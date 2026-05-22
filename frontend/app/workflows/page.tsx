@@ -78,6 +78,11 @@ type WorkflowRunSummary = {
   cleanup_actions?: CleanupAction[];
   cleanup_count?: number;
   has_cleanup?: boolean;
+
+  approval_stale_recovered?: boolean;
+  approval_recovery_count?: number;
+  has_approval_recovery?: boolean;
+
   step_count: number;
   log_count: number;
 };
@@ -254,6 +259,14 @@ function hasApprovalResolution(run: WorkflowRunSummary) {
   return getApprovalResolution(run) !== null;
 }
 
+function hasStaleApprovalRecovery(run: WorkflowRunSummary) {
+  return (
+    run.approval_stale_recovered === true ||
+    run.has_approval_recovery === true ||
+    run.approval_resolution?.status === "stale_processing_recovered"
+  );
+}
+
 function isWaitingForApproval(run: WorkflowRunSummary) {
   return run.requires_approval || run.status === "requires_approval";
 }
@@ -361,6 +374,9 @@ export default function WorkflowsPage() {
   const approvalProcessingCount = runs.filter((run) =>
     isApprovalProcessing(run)
   ).length;
+  const staleApprovalRecoveryCount = runs.filter((run) =>
+    hasStaleApprovalRecovery(run)
+  ).length;
 
   useEffect(() => {
     if (approvalProcessingCount === 0) {
@@ -404,8 +420,8 @@ export default function WorkflowsPage() {
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
             Review previous AIRA-X workflow executions, approval states,
             decisions, retry counts, Git write preflights, Git push preflights,
-            approval resolutions, approval processing state, cleanup actions,
-            and execution outcomes.
+            approval resolutions, approval processing state, stale approval
+            recoveries, cleanup actions, and execution outcomes.
           </p>
         </div>
       </section>
@@ -424,7 +440,7 @@ export default function WorkflowsPage() {
 
       {!loading && !error && (
         <>
-          <section className="grid gap-4 md:grid-cols-7">
+          <section className="grid gap-4 md:grid-cols-8">
             <div className="sarvam-card rounded-[1.5rem] p-5">
               <p className="text-sm font-semibold text-slate-500">
                 Total Runs
@@ -484,6 +500,16 @@ export default function WorkflowsPage() {
             </div>
 
             <div className="sarvam-card rounded-[1.5rem] p-5">
+              <p className="text-sm font-semibold text-slate-500">
+                Stale Recoveries
+              </p>
+
+              <h2 className="mt-1 text-3xl font-semibold text-red-700">
+                {staleApprovalRecoveryCount}
+              </h2>
+            </div>
+
+            <div className="sarvam-card rounded-[1.5rem] p-5">
               <p className="text-sm font-semibold text-slate-500">Cleanups</p>
 
               <h2 className="mt-1 text-3xl font-semibold text-green-700">
@@ -527,6 +553,7 @@ export default function WorkflowsPage() {
                       Boolean(actionRunId) || approvalProcessing;
                     const approvalResolution = getApprovalResolution(run);
                     const approvalStatus = approvalResolution?.status;
+                    const staleApprovalRecovery = hasStaleApprovalRecovery(run);
 
                     return (
                       <div
@@ -574,6 +601,13 @@ export default function WorkflowsPage() {
                                     {getApprovalResolutionIcon(approvalStatus)}
                                     Approval:{" "}
                                     {getApprovalResolutionLabel(approvalStatus)}
+                                  </span>
+                                )}
+
+                                {staleApprovalRecovery && (
+                                  <span className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
+                                    <XCircle className="h-3.5 w-3.5" />
+                                    Stale Recovery
                                   </span>
                                 )}
 
