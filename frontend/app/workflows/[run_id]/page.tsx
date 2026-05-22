@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   Activity,
   ArrowLeft,
@@ -15,7 +15,12 @@ import {
   Workflow,
   XCircle,
 } from "lucide-react";
-import { approveAiraX, getAiraXRun, rejectAiraX } from "@/lib/api";
+import {
+  approveAiraX,
+  deleteAiraXRun,
+  getAiraXRun,
+  rejectAiraX,
+} from "@/lib/api";
 
 type ApprovalContext = {
   type?: string;
@@ -77,6 +82,7 @@ type WorkflowStep = {
 
 type WorkflowRun = {
   run_id: string;
+  user_goal: string;
   status: string;
   decision: string;
   final_answer: string | null;
@@ -604,6 +610,7 @@ function renderCleanupActions(memory: any) {
 
 export default function WorkflowDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const runIdParam = params?.run_id;
   const runId = Array.isArray(runIdParam) ? runIdParam[0] : runIdParam;
 
@@ -611,6 +618,7 @@ export default function WorkflowDetailPage() {
   const [loading, setLoading] = useState(true);
   const [approvalLoading, setApprovalLoading] = useState(false);
   const [rejectionLoading, setRejectionLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [polling, setPolling] = useState(false);
   const [error, setError] = useState("");
 
@@ -690,13 +698,44 @@ export default function WorkflowDetailPage() {
     }
   }
 
+
+  async function handleDelete() {
+    if (!run?.run_id || isApprovalProcessing(run)) return;
+
+    const confirmed = window.confirm(
+      `Delete this workflow run from history?\n\n${run.user_goal}\n\nThis only removes the saved run record.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeleteLoading(true);
+    setError("");
+
+    try {
+      await deleteAiraXRun(run.run_id);
+      router.push("/workflows");
+      router.refresh();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to delete workflow run.";
+
+      setError(message);
+      await loadRun({ showLoading: false });
+    } finally {
+      setDeleteLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadRun();
   }, [loadRun]);
 
   const approvalProcessing = isApprovalProcessing(run);
   const actionLoading = approvalLoading || rejectionLoading;
-  const approvalButtonsDisabled = approvalProcessing || actionLoading;
+  const approvalButtonsDisabled = approvalProcessing || actionLoading || deleteLoading;
+  const deleteButtonDisabled = approvalProcessing || actionLoading || deleteLoading;
   const isWaitingForApproval =
     run?.requires_approval || run?.status === "requires_approval";
 
@@ -868,6 +907,37 @@ export default function WorkflowDetailPage() {
                 </div>
               </div>
             )}
+
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    History Maintenance
+                  </h3>
+
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    Delete this saved workflow run from local history after you
+                    no longer need it.
+                  </p>
+
+                  {approvalProcessing && (
+                    <p className="mt-2 text-xs font-semibold text-orange-700">
+                      Deletion is disabled while approval processing is active.
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleteButtonDisabled}
+                  className="inline-flex w-fit items-center gap-2 rounded-xl border border-red-200 bg-white px-5 py-3 text-sm font-bold text-red-700 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <XCircle className="h-4 w-4" />
+                  {deleteLoading ? "Deleting..." : "Delete Run"}
+                </button>
+              </div>
+            </div>
           </section>
 
           {renderApprovalResolution(run)}
