@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -255,11 +255,16 @@ export default function WorkflowsPage() {
   const [actionType, setActionType] = useState<"approve" | "reject" | null>(
     null
   );
+  const [polling, setPolling] = useState(false);
   const [error, setError] = useState("");
 
-  async function loadRuns() {
+  const loadRuns = useCallback(async (options?: { showLoading?: boolean }) => {
+    const showLoading = options?.showLoading ?? true;
+
     try {
-      setLoading(true);
+      if (showLoading) {
+        setLoading(true);
+      }
 
       const data = await getAiraXRuns();
 
@@ -272,9 +277,11 @@ export default function WorkflowsPage() {
 
       setError(message);
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
-  }
+  }, []);
 
   async function handleApprove(runId: string) {
     const currentRun = runs.find((run) => run.run_id === runId);
@@ -289,13 +296,13 @@ export default function WorkflowsPage() {
       setError("");
 
       await approveAiraX(runId);
-      await loadRuns();
+      await loadRuns({ showLoading: false });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to approve workflow.";
 
       setError(message);
-      await loadRuns();
+      await loadRuns({ showLoading: false });
     } finally {
       setActionRunId(null);
       setActionType(null);
@@ -315,13 +322,13 @@ export default function WorkflowsPage() {
       setError("");
 
       await rejectAiraX(runId);
-      await loadRuns();
+      await loadRuns({ showLoading: false });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to reject workflow.";
 
       setError(message);
-      await loadRuns();
+      await loadRuns({ showLoading: false });
     } finally {
       setActionRunId(null);
       setActionType(null);
@@ -330,7 +337,7 @@ export default function WorkflowsPage() {
 
   useEffect(() => {
     loadRuns();
-  }, []);
+  }, [loadRuns]);
 
   const cleanupRunCount = runs.filter((run) => run.has_cleanup).length;
   const gitPreflightCount = runs.filter((run) => hasAnyGitPreflight(run)).length;
@@ -344,6 +351,23 @@ export default function WorkflowsPage() {
     isApprovalProcessing(run)
   ).length;
 
+  useEffect(() => {
+    if (approvalProcessingCount === 0) {
+      setPolling(false);
+      return;
+    }
+
+    setPolling(true);
+
+    const intervalId = window.setInterval(() => {
+      loadRuns({ showLoading: false });
+    }, 2000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [approvalProcessingCount, loadRuns]);
+
   return (
     <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-6xl flex-col gap-6">
       <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-6">
@@ -354,6 +378,13 @@ export default function WorkflowsPage() {
             <Workflow className="h-3.5 w-3.5" />
             AIRA-X Workflow History
           </div>
+
+          {polling && (
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
+              <Activity className="h-3.5 w-3.5" />
+              Auto-refreshing every 2 seconds
+            </div>
+          )}
 
           <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
             Workflow Runs
@@ -451,9 +482,18 @@ export default function WorkflowsPage() {
           </section>
 
           <section className="sarvam-card rounded-[1.5rem] p-5">
-            <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <Activity className="h-4 w-4 text-blue-600" />
-              Recent Workflow Runs
+            <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <Activity className="h-4 w-4 text-blue-600" />
+                Recent Workflow Runs
+              </div>
+
+              {polling && (
+                <div className="inline-flex w-fit items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                  <Activity className="h-3.5 w-3.5" />
+                  Auto-refreshing processing approvals
+                </div>
+              )}
             </div>
 
             {runs.length === 0 ? (
@@ -575,6 +615,11 @@ export default function WorkflowsPage() {
                                     AIRA-X is already processing this
                                     approval-gated action. Approval controls are
                                     disabled to prevent duplicate execution.
+                                  </p>
+
+                                  <p className="mt-2 text-xs font-semibold text-orange-700">
+                                    This page is auto-refreshing every 2 seconds
+                                    until processing finishes.
                                   </p>
                                 </div>
                               )}
