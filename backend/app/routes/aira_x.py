@@ -1,7 +1,7 @@
 import asyncio
 from uuid import uuid4
 from datetime import datetime, timezone
-from typing import Dict
+from typing import Dict, Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -18,6 +18,7 @@ from agents.memory.memory_agent import MemoryAgent
 router = APIRouter(prefix="/aira-x", tags=["AIRA-X"])
 
 _APPROVAL_LOCKS: Dict[str, asyncio.Lock] = {}
+_APPROVAL_STALE_AFTER_SECONDS = 10 * 60
 
 
 class AiraXRunRequest(BaseModel):
@@ -54,6 +55,10 @@ def serialize_state(state):
         "approval_resolution": approval_resolution,
         "approval_resolution_status": approval_resolution.get("status"),
         "approval_resolution_action": approval_resolution.get("action"),
+        "approval_stale_recovered": state.memory.get(
+            "approval_stale_recovered",
+            False,
+        ),
     }
 
 
@@ -64,12 +69,177 @@ def _get_approval_lock(run_id: str) -> asyncio.Lock:
     return _APPROVAL_LOCKS[run_id]
 
 
+def _approval_lock_is_active(run_id: Optional[str]) -> bool:
+    if not run_id:
+        return False
+
+    approval_lock = _APPROVAL_LOCKS.get(run_id)
+
+    return approval_lock.locked() if approval_lock else False
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return _utc_now().isoformat()
+
+
+def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+
+    return parsed.astimezone(timezone.utc)
+
+
+def _approval_processing_started_at(state) -> Optional[datetime]:
+    approval_resolution = state.memory.get("approval_resolution", {})
+
+    return _parse_iso_datetime(
+        state.memory.get("approval_processing_started_at")
+        or approval_resolution.get("requested_at")
+    )
+
+
+def _approval_processing_age_seconds(state) -> Optional[float]:
+    started_at = _approval_processing_started_at(state)
+
+    if not started_at:
+        return None
+
+    return (_utc_now() - started_at).total_seconds()
 
 
 def _approval_is_being_processed(state) -> bool:
     return state.memory.get("approval_in_progress") is True
+
+
+def _approval_processing_is_stale(state) -> bool:
+    if not _approval_is_being_processed(state):
+        return False
+
+    age_seconds = _approval_processing_age_seconds(state)
+
+    if age_seconds is None:
+        return False
+
+    return age_seconds >= _APPROVAL_STALE_AFTER_SECONDS
+
+
+def _recover_stale_approval_processing_state(
+    state,
+    *,
+    ignore_active_lock: bool = False,
+) -> bool:
+    if not _approval_processing_is_stale(state):
+        return False
+
+    if (
+        not ignore_active_lock
+        and state.run_id
+        and _approval_lock_is_active(state.run_id)
+    ):
+        return False
+
+    approval_resolution = state.memory.get("approval_resolution", {})
+    pending_action = (
+        state.memory.get("pending_action")
+        or approval_resolution.get("action")
+        or "unknown approval action"
+    )
+    started_at = (
+        state.memory.get("approval_processing_started_at")
+        or approval_resolution.get("requested_at")
+    )
+    recovered_at = _utc_now_iso()
+
+    recovery_message = (
+        "Approval processing became stale before completion. "
+        "AIRA-X stopped this workflow to prevent duplicate execution. "
+        "Review the workflow state before running the action again."
+    )
+
+    current_step = next(
+        (step for step in state.plan if step.id == state.current_step),
+        None,
+    )
+
+    if current_step:
+        current_step.status = "failed"
+        current_step.error = recovery_message
+
+    state.status = "failed"
+    state.decision = "approval_processing_stale"
+    state.final_answer = recovery_message
+
+    state.memory["approval_in_progress"] = False
+    state.memory["approval_stale_recovered"] = True
+    state.memory["approval_processing_recovered_at"] = recovered_at
+
+    state.memory.setdefault("approval_recovery_events", [])
+    state.memory["approval_recovery_events"].append(
+        {
+            "reason": "stale_approval_processing",
+            "action": pending_action,
+            "started_at": started_at,
+            "recovered_at": recovered_at,
+            "stale_after_seconds": _APPROVAL_STALE_AFTER_SECONDS,
+            "previous_resolution_status": approval_resolution.get("status"),
+        }
+    )
+
+    state.memory["approval_resolution"] = {
+        "status": "stale_processing_recovered",
+        "previous_status": approval_resolution.get("status"),
+        "action": pending_action,
+        "requested_at": approval_resolution.get("requested_at") or started_at,
+        "completed_at": recovered_at,
+        "final_status": state.status,
+        "final_decision": state.decision,
+        "error": recovery_message,
+    }
+
+    WorkflowMemory.add_log(
+        state,
+        agent="approval_agent",
+        event="stale_approval_processing_recovered",
+        details={
+            "run_id": state.run_id,
+            "action": pending_action,
+            "started_at": started_at,
+            "recovered_at": recovered_at,
+            "stale_after_seconds": _APPROVAL_STALE_AFTER_SECONDS,
+            "final_status": state.status,
+            "final_decision": state.decision,
+        },
+    )
+
+    return True
+
+
+def _recover_stale_approval_processing_runs() -> None:
+    for run_summary in WorkflowStore.list_runs():
+        run_id = run_summary.get("run_id")
+
+        if not run_id:
+            continue
+
+        state = WorkflowStore.get(run_id)
+
+        if not state:
+            continue
+
+        if _recover_stale_approval_processing_state(state):
+            WorkflowStore.save(state)
 
 
 def _approval_not_available_response(state, run_id: str, requested_action: str):
@@ -163,6 +333,8 @@ def _cleanup_staged_changes_after_rejection(state):
 
 @router.get("/overview")
 async def get_aira_x_overview():
+    _recover_stale_approval_processing_runs()
+
     workflow_metrics = WorkflowStore.get_metrics()
 
     return {
@@ -202,6 +374,18 @@ async def approve_aira_x_action(request: AiraXApproveRequest):
                 "error": f"No workflow found for run_id: {request.run_id}",
             }
 
+        if _recover_stale_approval_processing_state(
+            state,
+            ignore_active_lock=True,
+        ):
+            WorkflowStore.save(state)
+
+            return _approval_not_available_response(
+                state=state,
+                run_id=request.run_id,
+                requested_action="approved",
+            )
+
         if _approval_is_being_processed(state):
             return _approval_processing_response(
                 state=state,
@@ -226,11 +410,14 @@ async def approve_aira_x_action(request: AiraXApproveRequest):
                 "workflow": serialize_state(state),
             }
 
+        approval_started_at = _utc_now_iso()
+
         state.memory["approval_in_progress"] = True
+        state.memory["approval_processing_started_at"] = approval_started_at
         state.memory["approval_resolution"] = {
             "status": "approved",
             "action": pending_action,
-            "requested_at": _utc_now_iso(),
+            "requested_at": approval_started_at,
         }
 
         WorkflowStore.save(state)
@@ -274,7 +461,10 @@ async def approve_aira_x_action(request: AiraXApproveRequest):
             state.memory["approval_resolution"] = {
                 "status": "approved_but_resume_failed",
                 "action": pending_action,
+                "requested_at": approval_started_at,
                 "completed_at": _utc_now_iso(),
+                "final_status": state.status,
+                "final_decision": state.decision,
                 "error": str(exc),
             }
 
@@ -297,6 +487,7 @@ async def approve_aira_x_action(request: AiraXApproveRequest):
         resumed_state.memory["approval_resolution"] = {
             "status": "approved",
             "action": pending_action,
+            "requested_at": approval_started_at,
             "completed_at": _utc_now_iso(),
             "final_status": resumed_state.status,
             "final_decision": resumed_state.decision,
@@ -319,6 +510,18 @@ async def reject_aira_x_action(request: AiraXRejectRequest):
                 "success": False,
                 "error": f"No workflow found for run_id: {request.run_id}",
             }
+
+        if _recover_stale_approval_processing_state(
+            state,
+            ignore_active_lock=True,
+        ):
+            WorkflowStore.save(state)
+
+            return _approval_not_available_response(
+                state=state,
+                run_id=request.run_id,
+                requested_action="rejected",
+            )
 
         if _approval_is_being_processed(state):
             return _approval_processing_response(
@@ -344,11 +547,14 @@ async def reject_aira_x_action(request: AiraXRejectRequest):
                 "workflow": serialize_state(state),
             }
 
+        approval_started_at = _utc_now_iso()
+
         state.memory["approval_in_progress"] = True
+        state.memory["approval_processing_started_at"] = approval_started_at
         state.memory["approval_resolution"] = {
             "status": "rejected",
             "action": pending_action,
-            "requested_at": _utc_now_iso(),
+            "requested_at": approval_started_at,
         }
 
         WorkflowStore.save(state)
@@ -410,6 +616,7 @@ async def reject_aira_x_action(request: AiraXRejectRequest):
         state.memory["approval_resolution"] = {
             "status": "rejected",
             "action": pending_action,
+            "requested_at": approval_started_at,
             "completed_at": _utc_now_iso(),
             "final_status": state.status,
             "final_decision": state.decision,
@@ -422,6 +629,8 @@ async def reject_aira_x_action(request: AiraXRejectRequest):
 
 @router.get("/runs")
 async def list_aira_x_runs():
+    _recover_stale_approval_processing_runs()
+
     return {
         "run_count": len(WorkflowStore.list_runs()),
         "runs": WorkflowStore.list_runs(),
@@ -437,6 +646,9 @@ async def get_aira_x_run(run_id: str):
             "success": False,
             "error": f"No workflow found for run_id: {run_id}",
         }
+
+    if _recover_stale_approval_processing_state(state):
+        WorkflowStore.save(state)
 
     return {
         "success": True,
