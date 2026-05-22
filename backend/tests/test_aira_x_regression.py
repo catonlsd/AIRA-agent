@@ -2326,6 +2326,145 @@ async def test_active_approval_lock_prevents_stale_recovery():
 
 
 
+async def test_stale_approval_recovery_metrics_in_runs_and_overview():
+    print("Testing stale approval recovery metrics in runs and overview...")
+
+    run_id = "test-stale-approval-recovery-metrics"
+
+    WorkflowStore.delete(run_id)
+
+    try:
+        WorkflowStore.save(build_stale_approval_processing_state(run_id))
+
+        runs_response = await list_aira_x_runs()
+
+        matching_run = next(
+            (
+                run
+                for run in runs_response["runs"]
+                if run["run_id"] == run_id
+            ),
+            None,
+        )
+
+        assert_true(
+            matching_run is not None,
+            "Stale approval metrics run should appear in workflow runs list",
+        )
+
+        assert_true(
+            matching_run["approval_stale_recovered"] is True,
+            "Workflow run summary should mark stale approval as recovered",
+        )
+
+        assert_true(
+            matching_run["has_approval_recovery"] is True,
+            "Workflow run summary should mark approval recovery as present",
+        )
+
+        assert_true(
+            matching_run["approval_recovery_count"] >= 1,
+            "Workflow run summary should include approval recovery count",
+        )
+
+        assert_true(
+            isinstance(matching_run.get("approval_recovery_events"), list),
+            "Workflow run summary should include approval recovery events list",
+        )
+
+        assert_equal(
+            matching_run["approval_recovery_events"][-1]["reason"],
+            "stale_approval_processing",
+            "Workflow run summary should include stale approval recovery reason",
+        )
+
+        assert_equal(
+            matching_run["approval_resolution_status"],
+            "stale_processing_recovered",
+            "Workflow run summary should include stale recovery resolution status",
+        )
+
+        overview_response = await get_aira_x_overview()
+        metrics = overview_response["workflow_metrics"]
+
+        assert_true(
+            "stale_approval_recovery_runs" in metrics,
+            "Overview metrics should include stale_approval_recovery_runs",
+        )
+
+        assert_true(
+            "approval_stale_recovered_runs" in metrics,
+            "Overview metrics should include approval_stale_recovered_runs",
+        )
+
+        assert_true(
+            "total_approval_recovery_events" in metrics,
+            "Overview metrics should include total_approval_recovery_events",
+        )
+
+        assert_true(
+            metrics["stale_approval_recovery_runs"] >= 1,
+            "Overview should count stale approval recovery runs",
+        )
+
+        assert_true(
+            metrics["approval_stale_recovered_runs"] >= 1,
+            "Overview should count approval stale recovered runs alias",
+        )
+
+        assert_true(
+            metrics["total_approval_recovery_events"] >= 1,
+            "Overview should count approval recovery events",
+        )
+
+        latest_runs = metrics["latest_runs"]
+
+        latest_matching_run = next(
+            (
+                run
+                for run in latest_runs
+                if run["run_id"] == run_id
+            ),
+            None,
+        )
+
+        assert_true(
+            latest_matching_run is not None,
+            "Stale approval metrics run should appear in overview latest runs",
+        )
+
+        assert_true(
+            latest_matching_run["approval_stale_recovered"] is True,
+            "Overview latest run should mark stale approval as recovered",
+        )
+
+        assert_true(
+            latest_matching_run["has_approval_recovery"] is True,
+            "Overview latest run should mark approval recovery as present",
+        )
+
+        assert_true(
+            latest_matching_run["approval_recovery_count"] >= 1,
+            "Overview latest run should include approval recovery count",
+        )
+
+        assert_equal(
+            latest_matching_run["approval_resolution_status"],
+            "stale_processing_recovered",
+            "Overview latest run should include stale recovery resolution status",
+        )
+
+    finally:
+        WorkflowStore.delete(run_id)
+
+        if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
+            aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
+
+    print("✅ Stale approval recovery metrics passed")
+
+    return True
+
+
 async def test_approval_resolution_fields_in_runs_and_overview():
     print("Testing approval resolution fields in runs and overview...")
 
@@ -3035,6 +3174,18 @@ async def test_platform_overview_api():
         "git_push_preflight_runs" in metrics,
         "Overview metrics git_push_preflight_runs exists",
     )
+    assert_true(
+        "stale_approval_recovery_runs" in metrics,
+        "Overview metrics stale_approval_recovery_runs exists",
+    )
+    assert_true(
+        "approval_stale_recovered_runs" in metrics,
+        "Overview metrics approval_stale_recovered_runs exists",
+    )
+    assert_true(
+        "total_approval_recovery_events" in metrics,
+        "Overview metrics total_approval_recovery_events exists",
+    )
 
     print("✅ Platform Overview API passed")
 
@@ -3097,6 +3248,7 @@ async def main():
     await test_double_rejection_is_blocked_after_rejection()
     await test_stale_approval_processing_recovered_in_detail_api()
     await test_stale_approval_processing_recovered_in_runs_and_overview()
+    await test_stale_approval_recovery_metrics_in_runs_and_overview()
     await test_stale_approval_processing_blocks_late_approval_action()
     await test_active_approval_lock_prevents_stale_recovery()
     await test_git_push_failure_is_non_retryable()
