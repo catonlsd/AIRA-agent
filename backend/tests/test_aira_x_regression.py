@@ -1041,6 +1041,333 @@ async def test_double_rejection_is_blocked_after_rejection():
     return True
 
 
+async def test_concurrent_double_approval_uses_per_run_lock():
+    print("Testing concurrent double approval uses per-run lock...")
+
+    run_id = "test-concurrent-double-approval-lock"
+
+    WorkflowStore.delete(run_id)
+
+    state = AiraXState(
+        user_goal="git push",
+        run_id=run_id,
+    )
+
+    state.status = "requires_approval"
+    state.decision = "stop_approval_required"
+    state.current_step = 1
+    state.final_answer = (
+        "Approval required before executing: git_tool:push origin current_branch"
+    )
+
+    state.plan = [
+        AiraXStep(
+            id=1,
+            title="Push Git changes",
+            description="Push local commits to a remote Git repository.",
+            assigned_agent="execution_agent",
+            tool_name="git_tool",
+            tool_action="push",
+            tool_payload={"remote": "origin", "branch": None},
+            status="blocked",
+            error="This action requires user approval.",
+        )
+    ]
+
+    state.memory["pending_action"] = "git_tool:push origin current_branch"
+    state.memory["approval_context"] = {
+        "type": "git_push_preflight",
+        "tool_name": "git_tool",
+        "tool_action": "push",
+        "pending_action": "git_tool:push origin current_branch",
+        "target_remote": "origin",
+        "target_branch": "main",
+        "branch": "main",
+    }
+
+    WorkflowStore.save(state)
+
+    original_workflow_class = aira_x_routes.AiraXWorkflow
+    resume_calls = []
+
+    class FakeWorkflow:
+        async def resume(self, approval_state):
+            resume_calls.append(approval_state.run_id)
+
+            await asyncio.sleep(0.05)
+
+            current_step = next(
+                (
+                    step
+                    for step in approval_state.plan
+                    if step.id == approval_state.current_step
+                ),
+                None,
+            )
+
+            if current_step:
+                current_step.status = "completed"
+                current_step.error = None
+                current_step.result = "Everything up-to-date"
+
+            approval_state.status = "completed"
+            approval_state.decision = "finish"
+            approval_state.final_answer = "Workflow completed successfully."
+            approval_state.execution_outputs.append(
+                {
+                    "step_id": 1,
+                    "agent": "execution_agent",
+                    "tool_used": "git_tool",
+                    "tool_action": "push",
+                    "tool_result": {
+                        "success": True,
+                        "output": "Everything up-to-date",
+                    },
+                }
+            )
+
+            return approval_state
+
+    try:
+        aira_x_routes.AiraXWorkflow = FakeWorkflow
+
+        first_result, second_result = await asyncio.gather(
+            approve_aira_x_action(AiraXApproveRequest(run_id=run_id)),
+            approve_aira_x_action(AiraXApproveRequest(run_id=run_id)),
+        )
+
+        completed_results = [
+            result
+            for result in [first_result, second_result]
+            if result.get("status") == "completed"
+        ]
+
+        blocked_results = [
+            result
+            for result in [first_result, second_result]
+            if result.get("success") is False
+        ]
+
+        assert_equal(
+            len(completed_results),
+            1,
+            "Exactly one concurrent approval should complete workflow",
+        )
+
+        assert_equal(
+            len(blocked_results),
+            1,
+            "Exactly one concurrent approval should be blocked safely",
+        )
+
+        assert_equal(
+            blocked_results[0]["current_status"],
+            "completed",
+            "Blocked concurrent approval should see completed workflow status",
+        )
+
+        assert_contains(
+            blocked_results[0]["error"],
+            "already be handled",
+            "Blocked concurrent approval should explain approval was already handled",
+        )
+
+        assert_equal(
+            len(resume_calls),
+            1,
+            "Concurrent double approval should call workflow.resume only once",
+        )
+
+        saved_state = WorkflowStore.get(run_id)
+
+        assert_true(
+            saved_state is not None,
+            "Concurrent double approval saved state should exist",
+        )
+
+        assert_equal(
+            saved_state.status,
+            "completed",
+            "Concurrent double approval final saved status",
+        )
+
+        assert_equal(
+            saved_state.memory.get("approval_resolution", {}).get("status"),
+            "approved",
+            "Concurrent double approval should store approved resolution",
+        )
+
+        assert_true(
+            saved_state.memory.get("approval_in_progress") is False,
+            "Concurrent double approval should clear approval_in_progress",
+        )
+
+    finally:
+        aira_x_routes.AiraXWorkflow = original_workflow_class
+        WorkflowStore.delete(run_id)
+
+        if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
+            aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
+
+    print("✅ Concurrent double approval lock passed")
+
+    return True
+
+
+async def test_concurrent_approve_reject_uses_per_run_lock():
+    print("Testing concurrent approve/reject uses per-run lock...")
+
+    run_id = "test-concurrent-approve-reject-lock"
+
+    WorkflowStore.delete(run_id)
+
+    state = AiraXState(
+        user_goal="git push",
+        run_id=run_id,
+    )
+
+    state.status = "requires_approval"
+    state.decision = "stop_approval_required"
+    state.current_step = 1
+    state.final_answer = (
+        "Approval required before executing: git_tool:push origin current_branch"
+    )
+
+    state.plan = [
+        AiraXStep(
+            id=1,
+            title="Push Git changes",
+            description="Push local commits to a remote Git repository.",
+            assigned_agent="execution_agent",
+            tool_name="git_tool",
+            tool_action="push",
+            tool_payload={"remote": "origin", "branch": None},
+            status="blocked",
+            error="This action requires user approval.",
+        )
+    ]
+
+    state.memory["pending_action"] = "git_tool:push origin current_branch"
+    state.memory["approval_context"] = {
+        "type": "git_push_preflight",
+        "tool_name": "git_tool",
+        "tool_action": "push",
+        "pending_action": "git_tool:push origin current_branch",
+        "target_remote": "origin",
+        "target_branch": "main",
+        "branch": "main",
+    }
+
+    WorkflowStore.save(state)
+
+    original_workflow_class = aira_x_routes.AiraXWorkflow
+    resume_calls = []
+
+    class FakeWorkflow:
+        async def resume(self, approval_state):
+            resume_calls.append(approval_state.run_id)
+
+            await asyncio.sleep(0.05)
+
+            current_step = next(
+                (
+                    step
+                    for step in approval_state.plan
+                    if step.id == approval_state.current_step
+                ),
+                None,
+            )
+
+            if current_step:
+                current_step.status = "completed"
+                current_step.error = None
+                current_step.result = "Everything up-to-date"
+
+            approval_state.status = "completed"
+            approval_state.decision = "finish"
+            approval_state.final_answer = "Workflow completed successfully."
+
+            return approval_state
+
+    try:
+        aira_x_routes.AiraXWorkflow = FakeWorkflow
+
+        approve_task = asyncio.create_task(
+            approve_aira_x_action(AiraXApproveRequest(run_id=run_id))
+        )
+
+        await asyncio.sleep(0)
+
+        reject_task = asyncio.create_task(
+            reject_aira_x_action(AiraXRejectRequest(run_id=run_id))
+        )
+
+        approve_result, reject_result = await asyncio.gather(
+            approve_task,
+            reject_task,
+        )
+
+        assert_equal(
+            approve_result["status"],
+            "completed",
+            "Concurrent approve/reject approval should complete workflow",
+        )
+
+        assert_equal(
+            reject_result["success"],
+            False,
+            "Concurrent approve/reject rejection should be blocked safely",
+        )
+
+        assert_equal(
+            reject_result["current_status"],
+            "completed",
+            "Concurrent reject should see completed workflow status",
+        )
+
+        assert_contains(
+            reject_result["error"],
+            "already be handled",
+            "Concurrent reject should explain approval was already handled",
+        )
+
+        assert_equal(
+            len(resume_calls),
+            1,
+            "Concurrent approve/reject should call workflow.resume only once",
+        )
+
+        saved_state = WorkflowStore.get(run_id)
+
+        assert_true(
+            saved_state is not None,
+            "Concurrent approve/reject saved state should exist",
+        )
+
+        assert_equal(
+            saved_state.status,
+            "completed",
+            "Concurrent approve/reject final saved status",
+        )
+
+        assert_equal(
+            saved_state.memory.get("approval_resolution", {}).get("status"),
+            "approved",
+            "Concurrent approve/reject should store approved resolution",
+        )
+
+    finally:
+        aira_x_routes.AiraXWorkflow = original_workflow_class
+        WorkflowStore.delete(run_id)
+
+        if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
+            aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
+
+    print("✅ Concurrent approve/reject lock passed")
+
+    return True
+
+
 async def test_git_push_failure_is_non_retryable():
     print("Testing Git push failure is non-retryable...")
 
@@ -2333,6 +2660,8 @@ async def main():
     await test_git_push_requires_approval()
     await test_git_push_custom_target_requires_approval()
     await test_approved_git_push_success_uses_git_tool_without_real_push()
+    await test_concurrent_double_approval_uses_per_run_lock()
+    await test_concurrent_approve_reject_uses_per_run_lock()
     await test_double_approval_is_blocked_after_completion()
     await test_double_rejection_is_blocked_after_rejection()
     await test_git_push_failure_is_non_retryable()
