@@ -23,6 +23,7 @@ from app.routes.aira_x import (
     get_aira_x_run,
     get_aira_x_overview,
     delete_aira_x_run,
+    delete_safe_aira_x_runs,
 )
 
 
@@ -3286,6 +3287,323 @@ async def test_delete_allows_after_stale_approval_recovery():
     return True
 
 
+def build_simple_workflow_state(
+    run_id: str,
+    status: str,
+    decision: str = "finish",
+    *,
+    approval_in_progress: bool = False,
+) -> AiraXState:
+    state = AiraXState(
+        user_goal=f"test workflow {run_id}",
+        run_id=run_id,
+    )
+
+    state.status = status
+    state.decision = decision
+    state.current_step = 1
+    state.final_answer = f"Workflow ended with status: {status}"
+
+    state.plan = [
+        AiraXStep(
+            id=1,
+            title="Run test workflow",
+            description="Synthetic workflow used for safe cleanup testing.",
+            assigned_agent="execution_agent",
+            tool_name="python_tool",
+            tool_action="run",
+            tool_payload={},
+            status="completed" if status == "completed" else status,
+            result="Synthetic workflow result.",
+        )
+    ]
+
+    if approval_in_progress:
+        state.memory["approval_in_progress"] = True
+        state.memory["approval_resolution"] = {
+            "status": "approved",
+            "action": "synthetic approval action",
+        }
+
+    return state
+
+
+def snapshot_workflow_store():
+    WorkflowStore._ensure_loaded()
+    return dict(WorkflowStore.runs)
+
+
+def restore_workflow_store(snapshot):
+    WorkflowStore.runs = snapshot
+    WorkflowStore._persist()
+
+
+async def test_safe_bulk_cleanup_deletes_only_safe_final_runs():
+    print("Testing safe bulk cleanup deletes only safe final runs...")
+
+    original_runs = snapshot_workflow_store()
+
+    test_run_ids = [
+        "test-safe-cleanup-completed",
+        "test-safe-cleanup-failed",
+        "test-safe-cleanup-rejected",
+        "test-safe-cleanup-requires-approval",
+        "test-safe-cleanup-retrying",
+        "test-safe-cleanup-executing",
+        "test-safe-cleanup-approval-in-progress",
+    ]
+
+    try:
+        WorkflowStore.runs = {}
+        WorkflowStore._persist()
+
+        WorkflowStore.save(
+            build_simple_workflow_state(
+                "test-safe-cleanup-completed",
+                "completed",
+                "finish",
+            )
+        )
+        WorkflowStore.save(
+            build_simple_workflow_state(
+                "test-safe-cleanup-failed",
+                "failed",
+                "stop_max_retries",
+            )
+        )
+        WorkflowStore.save(
+            build_simple_workflow_state(
+                "test-safe-cleanup-rejected",
+                "rejected",
+                "approval_rejected",
+            )
+        )
+        WorkflowStore.save(
+            build_simple_workflow_state(
+                "test-safe-cleanup-requires-approval",
+                "requires_approval",
+                "stop_approval_required",
+            )
+        )
+        WorkflowStore.save(
+            build_simple_workflow_state(
+                "test-safe-cleanup-retrying",
+                "retrying",
+                "retry_prepared",
+            )
+        )
+        WorkflowStore.save(
+            build_simple_workflow_state(
+                "test-safe-cleanup-executing",
+                "executing",
+                "run_execution",
+            )
+        )
+        WorkflowStore.save(
+            build_simple_workflow_state(
+                "test-safe-cleanup-approval-in-progress",
+                "completed",
+                "finish",
+                approval_in_progress=True,
+            )
+        )
+
+        response = await delete_safe_aira_x_runs()
+
+        assert_equal(
+            response["success"],
+            True,
+            "Safe cleanup response success",
+        )
+
+        assert_equal(
+            response["deleted_count"],
+            3,
+            "Safe cleanup should delete three final safe runs",
+        )
+
+        assert_equal(
+            response["skipped_count"],
+            4,
+            "Safe cleanup should skip four unsafe active runs",
+        )
+
+        deleted_ids = [run["run_id"] for run in response["deleted_runs"]]
+        skipped_by_id = {
+            run["run_id"]: run
+            for run in response["skipped_runs"]
+        }
+
+        assert_true(
+            "test-safe-cleanup-completed" in deleted_ids,
+            "Safe cleanup deletes completed runs",
+        )
+        assert_true(
+            "test-safe-cleanup-failed" in deleted_ids,
+            "Safe cleanup deletes failed runs",
+        )
+        assert_true(
+            "test-safe-cleanup-rejected" in deleted_ids,
+            "Safe cleanup deletes rejected runs",
+        )
+
+        assert_equal(
+            skipped_by_id["test-safe-cleanup-requires-approval"]["reason"],
+            "non_final_status",
+            "Safe cleanup skips requires_approval runs",
+        )
+        assert_equal(
+            skipped_by_id["test-safe-cleanup-retrying"]["reason"],
+            "non_final_status",
+            "Safe cleanup skips retrying runs",
+        )
+        assert_equal(
+            skipped_by_id["test-safe-cleanup-executing"]["reason"],
+            "non_final_status",
+            "Safe cleanup skips executing runs",
+        )
+        assert_equal(
+            skipped_by_id["test-safe-cleanup-approval-in-progress"]["reason"],
+            "approval_in_progress",
+            "Safe cleanup skips approval_in_progress runs",
+        )
+
+        remaining_run_ids = set(WorkflowStore.runs.keys())
+
+        assert_true(
+            "test-safe-cleanup-completed" not in remaining_run_ids,
+            "Completed safe cleanup run should be deleted from store",
+        )
+        assert_true(
+            "test-safe-cleanup-failed" not in remaining_run_ids,
+            "Failed safe cleanup run should be deleted from store",
+        )
+        assert_true(
+            "test-safe-cleanup-rejected" not in remaining_run_ids,
+            "Rejected safe cleanup run should be deleted from store",
+        )
+        assert_true(
+            "test-safe-cleanup-requires-approval" in remaining_run_ids,
+            "Requires approval run should remain in store",
+        )
+        assert_true(
+            "test-safe-cleanup-retrying" in remaining_run_ids,
+            "Retrying run should remain in store",
+        )
+        assert_true(
+            "test-safe-cleanup-executing" in remaining_run_ids,
+            "Executing run should remain in store",
+        )
+        assert_true(
+            "test-safe-cleanup-approval-in-progress" in remaining_run_ids,
+            "Approval in progress run should remain in store",
+        )
+
+        assert_equal(
+            response["remaining_run_count"],
+            4,
+            "Safe cleanup remaining run count",
+        )
+
+        assert_true(
+            "completed" in response["safe_statuses"],
+            "Safe cleanup response includes completed safe status",
+        )
+        assert_true(
+            "failed" in response["safe_statuses"],
+            "Safe cleanup response includes failed safe status",
+        )
+        assert_true(
+            "rejected" in response["safe_statuses"],
+            "Safe cleanup response includes rejected safe status",
+        )
+
+    finally:
+        restore_workflow_store(original_runs)
+
+        if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
+            for run_id in test_run_ids:
+                aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
+
+    print("✅ Safe bulk cleanup final-state behavior passed")
+
+    return True
+
+
+async def test_safe_bulk_cleanup_recovers_and_deletes_stale_approval_runs():
+    print("Testing safe bulk cleanup recovers and deletes stale approval runs...")
+
+    original_runs = snapshot_workflow_store()
+    run_id = "test-safe-cleanup-stale-approval-recovery"
+
+    try:
+        WorkflowStore.runs = {}
+        WorkflowStore._persist()
+
+        WorkflowStore.save(build_stale_approval_processing_state(run_id))
+
+        response = await delete_safe_aira_x_runs()
+
+        assert_equal(
+            response["success"],
+            True,
+            "Safe cleanup stale recovery response success",
+        )
+
+        assert_equal(
+            response["deleted_count"],
+            1,
+            "Safe cleanup should delete recovered stale approval run",
+        )
+
+        assert_equal(
+            response["skipped_count"],
+            0,
+            "Safe cleanup should not skip recovered stale approval run",
+        )
+
+        deleted_run = response["deleted_runs"][0]
+
+        assert_equal(
+            deleted_run["run_id"],
+            run_id,
+            "Safe cleanup stale deleted run id",
+        )
+
+        assert_equal(
+            deleted_run["status"],
+            "failed",
+            "Safe cleanup should recover stale approval to failed before delete",
+        )
+
+        assert_equal(
+            deleted_run["decision"],
+            "approval_processing_stale",
+            "Safe cleanup should record stale approval decision before delete",
+        )
+
+        assert_equal(
+            response["remaining_run_count"],
+            0,
+            "Safe cleanup should remove recovered stale approval run",
+        )
+
+        assert_true(
+            WorkflowStore.get(run_id) is None,
+            "Recovered stale approval run should be removed from store",
+        )
+
+    finally:
+        restore_workflow_store(original_runs)
+
+        if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
+            aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
+
+    print("✅ Safe bulk cleanup stale approval recovery passed")
+
+    return True
+
+
 async def test_tool_registry_api():
     print("Testing Tool Registry API...")
 
@@ -3549,6 +3867,8 @@ async def main():
     await test_delete_missing_workflow_run()
     await test_delete_blocks_approval_in_progress_workflow()
     await test_delete_allows_after_stale_approval_recovery()
+    await test_safe_bulk_cleanup_deletes_only_safe_final_runs()
+    await test_safe_bulk_cleanup_recovers_and_deletes_stale_approval_runs()
 
     await test_tool_registry_api()
     await test_agent_registry_api()
