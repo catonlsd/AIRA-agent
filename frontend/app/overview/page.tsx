@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   BrainCircuit,
@@ -285,25 +285,35 @@ export default function OverviewPage() {
   const [actionType, setActionType] = useState<"approve" | "reject" | null>(
     null
   );
+  const [polling, setPolling] = useState(false);
   const [error, setError] = useState("");
 
-  async function loadOverview() {
-    try {
-      setLoading(true);
+  const loadOverview = useCallback(
+    async (options?: { showLoading?: boolean }) => {
+      const showLoading = options?.showLoading ?? true;
 
-      const data = await getAiraXOverview();
+      try {
+        if (showLoading) {
+          setLoading(true);
+        }
 
-      setOverview(data);
-      setError("");
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to load overview.";
+        const data = await getAiraXOverview();
 
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
-  }
+        setOverview(data);
+        setError("");
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to load overview.";
+
+        setError(message);
+      } finally {
+        if (showLoading) {
+          setLoading(false);
+        }
+      }
+    },
+    []
+  );
 
   async function handleApprove(runId: string) {
     const currentRun = overview?.workflow_metrics.latest_runs.find(
@@ -320,13 +330,13 @@ export default function OverviewPage() {
       setError("");
 
       await approveAiraX(runId);
-      await loadOverview();
+      await loadOverview({ showLoading: false });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to approve workflow.";
 
       setError(message);
-      await loadOverview();
+      await loadOverview({ showLoading: false });
     } finally {
       setActionRunId(null);
       setActionType(null);
@@ -348,13 +358,13 @@ export default function OverviewPage() {
       setError("");
 
       await rejectAiraX(runId);
-      await loadOverview();
+      await loadOverview({ showLoading: false });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to reject workflow.";
 
       setError(message);
-      await loadOverview();
+      await loadOverview({ showLoading: false });
     } finally {
       setActionRunId(null);
       setActionType(null);
@@ -363,7 +373,7 @@ export default function OverviewPage() {
 
   useEffect(() => {
     loadOverview();
-  }, []);
+  }, [loadOverview]);
 
   const metrics = overview?.workflow_metrics;
 
@@ -385,6 +395,26 @@ export default function OverviewPage() {
   const latestApprovalProcessingCount =
     metrics?.latest_runs.filter((run) => isApprovalProcessing(run)).length || 0;
 
+  const approvalProcessingCount =
+    metrics?.approval_in_progress_runs ?? latestApprovalProcessingCount;
+
+  useEffect(() => {
+    if (!metrics || approvalProcessingCount === 0) {
+      setPolling(false);
+      return;
+    }
+
+    setPolling(true);
+
+    const intervalId = window.setInterval(() => {
+      loadOverview({ showLoading: false });
+    }, 2000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [approvalProcessingCount, metrics, loadOverview]);
+
   return (
     <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-6xl flex-col gap-6">
       <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-6">
@@ -397,6 +427,13 @@ export default function OverviewPage() {
               AIRA-X Platform Dashboard
             </div>
 
+            {polling && (
+              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
+                <Activity className="h-3.5 w-3.5" />
+                Auto-refreshing every 2 seconds
+              </div>
+            )}
+
             <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
               Overview Dashboard
             </h1>
@@ -404,8 +441,8 @@ export default function OverviewPage() {
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
               Monitor AIRA-X agents, tools, workflow runs, retries, approvals,
               execution activity, Git write preflights, Git push preflights,
-              approval processing state, approval resolutions, cleanup actions,
-              and platform health.
+              approval processing state, approval resolutions, auto-refreshing
+              approvals, cleanup actions, and platform health.
             </p>
           </div>
 
@@ -536,8 +573,7 @@ export default function OverviewPage() {
               </p>
 
               <h2 className="mt-1 text-3xl font-semibold text-orange-700">
-                {metrics.approval_in_progress_runs ??
-                  latestApprovalProcessingCount}
+                {approvalProcessingCount}
               </h2>
             </div>
 
@@ -669,9 +705,18 @@ export default function OverviewPage() {
           </section>
 
           <section className="sarvam-card rounded-[1.5rem] p-5">
-            <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <Activity className="h-4 w-4 text-blue-600" />
-              Latest Workflow Runs
+            <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <Activity className="h-4 w-4 text-blue-600" />
+                Latest Workflow Runs
+              </div>
+
+              {polling && (
+                <div className="inline-flex w-fit items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                  <Activity className="h-3.5 w-3.5" />
+                  Auto-refreshing processing approvals
+                </div>
+              )}
             </div>
 
             {metrics.latest_runs.length === 0 ? (
@@ -795,6 +840,11 @@ export default function OverviewPage() {
                                 AIRA-X is already processing this
                                 approval-gated action. Approval controls are
                                 disabled to prevent duplicate execution.
+                              </p>
+
+                              <p className="mt-2 text-xs font-semibold text-orange-700">
+                                This page is auto-refreshing every 2 seconds
+                                until processing finishes.
                               </p>
                             </div>
                           )}
