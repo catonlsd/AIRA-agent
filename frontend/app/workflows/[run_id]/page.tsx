@@ -138,6 +138,13 @@ function getActionLabel(status: string) {
   return "Action";
 }
 
+function isApprovalProcessing(run?: WorkflowRun | null) {
+  return (
+    run?.approval_in_progress === true ||
+    run?.memory?.approval_in_progress === true
+  );
+}
+
 function getApprovalResolutionStyle(status?: string) {
   if (status === "approved") {
     return "border-green-200 bg-green-50 text-green-700";
@@ -228,11 +235,7 @@ function getApprovalResolution(run: WorkflowRun): ApprovalResolution | null {
     return memoryResolution;
   }
 
-  const approvalInProgress =
-    run.approval_in_progress === true ||
-    run.memory?.approval_in_progress === true;
-
-  if (approvalInProgress) {
+  if (isApprovalProcessing(run)) {
     return {
       status: "processing",
       action: run.pending_action || run.memory?.pending_action,
@@ -618,7 +621,7 @@ export default function WorkflowDetailPage() {
   }
 
   async function handleApprove() {
-    if (!run?.run_id) return;
+    if (!run?.run_id || isApprovalProcessing(run)) return;
 
     setApprovalLoading(true);
     setError("");
@@ -638,7 +641,7 @@ export default function WorkflowDetailPage() {
   }
 
   async function handleReject() {
-    if (!run?.run_id) return;
+    if (!run?.run_id || isApprovalProcessing(run)) return;
 
     setRejectionLoading(true);
     setError("");
@@ -661,6 +664,9 @@ export default function WorkflowDetailPage() {
     loadRun();
   }, [runId]);
 
+  const approvalProcessing = isApprovalProcessing(run);
+  const actionLoading = approvalLoading || rejectionLoading;
+  const approvalButtonsDisabled = approvalProcessing || actionLoading;
   const isWaitingForApproval =
     run?.requires_approval || run?.status === "requires_approval";
 
@@ -718,6 +724,13 @@ export default function WorkflowDetailPage() {
                 {run.status}
               </span>
 
+              {approvalProcessing && (
+                <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700">
+                  <Clock className="h-4 w-4" />
+                  Approval Processing
+                </span>
+              )}
+
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
                 Decision: {run.decision}
               </span>
@@ -746,39 +759,62 @@ export default function WorkflowDetailPage() {
             </div>
 
             {isWaitingForApproval && (
-              <div className="mt-5 rounded-2xl border border-orange-200 bg-orange-50 p-4">
+              <div
+                className={`mt-5 rounded-2xl border p-4 ${
+                  approvalProcessing
+                    ? "border-orange-200 bg-orange-50"
+                    : "border-orange-200 bg-orange-50"
+                }`}
+              >
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div>
-                    <h3 className="text-sm font-bold text-orange-900">
-                      Approval Required
+                    <h3 className="flex items-center gap-2 text-sm font-bold text-orange-900">
+                      {approvalProcessing && <Clock className="h-4 w-4" />}
+                      {approvalProcessing
+                        ? "Approval is being processed"
+                        : "Approval Required"}
                     </h3>
 
                     <p className="mt-1 text-sm leading-6 text-orange-800">
-                      This workflow is paused. Approve to continue execution, or
-                      reject to stop it safely.
+                      {approvalProcessing
+                        ? "AIRA-X is already processing this approval-gated action. The approval buttons are disabled to prevent duplicate execution."
+                        : "This workflow is paused. Approve to continue execution, or reject to stop it safely."}
                     </p>
+
+                    {approvalProcessing && (
+                      <p className="mt-2 text-xs font-semibold text-orange-700">
+                        Refresh this page in a moment to see the final workflow
+                        status.
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex flex-wrap gap-3">
                     <button
                       type="button"
                       onClick={handleApprove}
-                      disabled={approvalLoading || rejectionLoading}
+                      disabled={approvalButtonsDisabled}
                       className="rounded-xl bg-orange-600 px-5 py-3 text-sm font-bold text-white shadow-md transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {approvalLoading
-                        ? "Approving..."
-                        : "Approve & Continue"}
+                      {approvalProcessing
+                        ? "Processing..."
+                        : approvalLoading
+                          ? "Approving..."
+                          : "Approve & Continue"}
                     </button>
 
                     <button
                       type="button"
                       onClick={handleReject}
-                      disabled={approvalLoading || rejectionLoading}
+                      disabled={approvalButtonsDisabled}
                       className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-5 py-3 text-sm font-bold text-red-700 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <XCircle className="h-4 w-4" />
-                      {rejectionLoading ? "Rejecting..." : "Reject Action"}
+                      {approvalProcessing
+                        ? "Processing..."
+                        : rejectionLoading
+                          ? "Rejecting..."
+                          : "Reject Action"}
                     </button>
                   </div>
                 </div>
