@@ -19,6 +19,7 @@ router = APIRouter(prefix="/aira-x", tags=["AIRA-X"])
 
 _APPROVAL_LOCKS: Dict[str, asyncio.Lock] = {}
 _APPROVAL_STALE_AFTER_SECONDS = 10 * 60
+_SAFE_BULK_DELETE_STATUSES = {"completed", "failed", "rejected"}
 
 
 class AiraXRunRequest(BaseModel):
@@ -259,6 +260,13 @@ def _workflow_can_be_deleted(state) -> bool:
     return True
 
 
+def _workflow_is_safe_bulk_delete_candidate(state) -> bool:
+    if state.status not in _SAFE_BULK_DELETE_STATUSES:
+        return False
+
+    return _workflow_can_be_deleted(state)
+
+
 def _workflow_delete_blocked_response(state, run_id: str):
     return {
         "success": False,
@@ -274,6 +282,29 @@ def _workflow_delete_blocked_response(state, run_id: str):
         "approval_resolution": state.memory.get("approval_resolution"),
         "workflow": serialize_state(state),
     }
+
+
+def _summarize_workflow_for_delete(state):
+    return {
+        "run_id": state.run_id,
+        "user_goal": state.user_goal,
+        "status": state.status,
+        "decision": state.decision,
+        "final_answer": state.final_answer,
+    }
+
+
+def _safe_bulk_delete_skip_reason(state) -> str:
+    if _approval_lock_is_active(state.run_id):
+        return "approval_lock_active"
+
+    if _approval_is_being_processed(state):
+        return "approval_in_progress"
+
+    if state.status not in _SAFE_BULK_DELETE_STATUSES:
+        return "non_final_status"
+
+    return "not_safe_to_delete"
 
 
 def _approval_not_available_response(state, run_id: str, requested_action: str):
@@ -690,6 +721,58 @@ async def get_aira_x_run(run_id: str):
     }
 
 
+@router.delete("/runs/maintenance/safe")
+async def delete_safe_aira_x_runs():
+    _recover_stale_approval_processing_runs()
+
+    deleted_runs = []
+    skipped_runs = []
+
+    for run_summary in WorkflowStore.list_runs():
+        run_id = run_summary.get("run_id")
+
+        if not run_id:
+            continue
+
+        state = WorkflowStore.get(run_id)
+
+        if not state:
+            continue
+
+        if _recover_stale_approval_processing_state(state):
+            WorkflowStore.save(state)
+
+        if _workflow_is_safe_bulk_delete_candidate(state):
+            deleted_runs.append(_summarize_workflow_for_delete(state))
+            WorkflowStore.delete(run_id)
+            _remove_inactive_approval_lock(run_id)
+            continue
+
+        skipped_runs.append(
+            {
+                "run_id": run_id,
+                "user_goal": state.user_goal,
+                "status": state.status,
+                "decision": state.decision,
+                "reason": _safe_bulk_delete_skip_reason(state),
+                "approval_in_progress": state.memory.get(
+                    "approval_in_progress",
+                    False,
+                ),
+            }
+        )
+
+    return {
+        "success": True,
+        "deleted_count": len(deleted_runs),
+        "skipped_count": len(skipped_runs),
+        "deleted_runs": deleted_runs,
+        "skipped_runs": skipped_runs,
+        "remaining_run_count": len(WorkflowStore.list_runs()),
+        "safe_statuses": sorted(_SAFE_BULK_DELETE_STATUSES),
+    }
+
+
 @router.delete("/runs/{run_id}")
 async def delete_aira_x_run(run_id: str):
     state = WorkflowStore.get(run_id)
@@ -707,13 +790,7 @@ async def delete_aira_x_run(run_id: str):
     if not _workflow_can_be_deleted(state):
         return _workflow_delete_blocked_response(state, run_id)
 
-    deleted_summary = {
-        "run_id": run_id,
-        "user_goal": state.user_goal,
-        "status": state.status,
-        "decision": state.decision,
-        "final_answer": state.final_answer,
-    }
+    deleted_summary = _summarize_workflow_for_delete(state)
 
     WorkflowStore.delete(run_id)
     _remove_inactive_approval_lock(run_id)
