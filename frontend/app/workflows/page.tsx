@@ -293,6 +293,7 @@ export default function WorkflowsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [preflightFilter, setPreflightFilter] = useState("all");
   const [maintenanceFilter, setMaintenanceFilter] = useState("all");
+  const [sortMode, setSortMode] = useState("newest");
   const [error, setError] = useState("");
 
   const loadRuns = useCallback(async (options?: { showLoading?: boolean }) => {
@@ -492,6 +493,30 @@ export default function WorkflowsPage() {
     );
   });
 
+  const sortedFilteredRuns = filteredRuns.slice().sort((firstRun, secondRun) => {
+    if (sortMode === "oldest") {
+      return runs.indexOf(firstRun) - runs.indexOf(secondRun);
+    }
+
+    if (sortMode === "status") {
+      return firstRun.status.localeCompare(secondRun.status);
+    }
+
+    if (sortMode === "goal") {
+      return firstRun.user_goal.localeCompare(secondRun.user_goal);
+    }
+
+    if (sortMode === "retries_high") {
+      return secondRun.retry_count - firstRun.retry_count;
+    }
+
+    if (sortMode === "logs_high") {
+      return secondRun.log_count - firstRun.log_count;
+    }
+
+    return runs.indexOf(secondRun) - runs.indexOf(firstRun);
+  });
+
   useEffect(() => {
     if (approvalProcessingCount === 0) {
       setPolling(false);
@@ -686,7 +711,7 @@ export default function WorkflowsPage() {
               </div>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-5">
               <div>
                 <label
                   htmlFor="workflow-search"
@@ -773,12 +798,36 @@ export default function WorkflowsPage() {
                   <option value="stale_recovery">Stale recovery</option>
                 </select>
               </div>
+
+              <div>
+                <label
+                  htmlFor="workflow-sort-mode"
+                  className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500"
+                >
+                  Sort
+                </label>
+
+                <select
+                  id="workflow-sort-mode"
+                  value={sortMode}
+                  onChange={(event) => setSortMode(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="status">Status A-Z</option>
+                  <option value="goal">Goal A-Z</option>
+                  <option value="retries_high">Retries high-low</option>
+                  <option value="logs_high">Logs high-low</option>
+                </select>
+              </div>
             </div>
 
             {(searchQuery ||
               statusFilter !== "all" ||
               preflightFilter !== "all" ||
-              maintenanceFilter !== "all") && (
+              maintenanceFilter !== "all" ||
+              sortMode !== "newest") && (
               <button
                 type="button"
                 onClick={() => {
@@ -786,6 +835,7 @@ export default function WorkflowsPage() {
                   setStatusFilter("all");
                   setPreflightFilter("all");
                   setMaintenanceFilter("all");
+                  setSortMode("newest");
                 }}
                 className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
               >
@@ -820,10 +870,7 @@ export default function WorkflowsPage() {
               </p>
             ) : (
               <div className="space-y-3">
-                {filteredRuns
-                  .slice()
-                  .reverse()
-                  .map((run) => {
+                {sortedFilteredRuns.map((run) => {
                     const gitWritePreflight = isGitWritePreflight(run);
                     const gitPushPreflight = isGitPushPreflight(run);
                     const cleanupPerformed = Boolean(run.has_cleanup);
