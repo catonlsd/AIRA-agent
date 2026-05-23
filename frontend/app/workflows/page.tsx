@@ -70,6 +70,11 @@ type WorkflowRunSummary = {
   final_answer: string | null;
   current_step: number | null;
   retry_count: number;
+
+  created_at?: string;
+  updated_at?: string;
+  completed_at?: string | null;
+
   requires_approval: boolean;
   pending_action?: string;
 
@@ -208,7 +213,7 @@ function getApprovalResolutionLabel(status?: string) {
   return "not resolved";
 }
 
-function formatDateTime(value?: string) {
+function formatDateTime(value?: string | null) {
   if (!value) {
     return "Not recorded";
   }
@@ -220,6 +225,16 @@ function formatDateTime(value?: string) {
   }
 
   return date.toLocaleString();
+}
+
+function getTimestampMs(value?: string | null) {
+  if (!value) {
+    return 0;
+  }
+
+  const timestamp = new Date(value).getTime();
+
+  return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
 function getApprovalResolution(
@@ -293,7 +308,7 @@ export default function WorkflowsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [preflightFilter, setPreflightFilter] = useState("all");
   const [maintenanceFilter, setMaintenanceFilter] = useState("all");
-  const [sortMode, setSortMode] = useState("newest");
+  const [sortMode, setSortMode] = useState("updated_desc");
   const [error, setError] = useState("");
 
   const loadRuns = useCallback(async (options?: { showLoading?: boolean }) => {
@@ -465,7 +480,10 @@ export default function WorkflowsPage() {
       run.run_id.toLowerCase().includes(normalizedSearchQuery) ||
       run.status.toLowerCase().includes(normalizedSearchQuery) ||
       run.decision.toLowerCase().includes(normalizedSearchQuery) ||
-      (run.pending_action || "").toLowerCase().includes(normalizedSearchQuery);
+      (run.pending_action || "").toLowerCase().includes(normalizedSearchQuery) ||
+      (run.created_at || "").toLowerCase().includes(normalizedSearchQuery) ||
+      (run.updated_at || "").toLowerCase().includes(normalizedSearchQuery) ||
+      (run.completed_at || "").toLowerCase().includes(normalizedSearchQuery);
 
     const matchesStatus =
       statusFilter === "all" ||
@@ -494,8 +512,18 @@ export default function WorkflowsPage() {
   });
 
   const sortedFilteredRuns = filteredRuns.slice().sort((firstRun, secondRun) => {
-    if (sortMode === "oldest") {
-      return runs.indexOf(firstRun) - runs.indexOf(secondRun);
+    if (sortMode === "created_asc") {
+      return (
+        getTimestampMs(firstRun.created_at) -
+        getTimestampMs(secondRun.created_at)
+      );
+    }
+
+    if (sortMode === "completed_desc") {
+      return (
+        getTimestampMs(secondRun.completed_at) -
+        getTimestampMs(firstRun.completed_at)
+      );
     }
 
     if (sortMode === "status") {
@@ -514,7 +542,10 @@ export default function WorkflowsPage() {
       return secondRun.log_count - firstRun.log_count;
     }
 
-    return runs.indexOf(secondRun) - runs.indexOf(firstRun);
+    return (
+      getTimestampMs(secondRun.updated_at || secondRun.created_at) -
+      getTimestampMs(firstRun.updated_at || firstRun.created_at)
+    );
   });
 
   useEffect(() => {
@@ -813,8 +844,9 @@ export default function WorkflowsPage() {
                   onChange={(event) => setSortMode(event.target.value)}
                   className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
                 >
-                  <option value="newest">Newest first</option>
-                  <option value="oldest">Oldest first</option>
+                  <option value="updated_desc">Newest updated first</option>
+                  <option value="created_asc">Oldest created first</option>
+                  <option value="completed_desc">Recently completed first</option>
                   <option value="status">Status A-Z</option>
                   <option value="goal">Goal A-Z</option>
                   <option value="retries_high">Retries high-low</option>
@@ -827,7 +859,7 @@ export default function WorkflowsPage() {
               statusFilter !== "all" ||
               preflightFilter !== "all" ||
               maintenanceFilter !== "all" ||
-              sortMode !== "newest") && (
+              sortMode !== "updated_desc") && (
               <button
                 type="button"
                 onClick={() => {
@@ -835,7 +867,7 @@ export default function WorkflowsPage() {
                   setStatusFilter("all");
                   setPreflightFilter("all");
                   setMaintenanceFilter("all");
-                  setSortMode("newest");
+                  setSortMode("updated_desc");
                 }}
                 className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
               >
@@ -968,7 +1000,24 @@ export default function WorkflowsPage() {
                                 {run.user_goal}
                               </h3>
 
-                              <p className="mt-1 text-xs text-slate-600">
+                              <div className="mt-3 grid gap-2 text-xs text-slate-600 md:grid-cols-3">
+                                <p className="rounded-xl border border-slate-100 bg-white p-3">
+                                  <strong>Created:</strong>{" "}
+                                  {formatDateTime(run.created_at)}
+                                </p>
+
+                                <p className="rounded-xl border border-slate-100 bg-white p-3">
+                                  <strong>Updated:</strong>{" "}
+                                  {formatDateTime(run.updated_at)}
+                                </p>
+
+                                <p className="rounded-xl border border-slate-100 bg-white p-3">
+                                  <strong>Completed:</strong>{" "}
+                                  {formatDateTime(run.completed_at)}
+                                </p>
+                              </div>
+
+                              <p className="mt-3 text-xs text-slate-600">
                                 <strong>Final Answer:</strong>{" "}
                                 {run.final_answer || "No final answer yet"}
                               </p>
@@ -1162,9 +1211,15 @@ export default function WorkflowsPage() {
                               )}
                             </div>
 
-                            <p className="max-w-xs break-all rounded-xl bg-white p-3 text-[11px] text-slate-500">
-                              {run.run_id}
-                            </p>
+                            <div className="max-w-xs rounded-xl bg-white p-3 text-[11px] text-slate-500">
+                              <p className="break-all">{run.run_id}</p>
+
+                              <p className="mt-2 font-semibold text-slate-600">
+                                Updated
+                              </p>
+
+                              <p>{formatDateTime(run.updated_at)}</p>
+                            </div>
                           </div>
                         </Link>
 
