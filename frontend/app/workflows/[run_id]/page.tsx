@@ -86,6 +86,9 @@ type WorkflowRun = {
   status: string;
   decision: string;
   final_answer: string | null;
+  created_at?: string;
+  updated_at?: string;
+  completed_at?: string | null;
   plan: WorkflowStep[];
   execution_outputs: any[];
   memory: any;
@@ -218,7 +221,7 @@ function getApprovalResolutionLabel(status?: string) {
   return "Not resolved";
 }
 
-function formatDateTime(value?: string) {
+function formatDateTime(value?: string | null) {
   if (!value) {
     return "Not recorded";
   }
@@ -230,6 +233,122 @@ function formatDateTime(value?: string) {
   }
 
   return date.toLocaleString();
+}
+
+function parseTimestamp(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = new Date(value).getTime();
+
+  if (Number.isNaN(timestamp)) {
+    return null;
+  }
+
+  return timestamp;
+}
+
+function formatDurationFromMilliseconds(durationMs: number) {
+  if (!Number.isFinite(durationMs) || durationMs < 0) {
+    return "Not available";
+  }
+
+  const totalSeconds = Math.floor(durationMs / 1000);
+
+  if (totalSeconds < 60) {
+    return `${Math.max(totalSeconds, 1)} sec`;
+  }
+
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  const parts = [];
+
+  if (days > 0) {
+    parts.push(`${days}d`);
+  }
+
+  if (hours > 0) {
+    parts.push(`${hours}h`);
+  }
+
+  if (minutes > 0 || parts.length === 0) {
+    parts.push(`${minutes}m`);
+  }
+
+  return parts.join(" ");
+}
+
+function getWorkflowDuration(run: WorkflowRun) {
+  const createdAt = parseTimestamp(run.created_at);
+  const completedAt = parseTimestamp(run.completed_at);
+
+  if (!createdAt || !completedAt) {
+    return "Not completed yet";
+  }
+
+  return formatDurationFromMilliseconds(completedAt - createdAt);
+}
+
+function renderWorkflowTimestamps(run: WorkflowRun) {
+  return (
+    <section className="sarvam-card rounded-[1.5rem] border border-blue-100 bg-blue-50/30 p-5">
+      <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
+        <Clock className="h-4 w-4 text-blue-600" />
+        Workflow Timeline
+      </div>
+
+      <p className="mb-4 text-sm leading-6 text-slate-600">
+        These timestamps are stored with the workflow run and update whenever
+        AIRA-X saves progress or reaches a final state.
+      </p>
+
+      <div className="grid gap-3 md:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Created At
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {formatDateTime(run.created_at)}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Updated At
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {formatDateTime(run.updated_at)}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Completed At
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {formatDateTime(run.completed_at)}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Duration
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {getWorkflowDuration(run)}
+          </p>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function getApprovalResolution(run: WorkflowRun): ApprovalResolution | null {
@@ -939,6 +1058,8 @@ export default function WorkflowDetailPage() {
               </div>
             </div>
           </section>
+
+          {renderWorkflowTimestamps(run)}
 
           {renderApprovalResolution(run)}
 
