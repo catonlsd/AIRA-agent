@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, List, Any
 
@@ -14,6 +15,46 @@ class WorkflowStore:
         / "storage"
         / "workflow_runs.json"
     )
+
+    final_statuses = {"completed", "failed", "rejected"}
+
+    @classmethod
+    def _utc_now_iso(cls) -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    @classmethod
+    def _parse_datetime(cls, value: Optional[str]) -> datetime:
+        if not value:
+            return datetime.min.replace(tzinfo=timezone.utc)
+
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return datetime.min.replace(tzinfo=timezone.utc)
+
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+
+        return parsed.astimezone(timezone.utc)
+
+    @classmethod
+    def _is_final_status(cls, status: str) -> bool:
+        return status in cls.final_statuses
+
+    @classmethod
+    def _touch_state_timestamps(cls, state: AiraXState) -> None:
+        now = cls._utc_now_iso()
+
+        if not getattr(state, "created_at", None):
+            state.created_at = now
+
+        state.updated_at = now
+
+        if cls._is_final_status(state.status):
+            if not getattr(state, "completed_at", None):
+                state.completed_at = now
+        else:
+            state.completed_at = None
 
     @classmethod
     def _ensure_loaded(cls) -> None:
@@ -32,7 +73,21 @@ class WorkflowStore:
 
             for run_id, state_data in raw_data.items():
                 try:
-                    cls.runs[run_id] = AiraXState.model_validate(state_data)
+                    state = AiraXState.model_validate(state_data)
+
+                    if not getattr(state, "created_at", None):
+                        state.created_at = cls._utc_now_iso()
+
+                    if not getattr(state, "updated_at", None):
+                        state.updated_at = state.created_at
+
+                    if (
+                        cls._is_final_status(state.status)
+                        and not getattr(state, "completed_at", None)
+                    ):
+                        state.completed_at = state.updated_at
+
+                    cls.runs[run_id] = state
                 except Exception:
                     continue
 
@@ -60,6 +115,7 @@ class WorkflowStore:
         cls._ensure_loaded()
 
         if state.run_id:
+            cls._touch_state_timestamps(state)
             cls.runs[state.run_id] = state
             cls._persist()
 
@@ -83,7 +139,14 @@ class WorkflowStore:
 
         summaries = []
 
-        for run_id, state in cls.runs.items():
+        sorted_runs = sorted(
+            cls.runs.items(),
+            key=lambda item: cls._parse_datetime(
+                getattr(item[1], "created_at", None)
+            ),
+        )
+
+        for run_id, state in sorted_runs:
             approval_context = state.memory.get("approval_context", {})
             approval_resolution = state.memory.get("approval_resolution", {})
             approval_recovery_events = state.memory.get(
@@ -101,6 +164,11 @@ class WorkflowStore:
                     "final_answer": state.final_answer,
                     "current_step": state.current_step,
                     "retry_count": state.retry_count,
+
+                    "created_at": state.created_at,
+                    "updated_at": state.updated_at,
+                    "completed_at": state.completed_at,
+
                     "requires_approval": state.status == "requires_approval",
                     "pending_action": state.memory.get("pending_action"),
 
@@ -222,7 +290,10 @@ class WorkflowStore:
             for run in runs
         )
 
-        latest_runs = cls.list_runs()[-5:]
+        latest_runs = sorted(
+            cls.list_runs(),
+            key=lambda run: cls._parse_datetime(run.get("updated_at")),
+        )[-5:]
 
         return {
             "total_runs": len(runs),

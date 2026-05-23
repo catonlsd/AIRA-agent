@@ -43,6 +43,9 @@ def serialize_state(state):
         "status": state.status,
         "decision": state.decision,
         "final_answer": state.final_answer,
+        "created_at": state.created_at,
+        "updated_at": state.updated_at,
+        "completed_at": state.completed_at,
         "plan": [step.model_dump() for step in state.plan],
         "execution_outputs": state.execution_outputs,
         "memory": state.memory,
@@ -291,6 +294,9 @@ def _summarize_workflow_for_delete(state):
         "status": state.status,
         "decision": state.decision,
         "final_answer": state.final_answer,
+        "created_at": state.created_at,
+        "updated_at": state.updated_at,
+        "completed_at": state.completed_at,
     }
 
 
@@ -755,6 +761,9 @@ async def delete_safe_aira_x_runs():
                 "status": state.status,
                 "decision": state.decision,
                 "reason": _safe_bulk_delete_skip_reason(state),
+                "created_at": state.created_at,
+                "updated_at": state.updated_at,
+                "completed_at": state.completed_at,
                 "approval_in_progress": state.memory.get(
                     "approval_in_progress",
                     False,
