@@ -130,6 +130,11 @@ export type AiraXWorkflowRun = {
   final_answer: string | null;
   current_step: number | null;
   retry_count: number;
+
+  created_at?: string;
+  updated_at?: string;
+  completed_at?: string | null;
+
   requires_approval: boolean;
   pending_action?: string;
 
@@ -206,6 +211,9 @@ export type AiraXDeletedRunSummary = {
   status?: string;
   decision?: string;
   final_answer?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  completed_at?: string | null;
   [key: string]: any;
 };
 
@@ -232,6 +240,9 @@ export type AiraXSafeCleanupSkippedRun = {
   status?: string;
   decision?: string;
   reason?: string;
+  created_at?: string;
+  updated_at?: string;
+  completed_at?: string | null;
   approval_in_progress?: boolean;
   [key: string]: any;
 };
