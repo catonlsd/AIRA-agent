@@ -289,6 +289,10 @@ export default function WorkflowsPage() {
   const [safeCleanupLoading, setSafeCleanupLoading] = useState(false);
   const [safeCleanupSummary, setSafeCleanupSummary] = useState("");
   const [polling, setPolling] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [preflightFilter, setPreflightFilter] = useState("all");
+  const [maintenanceFilter, setMaintenanceFilter] = useState("all");
   const [error, setError] = useState("");
 
   const loadRuns = useCallback(async (options?: { showLoading?: boolean }) => {
@@ -450,6 +454,43 @@ export default function WorkflowsPage() {
   const staleApprovalRecoveryCount = runs.filter((run) =>
     hasStaleApprovalRecovery(run)
   ).length;
+
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+
+  const filteredRuns = runs.filter((run) => {
+    const matchesSearch =
+      !normalizedSearchQuery ||
+      run.user_goal.toLowerCase().includes(normalizedSearchQuery) ||
+      run.run_id.toLowerCase().includes(normalizedSearchQuery) ||
+      run.status.toLowerCase().includes(normalizedSearchQuery) ||
+      run.decision.toLowerCase().includes(normalizedSearchQuery) ||
+      (run.pending_action || "").toLowerCase().includes(normalizedSearchQuery);
+
+    const matchesStatus =
+      statusFilter === "all" ||
+      run.status === statusFilter ||
+      (statusFilter === "approval_processing" && isApprovalProcessing(run));
+
+    const matchesPreflight =
+      preflightFilter === "all" ||
+      (preflightFilter === "git_write" && isGitWritePreflight(run)) ||
+      (preflightFilter === "git_push" && isGitPushPreflight(run)) ||
+      (preflightFilter === "any_git" && hasAnyGitPreflight(run));
+
+    const matchesMaintenance =
+      maintenanceFilter === "all" ||
+      (maintenanceFilter === "cleanup" && Boolean(run.has_cleanup)) ||
+      (maintenanceFilter === "stale_recovery" && hasStaleApprovalRecovery(run)) ||
+      (maintenanceFilter === "approval_resolved" &&
+        hasApprovalResolution(run));
+
+    return (
+      matchesSearch &&
+      matchesStatus &&
+      matchesPreflight &&
+      matchesMaintenance
+    );
+  });
 
   useEffect(() => {
     if (approvalProcessingCount === 0) {
@@ -629,6 +670,133 @@ export default function WorkflowsPage() {
 
           <section className="sarvam-card rounded-[1.5rem] p-5">
             <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Workflow Filters
+                </h2>
+
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Search and filter saved workflow runs by status, Git preflight
+                  type, approval resolution, cleanup, or stale recovery state.
+                </p>
+              </div>
+
+              <div className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                Showing {filteredRuns.length} of {runs.length}
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-4">
+              <div>
+                <label
+                  htmlFor="workflow-search"
+                  className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500"
+                >
+                  Search
+                </label>
+
+                <input
+                  id="workflow-search"
+                  type="text"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Goal, run ID, decision, action..."
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="workflow-status-filter"
+                  className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500"
+                >
+                  Status
+                </label>
+
+                <select
+                  id="workflow-status-filter"
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="completed">Completed</option>
+                  <option value="failed">Failed</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="requires_approval">Requires approval</option>
+                  <option value="approval_processing">Approval processing</option>
+                  <option value="retrying">Retrying</option>
+                  <option value="executing">Executing</option>
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="workflow-preflight-filter"
+                  className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500"
+                >
+                  Git Preflight
+                </label>
+
+                <select
+                  id="workflow-preflight-filter"
+                  value={preflightFilter}
+                  onChange={(event) => setPreflightFilter(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="all">All runs</option>
+                  <option value="any_git">Any Git preflight</option>
+                  <option value="git_write">Git write preflight</option>
+                  <option value="git_push">Git push preflight</option>
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="workflow-maintenance-filter"
+                  className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500"
+                >
+                  Maintenance
+                </label>
+
+                <select
+                  id="workflow-maintenance-filter"
+                  value={maintenanceFilter}
+                  onChange={(event) =>
+                    setMaintenanceFilter(event.target.value)
+                  }
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="all">All runs</option>
+                  <option value="approval_resolved">Approval resolved</option>
+                  <option value="cleanup">Cleanup performed</option>
+                  <option value="stale_recovery">Stale recovery</option>
+                </select>
+              </div>
+            </div>
+
+            {(searchQuery ||
+              statusFilter !== "all" ||
+              preflightFilter !== "all" ||
+              maintenanceFilter !== "all") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery("");
+                  setStatusFilter("all");
+                  setPreflightFilter("all");
+                  setMaintenanceFilter("all");
+                }}
+                className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
+              >
+                Clear Filters
+              </button>
+            )}
+          </section>
+
+
+          <section className="sarvam-card rounded-[1.5rem] p-5">
+            <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <Activity className="h-4 w-4 text-blue-600" />
                 Recent Workflow Runs
@@ -646,9 +814,13 @@ export default function WorkflowsPage() {
               <p className="text-sm text-slate-500">
                 No workflow runs recorded yet.
               </p>
+            ) : filteredRuns.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                No workflow runs match the current filters.
+              </p>
             ) : (
               <div className="space-y-3">
-                {runs
+                {filteredRuns
                   .slice()
                   .reverse()
                   .map((run) => {
