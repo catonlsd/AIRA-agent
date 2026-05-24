@@ -1,132 +1,291 @@
-import Link from "next/link";
+"use client";
+
+import { useRouter } from "next/navigation";
 import {
   ArrowRight,
-  Brain,
+  BookOpen,
+  CheckCircle2,
   Database,
-  FileSearch,
-  Globe2,
+  FileText,
+  GitBranch,
+  LockKeyhole,
+  MessageSquare,
   ShieldCheck,
   Sparkles,
+  UploadCloud,
+  Workflow,
+  Zap,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
+import {
+  useAiraMode,
+  type AiraOperatingMode,
+} from "@/components/mode-provider";
+import { cn } from "@/lib/utils";
 
-const metrics = [
-  ["7", "specialized agents"],
-  ["4", "document formats"],
-  ["100%", "source-first answers"],
+const researchFeatures = [
+  "Document-grounded answers",
+  "PDF and source ingestion",
+  "Citation-backed responses",
+  "Knowledge base retrieval",
 ];
 
-const features = [
-  [FileSearch, "RAG QnA", "Semantic retrieval over uploaded documents."],
-  [Globe2, "Web Agent", "Uses web search only when needed or requested."],
-  [Database, "Memory", "SQLite chat history and user preferences."],
-  [ShieldCheck, "Citations", "Document and web sources stay visible."],
+const executionFeatures = [
+  "Autonomous workflow planning",
+  "Tool and agent orchestration",
+  "Approval-gated risky actions",
+  "Execution logs and validation",
 ];
 
-export default function HomePage() {
+function FeaturePill({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-8">
-        <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-blue-200/40 blur-3xl" />
-        <div className="absolute -bottom-24 left-20 h-64 w-64 rounded-full bg-sky-100/70 blur-3xl" />
+    <div className="flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-xs font-bold text-[var(--text-muted)]">
+      <CheckCircle2 className="h-3.5 w-3.5 text-[var(--success)]" />
+      {children}
+    </div>
+  );
+}
 
-        <div className="relative z-10 grid gap-8 lg:grid-cols-[1.25fr_0.75fr]">
-          <div>
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-semibold text-accent">
-              <Sparkles className="h-4 w-4" />
-              Multi-Agent Research Platform
-            </div>
+function ModeCard({
+  mode,
+  title,
+  eyebrow,
+  description,
+  icon,
+  features,
+  cta,
+  active,
+  onEnter,
+}: {
+  mode: AiraOperatingMode;
+  title: string;
+  eyebrow: string;
+  description: string;
+  icon: React.ReactNode;
+  features: string[];
+  cta: string;
+  active: boolean;
+  onEnter: (mode: AiraOperatingMode) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onEnter(mode)}
+      className={cn(
+        "group relative overflow-hidden rounded-[2rem] border p-6 text-left shadow-[var(--shadow-card)] transition-all duration-300",
+        "hover:-translate-y-1 hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:shadow-[var(--shadow-hover)]",
+        active
+          ? "border-[var(--border-strong)] bg-[var(--accent-soft)]"
+          : "border-[var(--border)] bg-[var(--surface)]"
+      )}
+    >
+      <div className="pointer-events-none absolute -right-20 -top-20 h-48 w-48 rounded-full bg-[var(--accent-glow)] blur-3xl transition duration-300 group-hover:scale-125" />
 
-            <h1 className="max-w-3xl text-5xl font-semibold tracking-tight text-slate-950">
-              AIRA for documents, web search and cited answers.
-            </h1>
-
-            <p className="mt-5 max-w-2xl text-base leading-7 text-slate-600">
-              Upload documents, ask questions, retrieve answers
-              and enhance research with real-time web intelligence.
-            </p>
-
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link
-                href="/upload"
-                className="group inline-flex items-center gap-2 rounded-full bg-accent px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-600/25"
-              >
-                Upload documents
-                <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
-              </Link>
-
-              <Link
-                href="/chat"
-                className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition-all duration-300 hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50 hover:text-accent"
-              >
-                Open chat
-              </Link>
-            </div>
+      <div className="relative z-10">
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div
+            className={cn(
+              "flex h-14 w-14 items-center justify-center rounded-2xl border shadow-[var(--shadow-soft)]",
+              active
+                ? "border-[var(--border-strong)] bg-[var(--accent)] text-[var(--accent-foreground)]"
+                : "border-[var(--border)] bg-[var(--surface-soft)] text-[var(--accent)]"
+            )}
+          >
+            {icon}
           </div>
 
-          <div className="grid gap-3">
-            {metrics.map(([value, label]) => (
-              <div
-                key={label}
-                className="rounded-3xl border border-blue-100 bg-white/80 p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
-              >
-                <div className="text-3xl font-semibold text-accent">
-                  {value}
-                </div>
-
-                <div className="mt-1 text-sm text-slate-500">{label}</div>
-              </div>
-            ))}
-          </div>
+          <span
+            className={cn(
+              "rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em]",
+              active
+                ? "border-[var(--border-strong)] bg-[var(--surface)] text-[var(--accent)]"
+                : "border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-subtle)]"
+            )}
+          >
+            {active ? "Current" : eyebrow}
+          </span>
         </div>
-      </section>
 
-      <section className="grid gap-4 md:grid-cols-4">
-        {features.map(([Icon, title, body]) => {
-          const Component = Icon as typeof FileSearch;
+        <p className="text-xs font-black uppercase tracking-[0.22em] text-[var(--accent)]">
+          {eyebrow}
+        </p>
 
-          return (
-            <div
-              key={String(title)}
-              className="group sarvam-card fade-up rounded-[1.5rem] p-5 transition-all duration-300 hover:-translate-y-1"
-            >
-              <div className="mb-4 inline-flex rounded-2xl bg-blue-50 p-3 text-accent transition-all duration-300 group-hover:scale-110">
-                <Component className="h-5 w-5 transition-transform duration-300 group-hover:rotate-3" />
-              </div>
+        <h2 className="mt-3 text-3xl font-black tracking-tight text-[var(--text-strong)]">
+          {title}
+        </h2>
 
-              <h2 className="font-semibold text-slate-950">{String(title)}</h2>
+        <p className="mt-3 text-sm leading-7 text-[var(--text-muted)]">
+          {description}
+        </p>
 
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                {String(body)}
+        <div className="mt-6 grid gap-2">
+          {features.map((feature) => (
+            <FeaturePill key={feature}>{feature}</FeaturePill>
+          ))}
+        </div>
+
+        <div className="mt-7 inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition group-hover:gap-3">
+          {cta}
+          <ArrowRight className="h-4 w-4" />
+        </div>
+      </div>
+    </button>
+  );
+}
+
+export default function LandingPage() {
+  const router = useRouter();
+  const { mode, setMode } = useAiraMode();
+
+  function enterMode(nextMode: AiraOperatingMode) {
+    setMode(nextMode);
+    router.push(nextMode === "aira" ? "/chat" : "/overview");
+  }
+
+  return (
+    <main className="relative min-h-screen overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+      <div className="pointer-events-none absolute -left-32 top-10 h-72 w-72 rounded-full bg-[var(--accent-glow)] blur-3xl" />
+      <div className="pointer-events-none absolute -right-32 bottom-10 h-80 w-80 rounded-full bg-[var(--secondary-glow)] blur-3xl" />
+
+      <div className="relative z-10 mx-auto flex min-h-[calc(100vh-48px)] max-w-7xl flex-col">
+        <header className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--border-strong)] bg-[var(--accent-soft)] text-[var(--accent)] shadow-[0_0_30px_var(--accent-glow)]">
+              <Sparkles className="h-5 w-5" />
+            </div>
+
+            <div>
+              <h1 className="text-xl font-black tracking-tight text-[var(--text-strong)]">
+                AIRA
+                <span className="text-[var(--accent)]"> / </span>
+                AIRA-X
+              </h1>
+
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-[var(--text-subtle)]">
+                Research and execution platform
               </p>
             </div>
-          );
-        })}
-      </section>
+          </div>
 
-      <section className="sarvam-card fade-up rounded-[2rem] p-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <ThemeToggle />
+        </header>
+
+        <section className="grid flex-1 items-center gap-8 py-12 lg:grid-cols-[0.95fr_1.05fr] lg:py-16">
           <div>
-            <div className="flex items-center gap-2 text-sm font-semibold text-accent">
-              <Brain className="h-4 w-4" />
-              Designed for intelligent research workflows
+            <div className="aira-chip mb-5 px-3 py-1.5 text-xs font-bold">
+              <Zap className="h-3.5 w-3.5" />
+              Choose your operating mode
             </div>
 
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              Demonstrates practical AI product engineering across FastAPI,
-              Next.js, RAG, LLM integration, web search, document processing,
-              memory and citation-aware answer generation.
+            <h2 className="max-w-3xl text-5xl font-black tracking-tight text-[var(--text-strong)] sm:text-6xl">
+              Research when you need answers.
+              <span className="aira-gradient-text block">
+                Execute when you need outcomes.
+              </span>
+            </h2>
+
+            <p className="mt-6 max-w-2xl text-base leading-8 text-[var(--text-muted)]">
+              AIRA is the grounded research layer. AIRA-X extends it into an
+              autonomous execution layer with planning, tools, approvals,
+              validation, and traceable workflow logs.
+            </p>
+
+            <div className="mt-8 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+                <div className="mb-3 flex items-center gap-2 text-sm font-black text-[var(--text-strong)]">
+                  <MessageSquare className="h-4 w-4 text-[var(--accent)]" />
+                  AIRA for research
+                </div>
+
+                <p className="text-sm leading-6 text-[var(--text-muted)]">
+                  Ask questions, upload documents, retrieve citations, and build
+                  a reliable knowledge base.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+                <div className="mb-3 flex items-center gap-2 text-sm font-black text-[var(--text-strong)]">
+                  <Workflow className="h-4 w-4 text-[var(--accent)]" />
+                  AIRA-X for execution
+                </div>
+
+                <p className="text-sm leading-6 text-[var(--text-muted)]">
+                  Convert goals into workflows, inspect approvals, and track
+                  every step from plan to result.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-5">
+            <ModeCard
+              mode="aira"
+              title="AIRA"
+              eyebrow="Research Assistant"
+              description="A focused research workspace for grounded answers, document ingestion, citations, and knowledge retrieval."
+              icon={<BookOpen className="h-6 w-6" />}
+              features={researchFeatures}
+              cta="Enter AIRA"
+              active={mode === "aira"}
+              onEnter={enterMode}
+            />
+
+            <ModeCard
+              mode="aira-x"
+              title="AIRA-X"
+              eyebrow="Execution Platform"
+              description="A command center for autonomous workflows, tool usage, approval-gated actions, validation, and audit-ready traces."
+              icon={<Zap className="h-6 w-6" />}
+              features={executionFeatures}
+              cta="Enter AIRA-X"
+              active={mode === "aira-x"}
+              onEnter={enterMode}
+            />
+          </div>
+        </section>
+
+        <section className="mb-6 grid gap-3 md:grid-cols-4">
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+            <UploadCloud className="mb-3 h-4 w-4 text-[var(--accent)]" />
+            <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              Intake
+            </p>
+            <p className="mt-1 text-sm font-bold text-[var(--text-strong)]">
+              Upload documents
             </p>
           </div>
 
-          <Link
-            href="/settings"
-            className="inline-flex w-fit items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-5 py-3 text-sm font-semibold text-accent transition hover:-translate-y-0.5 hover:bg-blue-100"
-          >
-            View Architecture
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-      </section>
-    </div>
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+            <Database className="mb-3 h-4 w-4 text-[var(--accent)]" />
+            <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              Retrieve
+            </p>
+            <p className="mt-1 text-sm font-bold text-[var(--text-strong)]">
+              Ground answers
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+            <GitBranch className="mb-3 h-4 w-4 text-[var(--accent)]" />
+            <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              Execute
+            </p>
+            <p className="mt-1 text-sm font-bold text-[var(--text-strong)]">
+              Run workflows
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+            <LockKeyhole className="mb-3 h-4 w-4 text-[var(--accent)]" />
+            <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              Govern
+            </p>
+            <p className="mt-1 text-sm font-bold text-[var(--text-strong)]">
+              Manage approvals
+            </p>
+          </div>
+        </section>
+      </div>
+    </main>
   );
 }

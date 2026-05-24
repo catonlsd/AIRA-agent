@@ -1,26 +1,34 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 import {
-  Globe2,
+  Activity,
+  CheckCircle2,
+  Clock,
   Cpu,
-  Send,
-  Sparkles,
-  Workflow,
-  History,
-  ShieldCheck,
-  XCircle,
+  Database,
+  FileUp,
   GitBranch,
+  Globe2,
+  History,
+  Send,
+  ShieldCheck,
+  Sparkles,
   UploadCloud,
+  Workflow,
+  XCircle,
 } from "lucide-react";
 import { CitationList } from "@/components/citation-list";
 import {
   type ChatResponse,
-  sendChat,
-  runAiraX,
   approveAiraX,
   rejectAiraX,
+  runAiraX,
+  sendChat,
+  uploadDocuments,
 } from "@/lib/api";
+import { useAiraMode } from "@/components/mode-provider";
+import { cn } from "@/lib/utils";
 
 type Turn = {
   question: string;
@@ -122,6 +130,32 @@ const knownLogEvents = [
   "workflow_completed",
   "memory_summary_created",
 ];
+
+function getWorkflowStatusClass(status?: string) {
+  if (status === "completed") {
+    return "status-success";
+  }
+
+  if (status === "failed" || status === "rejected" || status === "blocked") {
+    return "status-danger";
+  }
+
+  if (status === "requires_approval" || status === "retrying") {
+    return "status-warning";
+  }
+
+  return "status-info";
+}
+
+function cleanAnswer(answer: string) {
+  return answer
+    .replace(/^###\s?/gm, "")
+    .replace(/^##\s?/gm, "")
+    .replace(/^#\s?/gm, "")
+    .replace(/\*\*/g, "")
+    .replace(/Sources[\s\S]*/i, "")
+    .trim();
+}
 
 function renderLogMessage(log: WorkflowLog) {
   switch (log.event) {
@@ -290,72 +324,73 @@ function renderLogMessage(log: WorkflowLog) {
   }
 }
 
+function renderInfoTile(label: string, value: string) {
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-subtle)]">
+        {label}
+      </p>
+
+      <p className="mt-1 break-words text-sm font-semibold text-[var(--text-strong)]">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function renderCodeBlock(value?: string, fallback = "No data available.") {
+  return (
+    <pre className="max-h-52 overflow-auto whitespace-pre-wrap rounded-xl p-3 text-xs leading-5">
+      {value?.trim() || fallback}
+    </pre>
+  );
+}
+
 function renderGitWritePreflight(context: ApprovalContext) {
   return (
-    <div className="mt-4 rounded-2xl border border-orange-200 bg-white p-4">
+    <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--warning)_34%,transparent)] bg-[var(--warning-soft)] p-4">
       <div className="mb-3">
-        <h4 className="text-sm font-bold text-orange-900">
+        <h4 className="text-sm font-bold text-[var(--warning)]">
           Git Preflight Summary
         </h4>
 
-        <p className="mt-1 text-xs leading-5 text-orange-700">
+        <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
           Review these repository changes before approving this Git write
           action.
         </p>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Current Branch
-          </p>
-
-          <p className="mt-1 text-sm font-semibold text-slate-900">
-            {context.branch || "Unknown branch"}
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Git Action
-          </p>
-
-          <p className="mt-1 break-words text-sm font-semibold text-slate-900">
-            {context.pending_action || "Unknown action"}
-          </p>
-        </div>
+        {renderInfoTile("Current Branch", context.branch || "Unknown branch")}
+        {renderInfoTile("Git Action", context.pending_action || "Unknown action")}
       </div>
 
       {context.commit_message && (
-        <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+        <div className="mt-3 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--accent)]">
             Commit Message
           </p>
 
-          <p className="mt-1 text-sm font-semibold text-blue-900">
+          <p className="mt-1 text-sm font-semibold text-[var(--text-strong)]">
             {context.commit_message}
           </p>
         </div>
       )}
 
       <div className="mt-3">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-subtle)]">
           Changed Files
         </p>
 
-        <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-100">
-          {context.changed_files?.trim() || "No changed files detected."}
-        </pre>
+        {renderCodeBlock(context.changed_files, "No changed files detected.")}
       </div>
 
       <div className="mt-3">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-subtle)]">
           Diff Summary
         </p>
 
-        <pre className="max-h-52 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-100">
-          {context.diff_summary?.trim() || "No diff summary available."}
-        </pre>
+        {renderCodeBlock(context.diff_summary, "No diff summary available.")}
       </div>
     </div>
   );
@@ -363,18 +398,18 @@ function renderGitWritePreflight(context: ApprovalContext) {
 
 function renderGitPushPreflight(context: ApprovalContext) {
   return (
-    <div className="mt-4 rounded-2xl border border-red-200 bg-white p-4">
+    <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-4">
       <div className="mb-3 flex items-start gap-3">
-        <div className="rounded-xl bg-red-50 p-2 text-red-700">
+        <div className="rounded-xl border border-[color-mix(in_srgb,var(--danger)_28%,transparent)] bg-[var(--surface-soft)] p-2 text-[var(--danger)]">
           <UploadCloud className="h-4 w-4" />
         </div>
 
         <div>
-          <h4 className="text-sm font-bold text-red-900">
+          <h4 className="text-sm font-bold text-[var(--danger)]">
             Git Push Preflight Summary
           </h4>
 
-          <p className="mt-1 text-xs leading-5 text-red-700">
+          <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
             This action can modify your remote repository. Review the target
             remote, branch, and latest commits before approving.
           </p>
@@ -382,85 +417,48 @@ function renderGitPushPreflight(context: ApprovalContext) {
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Target Remote
-          </p>
-
-          <p className="mt-1 text-sm font-semibold text-slate-900">
-            {context.target_remote || "origin"}
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Target Branch
-          </p>
-
-          <p className="mt-1 text-sm font-semibold text-slate-900">
-            {context.target_branch || context.branch || "Unknown branch"}
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Current Branch
-          </p>
-
-          <p className="mt-1 text-sm font-semibold text-slate-900">
-            {context.branch || "Unknown branch"}
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Git Action
-          </p>
-
-          <p className="mt-1 break-words text-sm font-semibold text-slate-900">
-            {context.pending_action || "Unknown action"}
-          </p>
-        </div>
+        {renderInfoTile("Target Remote", context.target_remote || "origin")}
+        {renderInfoTile(
+          "Target Branch",
+          context.target_branch || context.branch || "Unknown branch"
+        )}
+        {renderInfoTile("Current Branch", context.branch || "Unknown branch")}
+        {renderInfoTile("Git Action", context.pending_action || "Unknown action")}
       </div>
 
       <div className="mt-3">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-subtle)]">
           Branch Tracking Status
         </p>
 
-        <pre className="max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-100">
-          {context.status_branch?.trim() || "No branch tracking status available."}
-        </pre>
+        {renderCodeBlock(
+          context.status_branch,
+          "No branch tracking status available."
+        )}
       </div>
 
       <div className="mt-3">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-subtle)]">
           Remote Info
         </p>
 
-        <pre className="max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-100">
-          {context.remote_info?.trim() || "No remote info available."}
-        </pre>
+        {renderCodeBlock(context.remote_info, "No remote info available.")}
       </div>
 
       <div className="mt-3">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-subtle)]">
           Latest Local Commit
         </p>
 
-        <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-100">
-          {context.last_commit?.trim() || "No latest commit available."}
-        </pre>
+        {renderCodeBlock(context.last_commit, "No latest commit available.")}
       </div>
 
       <div className="mt-3">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-subtle)]">
           Recent Local Commits
         </p>
 
-        <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-100">
-          {context.recent_commits?.trim() || "No recent commits available."}
-        </pre>
+        {renderCodeBlock(context.recent_commits, "No recent commits available.")}
       </div>
     </div>
   );
@@ -488,10 +486,12 @@ function renderCleanupActions(memory: any) {
   }
 
   return (
-    <div className="mt-5 rounded-2xl border border-green-200 bg-green-50 p-5">
-      <h3 className="text-sm font-bold text-green-900">Cleanup Actions</h3>
+    <div className="mt-5 rounded-2xl border border-[color-mix(in_srgb,var(--success)_34%,transparent)] bg-[var(--success-soft)] p-5">
+      <h3 className="text-sm font-bold text-[var(--success)]">
+        Cleanup Actions
+      </h3>
 
-      <p className="mt-2 text-sm leading-6 text-green-800">
+      <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
         AIRA-X performed cleanup after the workflow was rejected or stopped.
       </p>
 
@@ -499,7 +499,7 @@ function renderCleanupActions(memory: any) {
         {cleanupActions.map((cleanup: any, index: number) => (
           <div
             key={`${cleanup.tool_action}-${index}`}
-            className="rounded-xl border border-green-200 bg-white p-3 text-xs text-green-900"
+            className="rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] p-3 text-xs text-[var(--text)]"
           >
             <p>
               <strong>Action:</strong> {cleanup.tool_name}:{cleanup.tool_action}
@@ -527,16 +527,29 @@ function renderCleanupActions(memory: any) {
 }
 
 export default function ChatPage() {
+  const { mode } = useAiraMode();
+  const isAiraMode = mode === "aira";
+
   const [question, setQuestion] = useState("");
   const [forceWeb, setForceWeb] = useState(false);
   const [loading, setLoading] = useState(false);
   const [airaXLoading, setAiraXLoading] = useState(false);
   const [approvalLoading, setApprovalLoading] = useState(false);
   const [rejectionLoading, setRejectionLoading] = useState(false);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState("");
+  const [uploadError, setUploadError] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [airaXResponse, setAiraXResponse] = useState<AiraXResponse | null>(
     null
   );
+
+  const busy =
+    loading ||
+    airaXLoading ||
+    approvalLoading ||
+    rejectionLoading ||
+    uploadLoading;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -579,6 +592,7 @@ export default function ChatPage() {
     try {
       const result = await runAiraX(trimmed);
       setAiraXResponse(result);
+      setQuestion("");
     } catch (error) {
       console.error("AIRA-X Error:", error);
     } finally {
@@ -616,343 +630,444 @@ export default function ChatPage() {
     }
   }
 
-  return (
-    <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-6xl flex-col gap-6">
-      <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-6">
-        <div className="absolute -right-12 -top-16 h-40 w-40 rounded-full bg-blue-200/50 blur-3xl" />
+  async function handleUploadDocuments(event: ChangeEvent<HTMLInputElement>) {
+    const files = event.target.files;
 
-        <div className="relative z-10 flex items-start justify-between gap-4">
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    setUploadLoading(true);
+    setUploadMessage("");
+    setUploadError("");
+
+    try {
+      const result = await uploadDocuments(files);
+      const count = result.documents?.length || files.length;
+
+      setUploadMessage(
+        `${count} document${count === 1 ? "" : "s"} uploaded and indexed.`
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Document upload failed.";
+
+      setUploadError(message);
+    } finally {
+      setUploadLoading(false);
+      event.target.value = "";
+    }
+  }
+
+  return (
+    <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-7xl flex-col gap-5">
+      <section className="sarvam-card fade-up relative rounded-[1.75rem] p-5">
+        <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-accent">
+            <div className="aira-chip mb-3 px-3 py-1.5 text-xs font-bold">
               <Cpu className="h-3.5 w-3.5" />
-              AI-powered research + execution workspace
+              {isAiraMode ? "Research workspace" : "Execute workspace"}
             </div>
 
-            <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
-              AIRA-X Workspace
+            <h1 className="aira-gradient-text text-3xl font-black tracking-tight">
+              {isAiraMode ? "Ask AIRA" : "Execution Panel"}
             </h1>
 
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-              Ask questions with AIRA or execute workflows with AIRA-X.
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+              {isAiraMode
+                ? "Ask document-backed research questions, upload knowledge, and get grounded answers with citations."
+                : "Workflow results, approval checkpoints, execution plans, and logs appear here when you run AIRA-X."}
             </p>
           </div>
 
-          <div className="hidden rounded-full border border-blue-100 bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm sm:block">
-            {forceWeb ? "Web search enabled" : "Document-first mode"}
-          </div>
+          {isAiraMode && (
+            <div className="lg:w-56">
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
+                <p className="text-[11px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
+                  Mode
+                </p>
+
+                <p className="mt-1 text-sm font-bold text-[var(--text-strong)]">
+                  {forceWeb ? "Web enabled" : "Document-first"}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
-      <div className="flex-1 space-y-5">
-        {turns.length === 0 && !airaXResponse && (
-          <div className="fade-up rounded-[2rem] border border-dashed border-blue-200 bg-white/80 p-10 text-center shadow-sm">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-accent">
-              <Sparkles className="h-5 w-5" />
-            </div>
-
-            <h2 className="text-xl font-semibold text-slate-950">
-              Start with research or execution
-            </h2>
-
-            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-              Use Send for normal AIRA research. Use Run AIRA-X for autonomous
-              workflow execution.
-            </p>
-          </div>
-        )}
-
-        {turns.map((turn, index) => (
-          <div key={`${turn.question}-${index}`} className="fade-up space-y-4">
-            <div className="ml-auto max-w-2xl rounded-[1.5rem] rounded-tr-md bg-accent px-5 py-3 text-sm leading-6 text-white shadow-lg shadow-blue-600/20">
-              {turn.question}
-            </div>
-
-            {turn.error && (
-              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                {turn.error}
+      <div className="grid flex-1 gap-5 xl:grid-cols-[minmax(0,1fr)_430px]">
+        <section className="flex min-h-[520px] flex-col gap-4">
+          {turns.length === 0 && !airaXResponse && (
+            <div className="aira-panel fade-up flex min-h-[300px] flex-col items-center justify-center rounded-[1.75rem] border-dashed p-10 text-center">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--accent-soft)] text-[var(--accent)]">
+                <Sparkles className="h-5 w-5" />
               </div>
-            )}
 
-            {turn.response && (
-              <div className="sarvam-card rounded-[1.75rem] p-5">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                  <div className="rounded-xl bg-blue-50 p-2 text-accent">
-                    <Sparkles className="h-4 w-4" />
-                  </div>
-                  AI Answer
+              <h2 className="text-xl font-bold text-[var(--text-strong)]">
+                {isAiraMode
+                  ? "Ask from your knowledge base"
+                  : "Ready to execute a workflow"}
+              </h2>
+
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
+                {isAiraMode
+                  ? "Upload documents, ask focused questions, and let AIRA return grounded answers with source-backed context."
+                  : "Describe the task you want completed. AIRA-X will plan, execute, validate, and pause for approval when actions are risky."}
+              </p>
+            </div>
+          )}
+
+          {turns.map((turn, index) => (
+            <div key={`${turn.question}-${index}`} className="fade-up space-y-4">
+              <div className="ml-auto max-w-2xl rounded-[1.25rem] rounded-tr-md bg-[var(--accent)] px-5 py-3 text-sm font-semibold leading-6 text-[var(--accent-foreground)] shadow-[var(--shadow-soft)]">
+                {turn.question}
+              </div>
+
+              {turn.error && (
+                <div className="rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-4 text-sm text-[var(--danger)]">
+                  {turn.error}
                 </div>
+              )}
 
-                <div className="whitespace-pre-wrap text-sm leading-7 text-ink">
-                  {turn.response.answer
-                    .replace(/^###\s?/gm, "")
-                    .replace(/^##\s?/gm, "")
-                    .replace(/^#\s?/gm, "")
-                    .replace(/\*\*/g, "")
-                    .replace(/Sources[\s\S]*/i, "")
-                    .trim()}
-                </div>
-
-                {turn.response.citations.length > 0 && (
-                  <div className="mt-5 rounded-[1.25rem] border border-blue-100 bg-blue-50/40 p-4">
-                    <p className="mb-3 text-sm font-semibold text-slate-800">
-                      Sources
-                    </p>
-
-                    <CitationList citations={turn.response.citations} />
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-
-        {airaXResponse && (
-          <div className="sarvam-card fade-up rounded-[1.75rem] p-5">
-            <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
-              <div className="rounded-xl bg-purple-50 p-2 text-purple-600">
-                <Workflow className="h-4 w-4" />
-              </div>
-              AIRA-X Workflow Result
-            </div>
-
-            <div className="space-y-2 text-sm text-slate-700">
-              <p>
-                <strong>Status:</strong> {airaXResponse.status}
-              </p>
-
-              <p>
-                <strong>Decision:</strong> {airaXResponse.decision}
-              </p>
-
-              <p>
-                <strong>Final Answer:</strong>{" "}
-                {airaXResponse.final_answer || "No final answer yet"}
-              </p>
-            </div>
-
-            {airaXResponse.requires_approval && (
-              <div className="mt-5 rounded-2xl border border-orange-300 bg-orange-50 p-5">
-                <div className="flex items-start gap-3">
-                  <div className="rounded-xl bg-orange-100 p-2 text-orange-700">
-                    <ShieldCheck className="h-5 w-5" />
-                  </div>
-
-                  <div className="flex-1">
-                    <h3 className="text-sm font-bold text-orange-900">
-                      Approval Required
-                    </h3>
-
-                    <p className="mt-2 text-sm leading-6 text-orange-800">
-                      AIRA-X paused because this action can modify your
-                      environment and needs your permission before continuing.
-                    </p>
-
-                    <div className="mt-4 rounded-xl border border-orange-200 bg-white p-3 text-sm text-orange-900">
-                      <strong>Pending action:</strong>{" "}
-                      {airaXResponse.pending_action || "Unknown action"}
+              {turn.response && (
+                <div className="sarvam-card rounded-[1.5rem] p-5">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--text-strong)]">
+                    <div className="rounded-xl border border-[var(--border)] bg-[var(--accent-soft)] p-2 text-[var(--accent)]">
+                      <Sparkles className="h-4 w-4" />
                     </div>
-
-                    {renderApprovalContext(airaXResponse.approval_context)}
-
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      <button
-                        type="button"
-                        onClick={handleApproveAiraX}
-                        disabled={approvalLoading || rejectionLoading}
-                        className="rounded-xl bg-orange-600 px-5 py-3 text-sm font-bold text-white shadow-md transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {approvalLoading
-                          ? "Approving and continuing..."
-                          : "Approve & Continue"}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleRejectAiraX}
-                        disabled={approvalLoading || rejectionLoading}
-                        className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-5 py-3 text-sm font-bold text-red-700 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <XCircle className="h-4 w-4" />
-                        {rejectionLoading ? "Rejecting..." : "Reject Action"}
-                      </button>
-                    </div>
+                    AI Answer
                   </div>
-                </div>
-              </div>
-            )}
 
-            {renderCleanupActions(airaXResponse.memory)}
+                  <div className="whitespace-pre-wrap text-sm leading-7 text-[var(--text)]">
+                    {cleanAnswer(turn.response.answer)}
+                  </div>
 
-            <div className="mt-5 space-y-3">
-              <h3 className="text-sm font-semibold text-slate-900">
-                Execution Plan
-              </h3>
-
-              {airaXResponse.plan.map((step) => (
-                <div
-                  key={step.id}
-                  className={`rounded-2xl border p-4 text-sm ${
-                    step.status === "failed" ||
-                    step.status === "blocked" ||
-                    step.status === "rejected"
-                      ? "border-red-200 bg-red-50/60"
-                      : "border-blue-100 bg-blue-50/30"
-                  }`}
-                >
-                  <p className="font-semibold text-slate-900">
-                    {step.id}. {step.title}
-                  </p>
-
-                  <p className="mt-1 text-slate-600">{step.description}</p>
-
-                  <div className="mt-2 grid gap-1 text-xs text-slate-600 sm:grid-cols-2">
-                    <p>
-                      <strong>Status:</strong> {step.status}
-                    </p>
-
-                    <p>
-                      <strong>Agent:</strong> {step.assigned_agent}
-                    </p>
-
-                    {step.tool_name && (
-                      <p>
-                        <strong>Tool:</strong> {step.tool_name}
+                  {turn.response.citations.length > 0 && (
+                    <div className="mt-5 rounded-[1.25rem] border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+                      <p className="mb-3 text-sm font-semibold text-[var(--text-strong)]">
+                        Sources
                       </p>
-                    )}
 
-                    {step.tool_action && (
-                      <p>
-                        <strong>Action:</strong> {step.tool_action}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="mt-3">
-                    <p className="mb-2 text-xs font-semibold text-slate-700">
-                      Result:
-                    </p>
-
-                    {step.result ? (
-                      <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-950 p-4 text-xs leading-6 text-slate-100">
-                        {step.result}
-                      </pre>
-                    ) : (
-                      <p className="text-xs text-slate-500">No result yet</p>
-                    )}
-                  </div>
-
-                  {step.error && (
-                    <div className="mt-3 rounded-xl border border-red-200 bg-white p-3 text-xs text-red-700">
-                      <strong>Error:</strong> {step.error}
+                      <CitationList citations={turn.response.citations} />
                     </div>
                   )}
                 </div>
-              ))}
+              )}
+            </div>
+          ))}
+
+          {loading && (
+            <div className="fade-up w-fit rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-5 py-3 text-sm font-medium text-[var(--text-muted)] shadow-[var(--shadow-soft)]">
+              Researching sources...
+            </div>
+          )}
+
+          {airaXLoading && (
+            <div className="fade-up w-fit rounded-full border border-[var(--border-strong)] bg-[var(--accent-soft)] px-5 py-3 text-sm font-medium text-[var(--accent)] shadow-[var(--shadow-soft)]">
+              Running AIRA-X workflow...
+            </div>
+          )}
+        </section>
+
+        <aside className="space-y-4">
+          <div className="sarvam-card rounded-[1.5rem] p-5">
+            <div className="mb-4 flex items-center gap-2 text-sm font-bold text-[var(--text-strong)]">
+              <FileUp className="h-4 w-4 text-[var(--accent)]" />
+              Document Intake
             </div>
 
-            {airaXResponse.workflow_logs &&
-              airaXResponse.workflow_logs.length > 0 && (
-                <div className="mt-6 rounded-2xl border border-purple-100 bg-purple-50/30 p-4">
-                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                    <History className="h-4 w-4 text-purple-600" />
-                    Workflow Logs
-                  </div>
+            <label className="group flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface-soft)] p-5 text-center transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]">
+              <input
+                type="file"
+                multiple
+                onChange={handleUploadDocuments}
+                disabled={uploadLoading}
+                className="hidden"
+              />
 
-                  <div className="space-y-3">
-                    {airaXResponse.workflow_logs.map((log, index) => (
-                      <div
-                        key={`${log.timestamp}-${index}`}
-                        className="rounded-xl border border-purple-100 bg-white p-3 text-xs text-slate-700"
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="font-semibold text-slate-900">
-                            {log.agent}
-                          </p>
+              <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--accent-soft)] text-[var(--accent)]">
+                <UploadCloud className="h-5 w-5" />
+              </div>
 
-                          <p className="text-slate-400">
-                            {new Date(log.timestamp).toLocaleString()}
-                          </p>
-                        </div>
+              <p className="text-sm font-bold text-[var(--text-strong)]">
+                {uploadLoading ? "Uploading..." : "Upload documents"}
+              </p>
 
-                        <p className="mt-1">
-                          <strong>Event:</strong> {log.event}
-                        </p>
+              <p className="mt-1 max-w-xs text-xs leading-5 text-[var(--text-muted)]">
+                Add PDFs or source files to the knowledge layer, then ask AIRA
+                questions against them.
+              </p>
+            </label>
 
-                        <div className="mt-2 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-                          {renderLogMessage(log)}
+            {uploadMessage && (
+              <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--success)_34%,transparent)] bg-[var(--success-soft)] p-3 text-xs font-semibold text-[var(--success)]">
+                {uploadMessage}
+              </div>
+            )}
 
-                          {!knownLogEvents.includes(log.event) && (
-                            <pre className="mt-2 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">
-                              {JSON.stringify(log.details, null, 2)}
-                            </pre>
-                          )}
-                        </div>
+            {uploadError && (
+              <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-3 text-xs font-semibold text-[var(--danger)]">
+                {uploadError}
+              </div>
+            )}
+          </div>
+
+          {airaXResponse && (
+            <div className="sarvam-card rounded-[1.5rem] p-5">
+              <div className="mb-4 flex items-center gap-2 text-sm font-bold text-[var(--text-strong)]">
+                <Activity className="h-4 w-4 text-[var(--accent)]" />
+                Workflow Result
+              </div>
+
+              <div className="space-y-2 text-sm text-[var(--text)]">
+                <p>
+                  <strong>Status:</strong> {airaXResponse.status}
+                </p>
+
+                <p>
+                  <strong>Decision:</strong> {airaXResponse.decision}
+                </p>
+
+                <p>
+                  <strong>Final Answer:</strong>{" "}
+                  {airaXResponse.final_answer || "No final answer yet"}
+                </p>
+              </div>
+
+              {airaXResponse.requires_approval && (
+                <div className="mt-5 rounded-2xl border border-[color-mix(in_srgb,var(--warning)_34%,transparent)] bg-[var(--warning-soft)] p-5">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-xl border border-[color-mix(in_srgb,var(--warning)_30%,transparent)] bg-[var(--surface-soft)] p-2 text-[var(--warning)]">
+                      <ShieldCheck className="h-5 w-5" />
+                    </div>
+
+                    <div className="flex-1">
+                      <h3 className="text-sm font-bold text-[var(--warning)]">
+                        Approval Required
+                      </h3>
+
+                      <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+                        AIRA-X paused because this action can modify your
+                        environment and needs permission before continuing.
+                      </p>
+
+                      <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] p-3 text-sm text-[var(--text)]">
+                        <strong>Pending action:</strong>{" "}
+                        {airaXResponse.pending_action || "Unknown action"}
                       </div>
-                    ))}
+
+                      {renderApprovalContext(airaXResponse.approval_context)}
+
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={handleApproveAiraX}
+                          disabled={approvalLoading || rejectionLoading}
+                          className="rounded-xl bg-[var(--warning)] px-5 py-3 text-sm font-bold text-white shadow-[var(--shadow-soft)] transition disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {approvalLoading
+                            ? "Approving and continuing..."
+                            : "Approve & Continue"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleRejectAiraX}
+                          disabled={approvalLoading || rejectionLoading}
+                          className="inline-flex items-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--surface-soft)] px-5 py-3 text-sm font-bold text-[var(--danger)] shadow-[var(--shadow-soft)] transition hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <XCircle className="h-4 w-4" />
+                          {rejectionLoading ? "Rejecting..." : "Reject Action"}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
-          </div>
-        )}
 
-        {loading && (
-          <div className="fade-up w-fit rounded-full border border-blue-100 bg-white px-5 py-3 text-sm font-medium text-slate-600 shadow-sm">
-            Researching sources...
-          </div>
-        )}
+              {renderCleanupActions(airaXResponse.memory)}
+            </div>
+          )}
 
-        {airaXLoading && (
-          <div className="fade-up w-fit rounded-full border border-purple-100 bg-white px-5 py-3 text-sm font-medium text-purple-700 shadow-sm">
-            Running AIRA-X workflow...
-          </div>
-        )}
+          {airaXResponse && (
+            <>
+              <div className="sarvam-card rounded-[1.5rem] p-5">
+                <div className="mb-4 flex items-center gap-2 text-sm font-bold text-[var(--text-strong)]">
+                  <GitBranch className="h-4 w-4 text-[var(--accent)]" />
+                  Execution Plan
+                </div>
+
+                <div className="space-y-3">
+                  {airaXResponse.plan.map((step) => (
+                    <div
+                      key={step.id}
+                      className={cn(
+                        "rounded-2xl border p-4 text-sm",
+                        step.status === "failed" ||
+                          step.status === "blocked" ||
+                          step.status === "rejected"
+                          ? "border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)]"
+                          : "border-[var(--border)] bg-[var(--surface-soft)]"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="font-semibold text-[var(--text-strong)]">
+                          {step.id}. {step.title}
+                        </p>
+
+                        <span
+                          className={cn(
+                            "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold",
+                            getWorkflowStatusClass(step.status)
+                          )}
+                        >
+                          {step.status}
+                        </span>
+                      </div>
+
+                      <p className="mt-1 text-[var(--text-muted)]">
+                        {step.description}
+                      </p>
+
+                      <div className="mt-2 grid gap-1 text-xs text-[var(--text-muted)] sm:grid-cols-2">
+                        <p>
+                          <strong>Agent:</strong> {step.assigned_agent}
+                        </p>
+
+                        {step.tool_name && (
+                          <p>
+                            <strong>Tool:</strong> {step.tool_name}
+                          </p>
+                        )}
+
+                        {step.tool_action && (
+                          <p>
+                            <strong>Action:</strong> {step.tool_action}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="mt-3">
+                        <p className="mb-2 text-xs font-semibold text-[var(--text-muted)]">
+                          Result
+                        </p>
+
+                        {step.result ? (
+                          <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-xl p-4 text-xs leading-6">
+                            {step.result}
+                          </pre>
+                        ) : (
+                          <p className="text-xs text-[var(--text-subtle)]">
+                            No result yet
+                          </p>
+                        )}
+                      </div>
+
+                      {step.error && (
+                        <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--surface-soft)] p-3 text-xs text-[var(--danger)]">
+                          <strong>Error:</strong> {step.error}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {airaXResponse.workflow_logs &&
+                airaXResponse.workflow_logs.length > 0 && (
+                  <div className="sarvam-card rounded-[1.5rem] p-5">
+                    <div className="mb-4 flex items-center gap-2 text-sm font-bold text-[var(--text-strong)]">
+                      <History className="h-4 w-4 text-[var(--secondary)]" />
+                      Workflow Logs
+                    </div>
+
+                    <div className="space-y-3">
+                      {airaXResponse.workflow_logs.map((log, index) => (
+                        <div
+                          key={`${log.timestamp}-${index}`}
+                          className="rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] p-3 text-xs text-[var(--text)]"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="font-semibold text-[var(--text-strong)]">
+                              {log.agent}
+                            </p>
+
+                            <p className="text-[var(--text-subtle)]">
+                              {new Date(log.timestamp).toLocaleString()}
+                            </p>
+                          </div>
+
+                          <p className="mt-1">
+                            <strong>Event:</strong> {log.event}
+                          </p>
+
+                          <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-xs leading-5 text-[var(--text-muted)]">
+                            {renderLogMessage(log)}
+
+                            {!knownLogEvents.includes(log.event) && (
+                              <pre className="mt-2 overflow-auto rounded-lg p-3 text-[11px] leading-5">
+                                {JSON.stringify(log.details, null, 2)}
+                              </pre>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+            </>
+          )}
+        </aside>
       </div>
 
       <form
         onSubmit={submit}
-        className="sticky bottom-4 rounded-[2rem] border border-blue-100 bg-white/90 p-4 shadow-[0_18px_50px_rgba(37,99,235,0.12)] backdrop-blur-xl"
+        className="sticky bottom-4 rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-card)] backdrop-blur-xl"
       >
         <textarea
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
-          placeholder="Ask a question or give AIRA-X a task..."
-          className="h-24 w-full resize-none rounded-[1.25rem] border border-blue-100 bg-[#f8fbff] p-4 text-sm text-slate-800 caret-blue-600 outline-none transition-all duration-300 placeholder:text-slate-400 focus:border-accent focus:bg-white focus:shadow-sm"
+          placeholder={
+            isAiraMode
+              ? "Ask AIRA a research question..."
+              : "Ask a question or give AIRA-X a task..."
+          }
+          className="h-24 w-full resize-none rounded-[1.15rem] border border-[var(--border)] bg-[var(--surface-strong)] p-4 text-sm text-[var(--text-strong)] caret-[var(--accent)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
         />
 
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <label className="flex cursor-pointer items-center gap-2 rounded-full bg-blue-50 px-3 py-2 text-sm font-medium text-slate-600">
+        <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <label className="flex w-fit cursor-pointer items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-sm font-medium text-[var(--text-muted)]">
             <input
               type="checkbox"
               checked={forceWeb}
               onChange={(event) => setForceWeb(event.target.checked)}
-              className="accent-blue-600"
+              className="accent-[var(--accent)]"
             />
 
-            <Globe2 className="h-4 w-4 text-accent" />
+            <Globe2 className="h-4 w-4 text-[var(--accent)]" />
             Include web search
           </label>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleRunAiraX}
-              disabled={
-                airaXLoading || loading || approvalLoading || rejectionLoading
-              }
-              className="inline-flex items-center gap-2 rounded-full bg-purple-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-600/20 transition-all duration-300 hover:-translate-y-0.5 hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <Workflow className="h-4 w-4" />
-              {airaXLoading ? "Running..." : "Run AIRA-X"}
-            </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {!isAiraMode && (
+              <button
+                type="button"
+                onClick={handleRunAiraX}
+                disabled={busy}
+                className="inline-flex items-center gap-2 rounded-full bg-[var(--secondary)] px-5 py-2.5 text-sm font-bold text-white shadow-[var(--shadow-soft)] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Workflow className="h-4 w-4" />
+                {airaXLoading ? "Running..." : "Run AIRA-X"}
+              </button>
+            )}
 
             <button
-              disabled={
-                loading || airaXLoading || approvalLoading || rejectionLoading
-              }
-              className="group inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-600/25 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={busy}
+              className="group inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-5 py-2.5 text-sm font-bold text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Send className="h-4 w-4 transition-all duration-700 ease-out group-hover:-translate-y-2 group-hover:translate-x-3 group-hover:rotate-12 group-hover:opacity-0" />
-              Send
+              <Send className="h-4 w-4 transition-all duration-500 ease-out group-hover:-translate-y-1 group-hover:translate-x-1 group-hover:rotate-12" />
+              {isAiraMode ? "Ask AIRA" : "Send"}
             </button>
           </div>
         </div>
