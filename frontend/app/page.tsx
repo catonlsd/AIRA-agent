@@ -6,11 +6,9 @@ import {
   BookOpen,
   CheckCircle2,
   Database,
-  FileText,
   GitBranch,
   LockKeyhole,
   MessageSquare,
-  ShieldCheck,
   Sparkles,
   UploadCloud,
   Workflow,
@@ -82,7 +80,7 @@ function ModeCard({
       <div className="pointer-events-none absolute -right-20 -top-20 h-48 w-48 rounded-full bg-[var(--accent-glow)] blur-3xl transition duration-300 group-hover:scale-125" />
 
       <div className="relative z-10">
-        <div className="mb-6 flex items-start justify-between gap-4">
+        <div className="mb-6 flex items-start">
           <div
             className={cn(
               "flex h-14 w-14 items-center justify-center rounded-2xl border shadow-[var(--shadow-soft)]",
@@ -93,17 +91,6 @@ function ModeCard({
           >
             {icon}
           </div>
-
-          <span
-            className={cn(
-              "rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em]",
-              active
-                ? "border-[var(--border-strong)] bg-[var(--surface)] text-[var(--accent)]"
-                : "border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-subtle)]"
-            )}
-          >
-            {active ? "Current" : eyebrow}
-          </span>
         </div>
 
         <p className="text-xs font-black uppercase tracking-[0.22em] text-[var(--accent)]">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -29,42 +29,35 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type MetricTone = "blue" | "green" | "orange" | "red" | "purple" | "slate";
+type MetricTone = "accent" | "success" | "warning" | "danger" | "secondary" | "neutral";
 
 function formatNumber(value?: number | null) {
   return typeof value === "number" ? value.toLocaleString() : "0";
 }
 
-function getMetricToneClass(tone: MetricTone) {
-  if (tone === "green") {
-    return "text-[var(--success)]";
-  }
-
-  if (tone === "orange") {
-    return "text-[var(--warning)]";
-  }
-
-  if (tone === "red") {
-    return "text-[var(--danger)]";
-  }
-
-  if (tone === "purple") {
-    return "text-[var(--secondary)]";
-  }
-
-  if (tone === "slate") {
-    return "text-[var(--text-strong)]";
-  }
+function getToneTextClass(tone: MetricTone) {
+  if (tone === "success") return "text-[var(--success)]";
+  if (tone === "warning") return "text-[var(--warning)]";
+  if (tone === "danger") return "text-[var(--danger)]";
+  if (tone === "secondary") return "text-[var(--secondary)]";
+  if (tone === "neutral") return "text-[var(--text-strong)]";
 
   return "text-[var(--accent)]";
 }
 
-function getStatusClass(status?: string) {
-  if (status === "completed") {
-    return "status-success";
-  }
+function getToneSoftClass(tone: MetricTone) {
+  if (tone === "success") return "bg-[var(--success-soft)] text-[var(--success)]";
+  if (tone === "warning") return "bg-[var(--warning-soft)] text-[var(--warning)]";
+  if (tone === "danger") return "bg-[var(--danger-soft)] text-[var(--danger)]";
+  if (tone === "secondary") return "bg-[var(--secondary-soft)] text-[var(--secondary)]";
 
-  if (status === "failed" || status === "rejected") {
+  return "bg-[var(--accent-soft)] text-[var(--accent)]";
+}
+
+function getStatusClass(status?: string) {
+  if (status === "completed") return "status-success";
+
+  if (status === "failed" || status === "rejected" || status === "blocked") {
     return "status-danger";
   }
 
@@ -76,11 +69,9 @@ function getStatusClass(status?: string) {
 }
 
 function getStatusIcon(status?: string) {
-  if (status === "completed") {
-    return <CheckCircle2 className="h-3.5 w-3.5" />;
-  }
+  if (status === "completed") return <CheckCircle2 className="h-3.5 w-3.5" />;
 
-  if (status === "failed" || status === "rejected") {
+  if (status === "failed" || status === "rejected" || status === "blocked") {
     return <XCircle className="h-3.5 w-3.5" />;
   }
 
@@ -91,42 +82,79 @@ function getStatusIcon(status?: string) {
   return <Clock className="h-3.5 w-3.5" />;
 }
 
+function PanelHeader({
+  icon,
+  title,
+  description,
+  action,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--accent-soft)] text-[var(--accent)]">
+          {icon}
+        </div>
+
+        <div>
+          <h2 className="text-lg font-black text-[var(--text-strong)]">
+            {title}
+          </h2>
+
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+            {description}
+          </p>
+        </div>
+      </div>
+
+      {action}
+    </div>
+  );
+}
+
 function MetricCard({
   label,
   value,
   icon,
-  tone = "blue",
+  tone = "accent",
   description,
 }: {
   label: string;
-  value: number | undefined;
-  icon?: React.ReactNode;
+  value?: number | null;
+  icon: ReactNode;
   tone?: MetricTone;
-  description?: string;
+  description: string;
 }) {
   return (
     <div className="sarvam-card rounded-[1.35rem] p-5">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
-          {label}
-        </p>
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+            {label}
+          </p>
 
-        {icon && (
-          <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] text-[var(--accent)]">
-            {icon}
-          </div>
-        )}
+          <h3 className={cn("mt-2 text-3xl font-black", getToneTextClass(tone))}>
+            {formatNumber(value)}
+          </h3>
+        </div>
+
+        <div
+          className={cn(
+            "flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--border)]",
+            getToneSoftClass(tone)
+          )}
+        >
+          {icon}
+        </div>
       </div>
 
-      <h3 className={cn("text-3xl font-black", getMetricToneClass(tone))}>
-        {formatNumber(value)}
-      </h3>
-
-      {description && (
-        <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
-          {description}
-        </p>
-      )}
+      <p className="text-xs leading-5 text-[var(--text-muted)]">
+        {description}
+      </p>
     </div>
   );
 }
@@ -135,28 +163,43 @@ function SignalCard({
   title,
   value,
   subtitle,
-  tone = "blue",
+  tone = "accent",
+  icon,
 }: {
   title: string;
-  value: number | undefined;
+  value?: number | null;
   subtitle: string;
   tone?: MetricTone;
+  icon?: ReactNode;
 }) {
   return (
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-      <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
-        {title}
-      </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+            {title}
+          </p>
 
-      <div className="mt-2 flex items-end justify-between gap-3">
-        <p className={cn("text-2xl font-black", getMetricToneClass(tone))}>
-          {formatNumber(value)}
-        </p>
+          <p className={cn("mt-2 text-2xl font-black", getToneTextClass(tone))}>
+            {formatNumber(value)}
+          </p>
+        </div>
 
-        <p className="max-w-[9rem] text-right text-xs leading-5 text-[var(--text-muted)]">
-          {subtitle}
-        </p>
+        {icon && (
+          <div
+            className={cn(
+              "flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-[var(--border)]",
+              getToneSoftClass(tone)
+            )}
+          >
+            {icon}
+          </div>
+        )}
       </div>
+
+      <p className="mt-3 text-xs leading-5 text-[var(--text-muted)]">
+        {subtitle}
+      </p>
     </div>
   );
 }
@@ -181,7 +224,7 @@ function WorkflowRunCard({ run }: { run: AiraXWorkflowRun }) {
         {run.requires_approval && (
           <span className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-black status-warning">
             <ShieldAlert className="h-3.5 w-3.5" />
-            approval
+            approval required
           </span>
         )}
       </div>
@@ -194,8 +237,8 @@ function WorkflowRunCard({ run }: { run: AiraXWorkflowRun }) {
         {run.final_answer || run.decision || "No final output recorded yet."}
       </p>
 
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <p className="max-w-[12rem] truncate font-mono text-[11px] text-[var(--text-subtle)]">
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <p className="max-w-[14rem] truncate font-mono text-[11px] text-[var(--text-subtle)]">
           {run.run_id}
         </p>
 
@@ -241,9 +284,7 @@ export default function OverviewPage() {
       "Safely remove completed, failed, and rejected workflow history? Active approval, retrying, executing, and approval-processing runs will be skipped."
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     try {
       setCleanupLoading(true);
@@ -281,9 +322,7 @@ export default function OverviewPage() {
   );
 
   const completionRate = useMemo(() => {
-    if (!metrics?.total_runs) {
-      return 0;
-    }
+    if (!metrics?.total_runs) return 0;
 
     return Math.round((metrics.completed_runs / metrics.total_runs) * 100);
   }, [metrics]);
@@ -298,7 +337,7 @@ export default function OverviewPage() {
         <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-[var(--accent-glow)] blur-3xl" />
         <div className="pointer-events-none absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-[var(--secondary-glow)] blur-3xl" />
 
-        <div className="relative z-10 grid gap-6 lg:grid-cols-[1fr_23rem]">
+        <div className="relative z-10 grid gap-6 lg:grid-cols-[1fr_22rem]">
           <div>
             <div className="aira-chip mb-4 px-3 py-1.5 text-xs font-bold">
               <Activity className="h-3.5 w-3.5" />
@@ -310,9 +349,9 @@ export default function OverviewPage() {
             </h1>
 
             <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
-              Monitor execution health, workflow outcomes, approval queues, Git
-              preflights, cleanup activity, and recent autonomous run history
-              from one focused dashboard.
+              Monitor workflow health, approval queues, Git preflights, cleanup
+              activity, validation traces, and recent autonomous execution
+              history from one focused console.
             </p>
 
             {cleanupMessage && (
@@ -380,142 +419,137 @@ export default function OverviewPage() {
               label="Agents"
               value={overview?.agent_count}
               icon={<BrainCircuit className="h-4 w-4" />}
-              tone="blue"
+              tone="accent"
+              description="Specialist modules available to plan, execute, validate, and reflect."
             />
 
             <MetricCard
               label="Tools"
               value={overview?.tool_count}
               icon={<Wrench className="h-4 w-4" />}
-              tone="purple"
+              tone="secondary"
+              description="Execution capabilities registered with policy boundaries."
             />
 
             <MetricCard
               label="Workflow Runs"
               value={metrics.total_runs}
               icon={<Workflow className="h-4 w-4" />}
-              tone="blue"
+              tone="accent"
+              description="Saved autonomous workflow attempts and outcomes."
             />
 
             <MetricCard
               label="Tool Calls"
               value={metrics.total_tool_calls}
               icon={<Sparkles className="h-4 w-4" />}
-              tone="slate"
+              tone="neutral"
+              description="Total tool invocations recorded by workflow execution."
             />
           </section>
 
           <section className="grid gap-4 xl:grid-cols-[1fr_0.8fr]">
             <div className="sarvam-card rounded-[1.5rem] p-5">
-              <div className="mb-5 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-black text-[var(--text-strong)]">
-                    Workflow Outcomes
-                  </h2>
+              <PanelHeader
+                icon={<Workflow className="h-4 w-4" />}
+                title="Workflow Outcomes"
+                description="Completion, failures, approvals, rejected runs, and active attention."
+                action={
+                  <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-3 text-right">
+                    <p className="text-[11px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
+                      Completion
+                    </p>
 
-                  <p className="mt-1 text-sm text-[var(--text-muted)]">
-                    Completion, failures, approvals, and stopped runs.
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-3 text-right">
-                  <p className="text-[11px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
-                    Completion rate
-                  </p>
-
-                  <p className="mt-1 text-2xl font-black text-[var(--success)]">
-                    {completionRate}%
-                  </p>
-                </div>
-              </div>
+                    <p className="mt-1 text-2xl font-black text-[var(--success)]">
+                      {completionRate}%
+                    </p>
+                  </div>
+                }
+              />
 
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <SignalCard
                   title="Completed"
                   value={metrics.completed_runs}
                   subtitle="Successful final state"
-                  tone="green"
+                  tone="success"
+                  icon={<CheckCircle2 className="h-4 w-4" />}
                 />
                 <SignalCard
                   title="Failed"
                   value={metrics.failed_runs}
                   subtitle="Needs inspection"
-                  tone="red"
+                  tone="danger"
+                  icon={<XCircle className="h-4 w-4" />}
                 />
                 <SignalCard
                   title="Needs Approval"
                   value={metrics.requires_approval_runs}
                   subtitle="Waiting on user"
-                  tone="orange"
+                  tone="warning"
+                  icon={<ShieldAlert className="h-4 w-4" />}
                 />
                 <SignalCard
                   title="Rejected"
                   value={metrics.rejected_runs}
                   subtitle="Stopped by user"
-                  tone="red"
+                  tone="danger"
+                  icon={<XCircle className="h-4 w-4" />}
                 />
                 <SignalCard
-                  title="Approval Resolved"
+                  title="Resolved"
                   value={metrics.approval_resolved_runs}
                   subtitle="Handled decisions"
-                  tone="blue"
+                  tone="accent"
+                  icon={<ShieldCheck className="h-4 w-4" />}
                 />
                 <SignalCard
                   title="Active Attention"
                   value={activeAttentionCount}
                   subtitle="Pending or processing"
-                  tone="orange"
+                  tone="warning"
+                  icon={<Activity className="h-4 w-4" />}
                 />
               </div>
             </div>
 
             <div className="sarvam-card rounded-[1.5rem] p-5">
-              <div className="mb-5 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--accent-soft)] text-[var(--accent)]">
-                  <ShieldCheck className="h-4 w-4" />
-                </div>
-
-                <div>
-                  <h2 className="text-lg font-black text-[var(--text-strong)]">
-                    Safety Signals
-                  </h2>
-
-                  <p className="mt-1 text-sm text-[var(--text-muted)]">
-                    Approval and recovery health.
-                  </p>
-                </div>
-              </div>
+              <PanelHeader
+                icon={<ShieldCheck className="h-4 w-4" />}
+                title="Safety Signals"
+                description="Approval and recovery health across gated execution."
+              />
 
               <div className="grid gap-3">
                 <SignalCard
-                  title="Approvals In Progress"
+                  title="In Progress"
                   value={metrics.approval_in_progress_runs}
                   subtitle="Currently executing gated actions"
-                  tone="orange"
+                  tone="warning"
                 />
                 <SignalCard
-                  title="Approved Actions"
+                  title="Approved"
                   value={metrics.approval_approved_runs}
                   subtitle="User allowed continuation"
-                  tone="green"
+                  tone="success"
                 />
                 <SignalCard
-                  title="Rejected Actions"
+                  title="Rejected"
                   value={metrics.approval_rejected_runs}
                   subtitle="User stopped execution"
-                  tone="red"
+                  tone="danger"
                 />
                 <SignalCard
                   title="Resume Failures"
                   value={metrics.approval_resume_failed_runs}
                   subtitle="Approval succeeded but resume failed"
-                  tone="red"
+                  tone="danger"
                 />
                 <SignalCard
                   title="Stale Recoveries"
                   value={metrics.stale_approval_recovery_runs}
                   subtitle="Deadlocked approvals safely stopped"
-                  tone="purple"
+                  tone="secondary"
                 />
               </div>
             </div>
@@ -523,116 +557,88 @@ export default function OverviewPage() {
 
           <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
             <div className="sarvam-card rounded-[1.5rem] p-5">
-              <div className="mb-5 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--secondary-soft)] text-[var(--secondary)]">
-                  <GitBranch className="h-4 w-4" />
-                </div>
-
-                <div>
-                  <h2 className="text-lg font-black text-[var(--text-strong)]">
-                    Git Preflight Coverage
-                  </h2>
-
-                  <p className="mt-1 text-sm text-[var(--text-muted)]">
-                    Repository-changing actions checked before approval.
-                  </p>
-                </div>
-              </div>
+              <PanelHeader
+                icon={<GitBranch className="h-4 w-4" />}
+                title="Git Preflight Coverage"
+                description="Repository-changing actions checked before approval."
+              />
 
               <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
                 <SignalCard
                   title="Git Preflights"
                   value={metrics.git_preflight_runs}
                   subtitle="All Git-gated actions"
-                  tone="purple"
+                  tone="secondary"
+                  icon={<GitBranch className="h-4 w-4" />}
                 />
                 <SignalCard
                   title="Write Preflights"
                   value={metrics.git_write_preflight_runs}
-                  subtitle="Stage / commit checks"
-                  tone="orange"
+                  subtitle="Stage and commit checks"
+                  tone="warning"
+                  icon={<GitCommit className="h-4 w-4" />}
                 />
                 <SignalCard
                   title="Push Preflights"
                   value={metrics.git_push_preflight_runs}
                   subtitle="Remote push checks"
-                  tone="red"
+                  tone="danger"
+                  icon={<UploadCloud className="h-4 w-4" />}
                 />
               </div>
             </div>
 
             <div className="sarvam-card rounded-[1.5rem] p-5">
-              <div className="mb-5 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--success-soft)] text-[var(--success)]">
-                  <GitCommit className="h-4 w-4" />
-                </div>
-
-                <div>
-                  <h2 className="text-lg font-black text-[var(--text-strong)]">
-                    Cleanup & Audit
-                  </h2>
-
-                  <p className="mt-1 text-sm text-[var(--text-muted)]">
-                    Safe cleanup actions and trace volume.
-                  </p>
-                </div>
-              </div>
+              <PanelHeader
+                icon={<History className="h-4 w-4" />}
+                title="Cleanup & Audit"
+                description="Cleanup operations, retry count, and trace volume."
+              />
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <SignalCard
                   title="Cleanup Runs"
                   value={metrics.cleanup_runs}
                   subtitle="Workflows with cleanup"
-                  tone="green"
+                  tone="success"
                 />
                 <SignalCard
                   title="Cleanup Actions"
                   value={metrics.total_cleanup_actions}
                   subtitle="Cleanup operations performed"
-                  tone="green"
+                  tone="success"
                 />
                 <SignalCard
                   title="Total Logs"
                   value={metrics.total_logs}
                   subtitle="Workflow trace events"
-                  tone="blue"
+                  tone="accent"
                 />
                 <SignalCard
                   title="Total Retries"
                   value={metrics.total_retries}
                   subtitle="Self-correction attempts"
-                  tone="purple"
+                  tone="secondary"
                 />
               </div>
             </div>
           </section>
 
           <section className="sarvam-card rounded-[1.5rem] p-5">
-            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--accent-soft)] text-[var(--accent)]">
-                  <History className="h-4 w-4" />
-                </div>
-
-                <div>
-                  <h2 className="text-lg font-black text-[var(--text-strong)]">
-                    Latest Workflow Runs
-                  </h2>
-
-                  <p className="mt-1 text-sm text-[var(--text-muted)]">
-                    Recent execution history and outcomes.
-                  </p>
-                </div>
-              </div>
-
-              <Link
-                href="/workflows"
-                className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
-              >
-                View all workflows
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
+            <PanelHeader
+              icon={<History className="h-4 w-4" />}
+              title="Latest Workflow Runs"
+              description="Recent execution history and outcomes."
+              action={
+                <Link
+                  href="/workflows"
+                  className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                >
+                  View all workflows
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              }
+            />
 
             {latestRuns.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface-soft)] p-8 text-center">

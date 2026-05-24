@@ -41,9 +41,18 @@ export function ModeProvider({ children }: { children: ReactNode }) {
     setModeState(getStoredMode());
   }, []);
 
+  useEffect(() => {
+    document.documentElement.dataset.airaMode = mode;
+
+    return () => {
+      delete document.documentElement.dataset.airaMode;
+    };
+  }, [mode]);
+
   function setMode(nextMode: AiraOperatingMode) {
     setModeState(nextMode);
     window.localStorage.setItem(STORAGE_KEY, nextMode);
+    document.documentElement.dataset.airaMode = nextMode;
   }
 
   const value = useMemo(
