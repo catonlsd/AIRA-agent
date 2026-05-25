@@ -21,7 +21,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useAiraMode, type AiraOperatingMode } from "@/components/mode-provider";
+import {
+  useAiraMode,
+  type AiraOperatingMode,
+} from "@/components/mode-provider";
 
 type NavItem = {
   href: string;
@@ -252,8 +255,7 @@ function NavLink({
 
       <div
         className={cn(
-          "relative flex shrink-0 items-center justify-center rounded-2xl border transition-all duration-200",
-          collapsed ? "h-10 w-10" : "h-10 w-10",
+          "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border transition-all duration-200",
           active
             ? "border-[var(--border-strong)] bg-[var(--accent-soft)] text-[var(--accent)]"
             : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-subtle)] group-hover:border-[var(--border-strong)] group-hover:text-[var(--accent)]"
@@ -349,83 +351,14 @@ export function Nav() {
         <div className="absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-[var(--border-strong)] to-transparent" />
       </div>
 
-      <div className={cn("mb-4 flex items-center gap-2", collapsed && "justify-center")}>
-        <Link
-          href={getModeHome(mode)}
-          title={collapsed ? `${getModeTitle(mode)} Home` : undefined}
-          className={cn(
-            "group block border border-[var(--border)] bg-[var(--surface-soft)] shadow-[var(--shadow-soft)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]",
-            collapsed
-              ? "rounded-2xl p-2"
-              : "flex-1 rounded-[1.75rem] p-4"
-          )}
-        >
-          <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
-            <div
-              className={cn(
-                "relative flex items-center justify-center rounded-2xl border border-[var(--border-strong)] bg-[var(--accent-soft)] text-[var(--accent)] shadow-[0_0_30px_var(--accent-glow)] transition-transform duration-200 group-hover:rotate-2 group-hover:scale-105",
-                collapsed ? "h-11 w-11" : "h-12 w-12"
-              )}
-            >
-              {mode === "aira" ? (
-                <BookOpen className="h-5 w-5" />
-              ) : (
-                <Sparkles className="h-5 w-5" />
-              )}
-
-              <span className="absolute inset-0 rounded-2xl bg-[var(--accent-soft)] blur-xl" />
-            </div>
-
-            {!collapsed && (
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <h1 className="truncate text-xl font-black tracking-tight text-[var(--text-strong)]">
-                    {getModeTitle(mode)}
-                  </h1>
-
-                  <span className="rounded-full border border-[var(--border-strong)] bg-[var(--accent-soft)] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.18em] text-[var(--accent)]">
-                    {mode === "aira" ? "Research" : "Ops"}
-                  </span>
-                </div>
-
-                <p className="mt-1 text-xs font-semibold uppercase tracking-[0.22em] text-[var(--accent)]">
-                  {getModeSubtitle(mode)}
-                </p>
-              </div>
-            )}
-          </div>
-
-          {!collapsed && (
-            <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--text-subtle)]">
-                  Operating Mode
-                </span>
-
-                {mode === "aira" ? (
-                  <BookOpen className="h-3.5 w-3.5 text-[var(--accent)]" />
-                ) : (
-                  <Zap className="h-3.5 w-3.5 text-[var(--accent)]" />
-                )}
-              </div>
-
-              <p className="text-xs leading-5 text-[var(--text-muted)]">
-                {getModeDescription(mode)}
-              </p>
-            </div>
-          )}
-        </Link>
-
+      <div className={cn("mb-3 flex", collapsed ? "justify-center" : "justify-end")}>
         <button
           type="button"
           onClick={toggleSidebar}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-expanded={!collapsed}
-          className={cn(
-            "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)] shadow-[var(--shadow-soft)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--accent)]",
-            collapsed ? "absolute right-[-0.8rem] top-5 z-50" : ""
-          )}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)] shadow-[var(--shadow-soft)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--accent)]"
         >
           <ChevronRight
             className={cn(
@@ -435,6 +368,70 @@ export function Nav() {
           />
         </button>
       </div>
+
+      <Link
+        href={getModeHome(mode)}
+        title={collapsed ? `${getModeTitle(mode)} Home` : undefined}
+        className={cn(
+          "group mb-4 block border border-[var(--border)] bg-[var(--surface-soft)] shadow-[var(--shadow-soft)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]",
+          collapsed ? "rounded-2xl p-2" : "rounded-[1.75rem] p-4"
+        )}
+      >
+        <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
+          <div
+            className={cn(
+              "relative flex items-center justify-center rounded-2xl border border-[var(--border-strong)] bg-[var(--accent-soft)] text-[var(--accent)] shadow-[0_0_30px_var(--accent-glow)] transition-transform duration-200 group-hover:rotate-2 group-hover:scale-105",
+              collapsed ? "h-11 w-11" : "h-12 w-12"
+            )}
+          >
+            {mode === "aira" ? (
+              <BookOpen className="h-5 w-5" />
+            ) : (
+              <Sparkles className="h-5 w-5" />
+            )}
+
+            <span className="absolute inset-0 rounded-2xl bg-[var(--accent-soft)] blur-xl" />
+          </div>
+
+          {!collapsed && (
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className="truncate text-xl font-black tracking-tight text-[var(--text-strong)]">
+                  {getModeTitle(mode)}
+                </h1>
+
+                <span className="rounded-full border border-[var(--border-strong)] bg-[var(--accent-soft)] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.18em] text-[var(--accent)]">
+                  {mode === "aira" ? "Research" : "Ops"}
+                </span>
+              </div>
+
+              <p className="mt-1 text-xs font-semibold uppercase tracking-[0.22em] text-[var(--accent)]">
+                {getModeSubtitle(mode)}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {!collapsed && (
+          <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--text-subtle)]">
+                Operating Mode
+              </span>
+
+              {mode === "aira" ? (
+                <BookOpen className="h-3.5 w-3.5 text-[var(--accent)]" />
+              ) : (
+                <Zap className="h-3.5 w-3.5 text-[var(--accent)]" />
+              )}
+            </div>
+
+            <p className="text-xs leading-5 text-[var(--text-muted)]">
+              {getModeDescription(mode)}
+            </p>
+          </div>
+        )}
+      </Link>
 
       <div className="mb-5">
         <ModeSwitcher collapsed={collapsed} />
