@@ -12,17 +12,27 @@ class QueryUnderstandingAgent:
             "today",
             "recent",
             "news",
-            "2026",
             "now",
             "web",
+            "internet",
+            "online",
+            "search",
+            "look up",
+            "browse",
         ]
 
         document_terms = [
             "document",
+            "documents",
             "paper",
             "pdf",
             "uploaded",
+            "upload",
+            "file",
+            "files",
             "source",
+            "sources",
+            "knowledge base",
             "summarize",
             "summary",
             "key points",
@@ -34,55 +44,60 @@ class QueryUnderstandingAgent:
             "objectives",
             "findings",
             "conclusion",
-            "explain this",
+            "explain this document",
             "this document",
             "the document",
-            "it",
-            "this",
+            "this pdf",
+            "the pdf",
+            "this file",
+            "the file",
+            "from my document",
+            "from the document",
+            "based on my document",
+            "based on the document",
+            "according to the document",
+            "according to my file",
         ]
 
         follow_up_terms = [
-            "it",
-            "this",
-            "that",
-            "they",
-            "them",
-            "key points",
-            "main points",
-            "summarize",
-            "summary",
-            "explain more",
+            "summarize it",
             "explain it",
-            "list",
-            "limitations",
-            "advantages",
-            "disadvantages",
-            "takeaways",
-            "what about",
-            "tell me more",
+            "explain this",
+            "tell me more about it",
+            "what about this",
+            "what about that",
+            "list the key points",
+            "list main points",
+            "what are the key points",
+            "what are the main points",
+            "give me the overview",
         ]
 
         needs_web = any(term in lower for term in latest_terms)
-
         is_document_question = any(term in lower for term in document_terms)
         is_follow_up = any(term in lower for term in follow_up_terms)
 
-        needs_documents = True if not needs_web else is_document_question
+        # Important:
+        # Do NOT default every question to documents.
+        # Casual and general questions should be answerable without RAG.
+        # Documents are used only when the user clearly asks about uploaded/source content.
+        needs_documents = is_document_question or (is_follow_up and not needs_web)
 
         rewritten = cleaned_question
 
-        if is_follow_up and not needs_web:
+        if needs_documents and is_follow_up and not needs_web:
             rewritten = (
                 f"{cleaned_question} "
                 "Answer using the currently uploaded document and the most relevant document chunks. "
                 "Focus on the same document/topic discussed in the recent conversation."
             )
 
-        reason = (
-            "Detected web intent from recency terms."
-            if needs_web
-            else "Detected document or follow-up intent; using uploaded documents."
-        )
+        if needs_web:
+            reason = "Detected web intent from recency/search terms."
+        elif needs_documents:
+            reason = "Detected uploaded-document intent; using retrieved document chunks."
+        else:
+            reason = "Detected general conversation intent; answer without document retrieval."
 
         return QueryPlan(
             rewritten_query=rewritten,

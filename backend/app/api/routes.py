@@ -1,4 +1,3 @@
-import shutil
 from pathlib import Path
 from uuid import uuid4
 
@@ -53,13 +52,18 @@ def validate_upload_file(file: UploadFile) -> str:
     if clean_extension not in allowed_extensions:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type '{suffix}'. Allowed types: {', '.join(sorted(allowed_extensions))}",
+            detail=(
+                f"Unsupported file type '{suffix}'. Allowed types: "
+                f"{', '.join(sorted(allowed_extensions))}"
+            ),
         )
 
     if suffix not in SUPPORTED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"File type '{suffix}' is not supported by the document parser.",
+            detail=(
+                f"File type '{suffix}' is not supported by the document parser."
+            ),
         )
 
     return suffix
@@ -86,12 +90,213 @@ def save_upload_file(file: UploadFile, stored_path: Path) -> int:
 
                 raise HTTPException(
                     status_code=413,
-                    detail=f"File too large. Maximum allowed size is {settings.max_upload_size_mb} MB.",
+                    detail=(
+                        "File too large. Maximum allowed size is "
+                        f"{settings.max_upload_size_mb} MB."
+                    ),
                 )
 
             buffer.write(chunk)
 
     return total_size
+
+
+def normalize_message_text(text: str) -> str:
+    normalized = text.lower().strip()
+
+    for old, new in {
+        "’": "'",
+        "‘": "'",
+        "“": '"',
+        "”": '"',
+        "?": "",
+        "!": "",
+        ".": "",
+        ",": "",
+        ":": "",
+        ";": "",
+    }.items():
+        normalized = normalized.replace(old, new)
+
+    return " ".join(normalized.split())
+
+
+def matches_any(normalized: str, phrases: set[str]) -> bool:
+    return normalized in phrases or any(
+        normalized.startswith(f"{phrase} ") for phrase in phrases
+    )
+
+
+def get_casual_chat_response(question: str) -> dict | None:
+    normalized = normalize_message_text(question)
+
+    greeting_messages = {
+        "hi",
+        "hii",
+        "hello",
+        "hey",
+        "heyy",
+        "yo",
+        "namaste",
+        "good morning",
+        "good afternoon",
+        "good evening",
+    }
+
+    wellbeing_messages = {
+        "how are you",
+        "how r u",
+        "how are u",
+        "how are you doing",
+        "how is it going",
+        "hows it going",
+        "what's up",
+        "whats up",
+        "sup",
+    }
+
+    activity_messages = {
+        "what are you doing",
+        "what r you doing",
+        "what are u doing",
+        "what do you do",
+        "what are you working on",
+        "what is your work",
+    }
+
+    thanks_messages = {
+        "thanks",
+        "thank you",
+        "thank u",
+        "ty",
+        "okay thanks",
+        "ok thanks",
+        "great thanks",
+    }
+
+    goodbye_messages = {
+        "bye",
+        "goodbye",
+        "see you",
+        "see ya",
+        "talk to you later",
+    }
+
+    capability_messages = {
+        "help",
+        "what can you do",
+        "what can u do",
+        "how can you help",
+        "how can u help",
+        "how can you assist me",
+        "how can u assist me",
+        "how can you assist",
+        "how can you support me",
+        "how can you be useful",
+        "what can aira do",
+        "who are you",
+        "what is aira",
+        "what is aira x",
+        "what is aira-x",
+        "tell me about aira",
+        "tell me about yourself",
+    }
+
+    if matches_any(normalized, greeting_messages):
+        return {
+            "answer": (
+                "Hey! I’m AIRA. You can ask me a normal question, upload "
+                "documents for source-backed answers, or switch to AIRA-X "
+                "when you want tasks planned and executed."
+            ),
+            "intent": "casual_chat",
+            "confidence": "high",
+        }
+
+    if matches_any(normalized, wellbeing_messages):
+        return {
+            "answer": (
+                "I’m doing great and ready to help. You can ask me a general "
+                "question, ask about uploaded documents, request summaries, or "
+                "switch to AIRA-X for execution workflows."
+            ),
+            "intent": "casual_chat",
+            "confidence": "high",
+        }
+
+    if matches_any(normalized, activity_messages):
+        return {
+            "answer": (
+                "I’m ready to help you research, understand documents, summarize "
+                "sources, answer general questions, and support AIRA-X workflows "
+                "when you want tasks executed."
+            ),
+            "intent": "casual_chat",
+            "confidence": "high",
+        }
+
+    if matches_any(normalized, thanks_messages):
+        return {
+            "answer": (
+                "You’re welcome! Send me the next question whenever you’re ready."
+            ),
+            "intent": "casual_chat",
+            "confidence": "high",
+        }
+
+    if matches_any(normalized, goodbye_messages):
+        return {
+            "answer": "See you! I’ll be ready when you want to continue.",
+            "intent": "casual_chat",
+            "confidence": "high",
+        }
+
+    if matches_any(normalized, capability_messages):
+        return {
+            "answer": (
+                "I can help in two modes:\n\n"
+                "AIRA mode: I can answer general questions, upload and read "
+                "documents, summarize sources, retrieve relevant context, and "
+                "return citation-backed answers when documents are involved.\n\n"
+                "AIRA-X mode: I can turn a task into an execution workflow, plan "
+                "steps, use tools, pause for approval on risky actions, validate "
+                "results, and keep workflow logs."
+            ),
+            "intent": "capability_help",
+            "confidence": "high",
+        }
+
+    return None
+
+
+def build_direct_chat_response(
+    question: str,
+    answer_text: str,
+    intent: str,
+    confidence: str,
+    db: Session,
+) -> dict:
+    citations: list[dict] = []
+
+    MemoryAgent().store_turn(db, question, answer_text, citations)
+
+    return {
+        "answer": answer_text,
+        "citations": citations,
+        "plan": {
+            "intent": intent,
+            "rewritten_query": question,
+            "needs_documents": False,
+            "needs_web": False,
+        },
+        "confidence": confidence,
+        "metadata": {
+            "route": intent,
+            "web_enabled": False,
+            "web_results_count": 0,
+            "document_chunks_count": 0,
+        },
+    }
 
 
 def is_vague_document_followup(question: str) -> bool:
@@ -159,10 +364,7 @@ def build_contextual_query(question: str, history: list[dict]) -> str:
     if not recent_context.strip():
         return question
 
-    return (
-        f"{question}\n\n"
-        f"Recent conversation context:\n{recent_context}"
-    )
+    return f"{question}\n\nRecent conversation context:\n{recent_context}"
 
 
 @router.post("/upload")
@@ -198,7 +400,10 @@ def upload_documents(
 
                 raise HTTPException(
                     status_code=400,
-                    detail=f"No readable text found in '{file.filename}'. Please upload a text-based document.",
+                    detail=(
+                        f"No readable text found in '{file.filename}'. "
+                        "Please upload a text-based document."
+                    ),
                 )
 
             document = Document(
@@ -266,7 +471,10 @@ def upload_documents(
 
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to process '{file.filename}'. Please try another file.",
+                detail=(
+                    f"Failed to process '{file.filename}'. "
+                    "Please try another file."
+                ),
             ) from error
 
     return {
@@ -281,6 +489,17 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)) -> dict:
 
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
+    casual_response = get_casual_chat_response(question)
+
+    if casual_response:
+        return build_direct_chat_response(
+            question=question,
+            answer_text=casual_response["answer"],
+            intent=casual_response["intent"],
+            confidence=casual_response["confidence"],
+            db=db,
+        )
 
     try:
         memory_agent = MemoryAgent()
@@ -328,6 +547,7 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)) -> dict:
             "plan": plan.model_dump(),
             "confidence": answer.confidence,
             "metadata": {
+                "route": "rag_or_web",
                 "web_enabled": payload.use_web,
                 "web_results_count": len(web_results),
                 "document_chunks_count": len(doc_chunks),

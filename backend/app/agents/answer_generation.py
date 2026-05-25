@@ -57,14 +57,89 @@ class AnswerGenerationAgent:
             )
 
         if not document_sources and not web_sources:
+            return self._general_answer(question, history, preferences)
+
+        return self._source_grounded_answer(
+            question=question,
+            document_sources=document_sources,
+            web_sources=web_sources,
+            citations=citations,
+            history=history,
+            preferences=preferences,
+        )
+
+    def _general_answer(
+        self,
+        question: str,
+        history: list[dict],
+        preferences: dict,
+    ) -> AgentAnswer:
+        if self._looks_like_document_request(question):
             return AgentAnswer(
-                answer="The provided sources do not contain enough information to answer this confidently.",
+                answer=(
+                    "I could not find enough relevant uploaded document content "
+                    "to answer that confidently. Please upload the document first, "
+                    "or try asking about a specific uploaded file, section, topic, "
+                    "or page."
+                ),
                 citations=[],
                 confidence="low",
             )
 
         system = """
-You are an AI Research Assistant.
+You are AIRA, a polished AI research and general assistant.
+
+You can answer normal everyday questions, explain concepts, help with learning,
+coding, project planning, writing, research, and document-focused work.
+
+Rules:
+1. Answer naturally and directly.
+2. Do not claim you used uploaded documents unless document sources are provided.
+3. Do not mention missing sources for general questions.
+4. Do not include a Sources section for general answers.
+5. Do not fabricate citations.
+6. Keep the tone friendly, clear, and professional.
+7. For simple greetings or small talk, reply briefly and warmly.
+8. For educational or technical questions, give a helpful structured answer.
+9. If the question needs current/live information, say that web search should be enabled.
+10. Avoid saying "the provided sources do not contain enough information" unless the user specifically asked about uploaded documents.
+"""
+
+        prompt = f"""
+User question:
+{question}
+
+Recent conversation summary:
+{history if history else "No recent conversation."}
+
+User preferences:
+{preferences if preferences else "No saved preferences."}
+
+Write the final answer now.
+"""
+
+        text = self.llm.generate(system, prompt).strip()
+
+        if not text:
+            text = "I’m ready to help. Could you tell me what you want to work on?"
+
+        return AgentAnswer(
+            answer=text,
+            citations=[],
+            confidence="medium",
+        )
+
+    def _source_grounded_answer(
+        self,
+        question: str,
+        document_sources: list[str],
+        web_sources: list[str],
+        citations: list[Citation],
+        history: list[dict],
+        preferences: dict,
+    ) -> AgentAnswer:
+        system = """
+You are AIRA, an AI Research Assistant.
 
 Your job is to answer using only the provided document sources and web sources.
 
@@ -76,7 +151,7 @@ Rules:
 5. Do not say "based on the context" repeatedly.
 6. If the provided sources do not support the answer, say:
    "The provided sources do not contain enough information to answer this confidently."
-7. At the end, include a clean Sources section.
+7. At the end, include a clean Sources section only when sources are actually used.
 8. For document sources, use this format:
    - Document name — Page X
 9. For web sources, use this format:
@@ -108,25 +183,67 @@ Write the final answer now.
         text = self.llm.generate(system, prompt).strip()
         filtered_citations = self._filter_relevant_citations(text, citations)
 
+        if self._is_unsupported_source_answer(text):
+            return AgentAnswer(
+                answer=text,
+                citations=[],
+                confidence="low",
+            )
+
         return AgentAnswer(
             answer=text,
             citations=filtered_citations,
-            confidence="medium" if filtered_citations else "low",
+            confidence="medium" if filtered_citations else "medium",
         )
+
+    def _looks_like_document_request(self, question: str) -> bool:
+        lower = question.lower()
+
+        document_terms = [
+            "uploaded document",
+            "uploaded file",
+            "my document",
+            "my file",
+            "the document",
+            "this document",
+            "the pdf",
+            "this pdf",
+            "summarize document",
+            "summarize the document",
+            "summarize my document",
+            "summarize uploaded",
+            "according to the document",
+            "based on the document",
+            "from the document",
+            "from my file",
+            "in the pdf",
+            "knowledge base",
+        ]
+
+        return any(term in lower for term in document_terms)
+
+    def _is_unsupported_source_answer(self, answer: str) -> bool:
+        unsupported_message = (
+            "the provided sources do not contain enough information to answer this confidently"
+        )
+
+        return unsupported_message in answer.lower()
 
     def _filter_relevant_citations(
         self,
         answer: str,
         citations: list[Citation],
     ) -> list[Citation]:
-        unsupported_message = (
-            "the provided sources do not contain enough information to answer this confidently"
-        )
-
-        if unsupported_message in answer.lower():
+        if self._is_unsupported_source_answer(answer):
             return []
 
-        answer_without_sources = answer.split("Sources:")[0]
+        answer_without_sources = re.split(
+            r"\n\s*(sources|references)\s*:?\s*\n",
+            answer,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0]
+
         answer_words = self._important_words(answer_without_sources)
 
         if not answer_words:
@@ -155,13 +272,49 @@ Write the final answer now.
 
     def _important_words(self, text: str) -> set[str]:
         stopwords = {
-            "about", "after", "again", "against", "also", "answer", "because",
-            "before", "being", "between", "could", "country", "document",
-            "during", "first", "from", "have", "into", "more", "most",
-            "only", "other", "page", "provided", "question", "research",
-            "section", "should", "source", "sources", "their", "there",
-            "these", "they", "this", "those", "through", "using", "which",
-            "while", "with", "would", "your",
+            "about",
+            "after",
+            "again",
+            "against",
+            "also",
+            "answer",
+            "because",
+            "before",
+            "being",
+            "between",
+            "could",
+            "country",
+            "document",
+            "during",
+            "first",
+            "from",
+            "have",
+            "into",
+            "more",
+            "most",
+            "only",
+            "other",
+            "page",
+            "provided",
+            "question",
+            "research",
+            "section",
+            "should",
+            "source",
+            "sources",
+            "their",
+            "there",
+            "these",
+            "they",
+            "this",
+            "those",
+            "through",
+            "using",
+            "which",
+            "while",
+            "with",
+            "would",
+            "your",
         }
 
         words = re.findall(r"[a-zA-Z][a-zA-Z0-9\-]{3,}", text.lower())

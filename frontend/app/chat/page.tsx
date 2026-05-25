@@ -114,7 +114,7 @@ function cleanAnswer(answer: string) {
     .replace(/^##\s?/gm, "")
     .replace(/^#\s?/gm, "")
     .replace(/\*\*/g, "")
-    .replace(/Sources[\s\S]*/i, "")
+    .replace(/^\s*(Sources|Source|References|Reference)\s*:?\s*[\s\S]*$/im, "")
     .trim();
 }
 
@@ -453,7 +453,6 @@ function ResearchTurnCard({ turn }: { turn: Turn }) {
           <PanelHeader
             icon={<Sparkles className="h-4 w-4" />}
             title="AIRA Answer"
-            description={`Confidence: ${confidence}`}
           />
 
           <div className="whitespace-pre-wrap rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-5 text-sm leading-7 text-[var(--text)]">
@@ -1199,11 +1198,8 @@ export default function ChatPage() {
       )}
     >
       <div
-        className={cn(
-          "flex flex-1 flex-col gap-5 transition duration-300",
-          composerFocused &&
-            "pointer-events-none scale-[0.99] blur-sm opacity-55"
-        )}
+        className="aira-focus-content flex flex-1 flex-col gap-5"
+        data-composer-focused={composerFocused ? "true" : "false"}
       >
         {showHeaderCard && (
         <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-6">
@@ -1281,7 +1277,7 @@ export default function ChatPage() {
         </div>
       ) : isAiraMode ? (
         <div className="flex flex-1 flex-col gap-5">
-          <section className="flex min-h-[520px] flex-col gap-4">
+          <section className="aira-result-focus flex min-h-[260px] flex-col gap-4">
             {turns.map((turn, index) => (
               <ResearchTurnCard key={`${turn.question}-${index}`} turn={turn} />
             ))}
@@ -1305,7 +1301,7 @@ export default function ChatPage() {
         </div>
       ) : (
         <div className="flex flex-1 flex-col gap-5">
-          <section className="flex min-h-[520px] flex-col gap-4">
+          <section className="aira-result-focus flex min-h-[260px] flex-col gap-4">
             {airaXLoading && (
               <div className="fade-up w-fit rounded-full border border-[var(--border-strong)] bg-[var(--secondary-soft)] px-5 py-3 text-sm font-medium text-[var(--secondary)] shadow-[var(--shadow-soft)]">
                 Running AIRA-X workflow...
