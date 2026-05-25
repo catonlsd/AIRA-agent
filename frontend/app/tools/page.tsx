@@ -1,10 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
   ArrowRight,
+  BrainCircuit,
   CheckCircle2,
   Code2,
   Cpu,
@@ -19,6 +26,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Terminal,
+  Workflow,
   Wrench,
   XCircle,
 } from "lucide-react";
@@ -42,8 +50,20 @@ type Tool = {
   [key: string]: any;
 };
 
-type ToolTone = "accent" | "secondary" | "success" | "warning" | "danger" | "slate";
-type RiskFilter = "all" | "safe" | "sensitive" | "dangerous" | "approval_required";
+type ToolTone =
+  | "accent"
+  | "secondary"
+  | "success"
+  | "warning"
+  | "danger"
+  | "slate";
+
+type RiskFilter =
+  | "all"
+  | "safe"
+  | "sensitive"
+  | "dangerous"
+  | "approval_required";
 
 function formatNumber(value: number) {
   return value.toLocaleString();
@@ -202,7 +222,9 @@ function getToolSearchText(tool: Tool) {
       action,
       policy.risk_level,
       policy.description,
-      policy.requires_approval ? "requires approval approval required" : "no approval",
+      policy.requires_approval
+        ? "requires approval approval required"
+        : "no approval",
     ]),
   ]
     .filter(Boolean)
@@ -539,14 +561,19 @@ export default function ToolsPage() {
   const totalActions = useMemo(
     () =>
       tools.reduce(
-        (total, tool) => total + (Array.isArray(tool.actions) ? tool.actions.length : 0),
+        (total, tool) =>
+          total + (Array.isArray(tool.actions) ? tool.actions.length : 0),
         0
       ),
     [tools]
   );
 
   const totalPolicyEntries = useMemo(
-    () => tools.reduce((total, tool) => total + getPolicyEntries(tool).length, 0),
+    () =>
+      tools.reduce(
+        (total, tool) => total + getPolicyEntries(tool).length,
+        0
+      ),
     [tools]
   );
 
@@ -614,6 +641,26 @@ export default function ToolsPage() {
                 module exposes allowed actions, example calls, approval
                 requirements, and risk policies before execution.
               </p>
+
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link
+                  href="/agents"
+                  className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+                >
+                  <BrainCircuit className="h-3.5 w-3.5" />
+                  View Agents
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+
+                <Link
+                  href="/workflows"
+                  className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                >
+                  <Workflow className="h-3.5 w-3.5" />
+                  View Workflows
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
             </div>
 
             <div className="rounded-[1.5rem] border border-[var(--border)] bg-[var(--surface-soft)] p-4">
@@ -677,7 +724,9 @@ export default function ToolsPage() {
             <MetricCard
               label="Approval-Gated"
               value={formatNumber(approvalRequiredActions)}
-              description={`${formatNumber(highRiskActions)} sensitive or dangerous actions.`}
+              description={`${formatNumber(
+                highRiskActions
+              )} sensitive or dangerous actions.`}
               icon={<LockKeyhole className="h-4 w-4" />}
               tone="warning"
             />
@@ -687,9 +736,9 @@ export default function ToolsPage() {
             <SectionHeader
               icon={<Search className="h-4 w-4" />}
               title="Tool Explorer"
-              description={`Showing ${formatNumber(filteredTools.length)} of ${formatNumber(
-                tools.length
-              )} registered tools.`}
+              description={`Showing ${formatNumber(
+                filteredTools.length
+              )} of ${formatNumber(tools.length)} registered tools.`}
               action={
                 <button
                   type="button"
@@ -768,10 +817,7 @@ export default function ToolsPage() {
           ) : (
             <section className="grid gap-4 xl:grid-cols-2">
               {filteredTools.map((tool) => (
-                <ToolCard
-                  key={tool.tool_name || tool.name}
-                  tool={tool}
-                />
+                <ToolCard key={tool.tool_name || tool.name} tool={tool} />
               ))}
             </section>
           )}

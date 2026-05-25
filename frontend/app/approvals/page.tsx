@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -144,12 +150,21 @@ function getApprovalStatus(run: AiraXWorkflowRun) {
     return "processing";
   }
 
+  const resolutionStatus = run.approval_resolution?.status;
+
+  if (
+    resolutionStatus &&
+    RESOLVED_APPROVAL_STATUSES.has(resolutionStatus)
+  ) {
+    return resolutionStatus;
+  }
+
   if (isWaitingForApproval(run)) {
     return "pending";
   }
 
-  if (hasApprovalResolution(run) && run.approval_resolution?.status) {
-    return run.approval_resolution.status;
+  if (resolutionStatus) {
+    return resolutionStatus;
   }
 
   return "not_required";
@@ -282,7 +297,9 @@ function getFilteredApprovalRuns(
       (activeTab === "pending" &&
         isWaitingForApproval(run) &&
         !isApprovalProcessing(run) &&
-        !hasResolvedApproval(run)) ||
+        !hasResolvedApproval(run) &&
+        !hasRejectedApproval(run) &&
+        !hasStaleApprovalRecovery(run)) ||
       (activeTab === "processing" && isApprovalProcessing(run)) ||
       (activeTab === "resolved" && hasResolvedApproval(run)) ||
       (activeTab === "rejected" && hasRejectedApproval(run)) ||
@@ -527,7 +544,11 @@ function ApprovalCard({
   const gitPushPreflight = isGitPushPreflight(run);
   const gitWritePreflight = isGitWritePreflight(run);
   const resolution = run.approval_resolution;
-  const showControls = waitingForApproval;
+  const showControls =
+    waitingForApproval &&
+    !hasResolvedApproval(run) &&
+    !hasRejectedApproval(run) &&
+    !hasStaleApprovalRecovery(run);
 
   return (
     <article className="sarvam-card rounded-[1.5rem] p-5">
@@ -709,7 +730,7 @@ export default function ApprovalsPage() {
   async function handleApprove(runId: string) {
     const currentRun = runs.find((run) => run.run_id === runId);
 
-    if (isApprovalProcessing(currentRun)) {
+    if (actionRunId || isApprovalProcessing(currentRun)) {
       return;
     }
 
@@ -735,7 +756,7 @@ export default function ApprovalsPage() {
   async function handleReject(runId: string) {
     const currentRun = runs.find((run) => run.run_id === runId);
 
-    if (isApprovalProcessing(currentRun)) {
+    if (actionRunId || isApprovalProcessing(currentRun)) {
       return;
     }
 
@@ -781,7 +802,9 @@ export default function ApprovalsPage() {
         (run) =>
           isWaitingForApproval(run) &&
           !isApprovalProcessing(run) &&
-          !hasResolvedApproval(run)
+          !hasResolvedApproval(run) &&
+          !hasRejectedApproval(run) &&
+          !hasStaleApprovalRecovery(run)
       ),
     [approvalRuns]
   );
@@ -869,6 +892,26 @@ export default function ApprovalsPage() {
               isolated from processing and resolved approvals for clean
               human-in-the-loop control.
             </p>
+
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Link
+                href="/chat"
+                className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+              >
+                <Workflow className="h-3.5 w-3.5" />
+                Open Execute Panel
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+
+              <Link
+                href="/workflows"
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+              >
+                <GitBranch className="h-3.5 w-3.5" />
+                View Workflow Runs
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
           </div>
 
           {polling && (
@@ -1055,6 +1098,26 @@ export default function ApprovalsPage() {
             rejected actions, and stale approval recoveries will appear here
             when matching this view.
           </p>
+
+          <div className="mt-5 flex flex-wrap justify-center gap-3">
+            <Link
+              href="/chat"
+              className="inline-flex items-center gap-2 rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+            >
+              <Workflow className="h-4 w-4" />
+              Open Execute Panel
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+
+            <Link
+              href="/workflows"
+              className="inline-flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-5 py-3 text-sm font-black text-[var(--text-muted)] shadow-[var(--shadow-soft)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+            >
+              <GitBranch className="h-4 w-4" />
+              View Workflows
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         </section>
       )}
 

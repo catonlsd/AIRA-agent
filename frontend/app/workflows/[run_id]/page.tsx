@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -1046,7 +1052,12 @@ export default function WorkflowDetailPage() {
 
   const loadRun = useCallback(
     async (options?: { showLoading?: boolean }) => {
-      if (!runId) return;
+      if (!runId) {
+        setError("Workflow run ID is missing.");
+        setRun(null);
+        setLoading(false);
+        return;
+      }
 
       const showLoading = options?.showLoading ?? true;
 
@@ -1121,7 +1132,7 @@ export default function WorkflowDetailPage() {
   }
 
   async function handleDelete() {
-    if (!run?.run_id || isApprovalProcessing(run)) return;
+    if (!run?.run_id || isApprovalProcessing(run) || deleteLoading) return;
 
     const confirmed = window.confirm(
       `Delete this workflow run from history?\n\n${run.user_goal}\n\nThis only removes the saved run record.`
@@ -1155,9 +1166,18 @@ export default function WorkflowDetailPage() {
 
   const approvalProcessing = isApprovalProcessing(run);
   const actionLoading = approvalLoading || rejectionLoading;
-  const deleteButtonDisabled = approvalProcessing || actionLoading || deleteLoading;
-  const approvalResolution = run ? getApprovalResolution(run) : null;
-  const cleanupActions = run ? getCleanupActions(run) : [];
+  const deleteButtonDisabled =
+    approvalProcessing || actionLoading || deleteLoading;
+
+  const approvalResolution = useMemo(
+    () => (run ? getApprovalResolution(run) : null),
+    [run]
+  );
+
+  const cleanupActions = useMemo(
+    () => (run ? getCleanupActions(run) : []),
+    [run]
+  );
 
   const summaryCards = useMemo(() => {
     if (!run) {
@@ -1179,7 +1199,9 @@ export default function WorkflowDetailPage() {
       },
       {
         label: "Cleanup",
-        value: cleanupActions.length ? `${cleanupActions.length} action(s)` : "None",
+        value: cleanupActions.length
+          ? `${cleanupActions.length} action(s)`
+          : "None",
       },
     ];
   }, [cleanupActions.length, run]);
@@ -1208,13 +1230,33 @@ export default function WorkflowDetailPage() {
         <div className="pointer-events-none absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-[var(--secondary-glow)] blur-3xl" />
 
         <div className="relative z-10">
-          <Link
-            href="/workflows"
-            className="mb-5 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to Workflow Runs
-          </Link>
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            <Link
+              href="/workflows"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back to Workflow Runs
+            </Link>
+
+            <Link
+              href="/chat"
+              className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+            >
+              <TerminalSquare className="h-3.5 w-3.5" />
+              Open Execute Panel
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+
+            <Link
+              href="/approvals"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Review Approvals
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
 
           <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
             <div>
@@ -1323,6 +1365,14 @@ export default function WorkflowDetailPage() {
                   This run can be inspected or removed from local workflow
                   history when no longer needed.
                 </p>
+
+                <Link
+                  href="/workflows"
+                  className="mt-3 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                >
+                  View all workflow runs
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
               </div>
             )}
 

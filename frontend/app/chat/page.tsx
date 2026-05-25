@@ -12,7 +12,6 @@ import {
   Activity,
   ArrowRight,
   CheckCircle2,
-  Clock,
   Database,
   FileText,
   FileUp,
@@ -473,7 +472,10 @@ function GitWritePreflight({ context }: { context: ApprovalContext }) {
           Changed Files
         </p>
 
-        <CodeBlock value={context.changed_files} fallback="No changed files detected." />
+        <CodeBlock
+          value={context.changed_files}
+          fallback="No changed files detected."
+        />
       </div>
 
       <div className="mt-3">
@@ -481,7 +483,10 @@ function GitWritePreflight({ context }: { context: ApprovalContext }) {
           Diff Summary
         </p>
 
-        <CodeBlock value={context.diff_summary} fallback="No diff summary available." />
+        <CodeBlock
+          value={context.diff_summary}
+          fallback="No diff summary available."
+        />
       </div>
     </div>
   );
@@ -525,7 +530,10 @@ function GitPushPreflight({ context }: { context: ApprovalContext }) {
           Remote Info
         </p>
 
-        <CodeBlock value={context.remote_info} fallback="No remote info available." />
+        <CodeBlock
+          value={context.remote_info}
+          fallback="No remote info available."
+        />
       </div>
 
       <div className="mt-3">
@@ -533,7 +541,10 @@ function GitPushPreflight({ context }: { context: ApprovalContext }) {
           Latest Local Commit
         </p>
 
-        <CodeBlock value={context.last_commit} fallback="No latest commit available." />
+        <CodeBlock
+          value={context.last_commit}
+          fallback="No latest commit available."
+        />
       </div>
 
       <div className="mt-3">
@@ -612,39 +623,6 @@ function CleanupActions({ memory }: { memory: any }) {
   );
 }
 
-function EmptyResearchState() {
-  return (
-    <div className="aira-panel fade-up rounded-[1.75rem] border-dashed p-5">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1 text-xs font-black text-[var(--text-muted)]">
-            <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />
-            Document-first research
-          </div>
-
-          <h2 className="text-lg font-black text-[var(--text-strong)]">
-            Ask from your knowledge base
-          </h2>
-
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
-            AIRA searches indexed documents first and returns grounded answers
-            with citations when sources are found.
-          </p>
-        </div>
-
-        <Link
-          href="/documents"
-          className="inline-flex w-fit items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-3 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
-        >
-          <Library className="h-4 w-4" />
-          View Knowledge Base
-          <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
-      </div>
-    </div>
-  );
-}
-
 function EmptyExecutionState() {
   return (
     <div className="aira-console fade-up flex min-h-[340px] flex-col items-center justify-center rounded-[1.75rem] border-dashed p-10 text-center">
@@ -671,6 +649,8 @@ function EmptyExecutionState() {
 }
 
 function ResearchTurnCard({ turn }: { turn: Turn }) {
+  const confidence = (turn.response as any)?.confidence || "not recorded";
+
   return (
     <div className="fade-up space-y-4">
       <div className="ml-auto max-w-2xl rounded-[1.25rem] rounded-tr-md bg-[var(--accent)] px-5 py-3 text-sm font-semibold leading-6 text-[var(--accent-foreground)] shadow-[var(--shadow-soft)]">
@@ -688,7 +668,7 @@ function ResearchTurnCard({ turn }: { turn: Turn }) {
           <PanelHeader
             icon={<Sparkles className="h-4 w-4" />}
             title="AIRA Answer"
-            description={`Confidence: ${turn.response.confidence || "not recorded"}`}
+            description={`Confidence: ${confidence}`}
           />
 
           <div className="whitespace-pre-wrap rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-5 text-sm leading-7 text-[var(--text)]">
@@ -947,7 +927,9 @@ function WorkflowResultCard({
           label="Final Answer"
           value={response.final_answer || "No final answer yet"}
         />
-        {response.run_id && <InfoTile label="Run ID" value={response.run_id} mono />}
+        {response.run_id && (
+          <InfoTile label="Run ID" value={response.run_id} mono />
+        )}
       </div>
 
       {response.requires_approval && (
@@ -1001,7 +983,9 @@ function ExecutionPlanCard({ steps }: { steps: AiraXStep[] }) {
       <PanelHeader
         icon={<GitBranch className="h-4 w-4" />}
         title="Execution Plan"
-        description={`${steps.length} planned execution step${steps.length === 1 ? "" : "s"}.`}
+        description={`${steps.length} planned execution step${
+          steps.length === 1 ? "" : "s"
+        }.`}
       />
 
       <div className="space-y-3">
@@ -1057,7 +1041,9 @@ function ExecutionPlanCard({ steps }: { steps: AiraXStep[] }) {
                   {step.result}
                 </pre>
               ) : (
-                <p className="text-xs text-[var(--text-subtle)]">No result yet</p>
+                <p className="text-xs text-[var(--text-subtle)]">
+                  No result yet
+                </p>
               )}
             </div>
 
@@ -1133,9 +1119,18 @@ function ExecutionGuideCard() {
 
       <div className="space-y-3">
         <InfoTile label="1. Plan" value="Break the task into execution steps." />
-        <InfoTile label="2. Execute" value="Call approved tools and record outputs." />
-        <InfoTile label="3. Validate" value="Check the result and retry when useful." />
-        <InfoTile label="4. Approve" value="Pause for user permission before risky actions." />
+        <InfoTile
+          label="2. Execute"
+          value="Call approved tools and record outputs."
+        />
+        <InfoTile
+          label="3. Validate"
+          value="Check the result and retry when useful."
+        />
+        <InfoTile
+          label="4. Approve"
+          value="Pause for user permission before risky actions."
+        />
       </div>
     </div>
   );
@@ -1348,7 +1343,7 @@ export default function ChatPage() {
 
             <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
               {isAiraMode
-                ? "Use web search only when document context is not enough."
+                ? "Supplement the document context with web search whenever necessary."
                 : "Risky actions pause for approval before execution."}
             </p>
           </div>
@@ -1445,69 +1440,75 @@ export default function ChatPage() {
       )}
 
       {!(isAiraMode && threadIsEmpty) && (
-      <form
-        onSubmit={handleSubmit}
-        className={cn(
-          "sticky bottom-4 rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-card)] backdrop-blur-xl",
-          isAiraMode ? "research-composer chatgpt-composer" : "aira-console"
-        )}
-      >
-        <textarea
-          value={question}
-          onChange={(event) => setQuestion(event.target.value)}
-          placeholder={
-            isAiraMode
-              ? "Ask AIRA a research question..."
-              : "Tell AIRA-X what task to execute..."
-          }
-          className="h-24 w-full resize-none rounded-[1.15rem] border border-[var(--border)] bg-[var(--surface-strong)] p-4 text-sm text-[var(--text-strong)] caret-[var(--accent)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
-        />
-
-        <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          {isAiraMode ? (
-            <label className="flex w-fit cursor-pointer items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-sm font-medium text-[var(--text-muted)]">
-              <input
-                type="checkbox"
-                checked={forceWeb}
-                onChange={(event) => setForceWeb(event.target.checked)}
-                className="accent-[var(--accent)]"
-              />
-
-              <Globe2 className="h-4 w-4 text-[var(--accent)]" />
-              Include web search
-            </label>
-          ) : (
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-sm font-medium text-[var(--text-muted)]">
-              <ShieldAlert className="h-4 w-4 text-[var(--warning)]" />
-              Approval-gated execution
-            </div>
+        <form
+          onSubmit={handleSubmit}
+          className={cn(
+            "sticky bottom-4 rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-card)] backdrop-blur-xl",
+            isAiraMode ? "research-composer chatgpt-composer" : "aira-console"
           )}
-
-          <button
-            disabled={busy}
-            className={cn(
-              "group inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-black shadow-[var(--shadow-soft)] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60",
+        >
+          <textarea
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+            placeholder={
               isAiraMode
-                ? "bg-[var(--accent)] text-[var(--accent-foreground)]"
-                : "bg-[var(--secondary)] text-white"
-            )}
-          >
+                ? "Ask AIRA a research question..."
+                : "Tell AIRA-X what task to execute..."
+            }
+            className="h-24 w-full resize-none rounded-[1.15rem] border border-[var(--border)] bg-[var(--surface-strong)] p-4 text-sm text-[var(--text-strong)] caret-[var(--accent)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+          />
+
+          <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             {isAiraMode ? (
-              <Send className="h-4 w-4 transition-all duration-500 ease-out group-hover:-translate-y-1 group-hover:translate-x-1 group-hover:rotate-12" />
+              <label className="flex w-fit cursor-pointer items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-sm font-medium text-[var(--text-muted)]">
+                <input
+                  type="checkbox"
+                  checked={forceWeb}
+                  onChange={(event) => setForceWeb(event.target.checked)}
+                  className="accent-[var(--accent)]"
+                />
+
+                <Globe2 className="h-4 w-4 text-[var(--accent)]" />
+                Include web search
+              </label>
             ) : (
-              <Workflow className="h-4 w-4" />
+              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-sm font-medium text-[var(--text-muted)]">
+                <ShieldAlert className="h-4 w-4 text-[var(--warning)]" />
+                Approval-gated execution
+              </div>
             )}
 
-            {isAiraMode
-              ? loading
-                ? "Asking..."
-                : "Ask AIRA"
-              : airaXLoading
-                ? "Running..."
-                : "Run AIRA-X"}
-          </button>
-        </div>
-      </form>
+            <button
+              disabled={busy || !question.trim()}
+              className={cn(
+                "group inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-black shadow-[var(--shadow-soft)] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60",
+                isAiraMode
+                  ? "bg-[var(--accent)] text-[var(--accent-foreground)]"
+                  : "bg-[var(--secondary)] text-white"
+              )}
+            >
+              {isAiraMode ? (
+                loading ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4 transition-all duration-500 ease-out group-hover:-translate-y-1 group-hover:translate-x-1 group-hover:rotate-12" />
+                )
+              ) : airaXLoading ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <Workflow className="h-4 w-4" />
+              )}
+
+              {isAiraMode
+                ? loading
+                  ? "Asking..."
+                  : "Ask AIRA"
+                : airaXLoading
+                  ? "Running..."
+                  : "Run AIRA-X"}
+            </button>
+          </div>
+        </form>
       )}
     </div>
   );

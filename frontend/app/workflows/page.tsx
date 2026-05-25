@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -447,7 +453,7 @@ function MetricCard({
   label: string;
   value: number;
   tone?: MetricTone;
-  icon?: React.ReactNode;
+  icon?: ReactNode;
   description?: string;
 }) {
   return (
@@ -508,7 +514,7 @@ function RunBadge({
   children,
   className,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   className: string;
 }) {
   return (
@@ -1177,6 +1183,26 @@ export default function WorkflowsPage() {
               outcomes for every autonomous run.
             </p>
 
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Link
+                href="/chat"
+                className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+              >
+                <Workflow className="h-3.5 w-3.5" />
+                Open Execute Panel
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+
+              <Link
+                href="/approvals"
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+              >
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Review Approvals
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+
             {polling && (
               <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[var(--border-strong)] bg-[var(--accent-soft)] px-3 py-1.5 text-xs font-black text-[var(--accent)]">
                 <Activity className="h-3.5 w-3.5" />
@@ -1429,6 +1455,15 @@ export default function WorkflowsPage() {
                   Run AIRA-X from the Execute page and every traceable workflow
                   will appear here.
                 </p>
+
+                <Link
+                  href="/chat"
+                  className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+                >
+                  <Workflow className="h-4 w-4" />
+                  Open Execute Panel
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
               </div>
             ) : sortedFilteredRuns.length === 0 ? (
               <div className="aira-panel flex min-h-[260px] flex-col items-center justify-center rounded-[1.75rem] border-dashed p-10 text-center">

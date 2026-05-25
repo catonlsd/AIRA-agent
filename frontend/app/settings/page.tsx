@@ -99,18 +99,21 @@ const researchModules = [
     title: "Ask AIRA",
     description:
       "Question answering, summaries, citation-backed responses, and document-first research.",
+    href: "/chat",
     icon: Sparkles,
   },
   {
     title: "Knowledge Base",
     description:
       "Uploaded PDFs, indexed documents, retrieved chunks, and source-grounded context.",
+    href: "/documents",
     icon: Database,
   },
   {
     title: "Interactions",
     description:
       "Research sessions, question history, and previous assistant responses.",
+    href: "/history",
     icon: Layers3,
   },
 ];
@@ -432,22 +435,27 @@ function ResearchWorkspaceSection() {
           const Icon = module.icon;
 
           return (
-            <div
+            <Link
               key={module.title}
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4"
+              href={module.href}
+              className="group rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4 transition hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]"
             >
               <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--accent-soft)] text-[var(--accent)]">
                 <Icon className="h-4 w-4" />
               </div>
 
-              <p className="text-sm font-black text-[var(--text-strong)]">
-                {module.title}
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-black text-[var(--text-strong)]">
+                  {module.title}
+                </p>
+
+                <ArrowRight className="h-3.5 w-3.5 text-[var(--text-subtle)] transition group-hover:translate-x-1 group-hover:text-[var(--accent)]" />
+              </div>
 
               <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
                 {module.description}
               </p>
-            </div>
+            </Link>
           );
         })}
       </div>

@@ -1,9 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import {
-  Activity,
   ArrowLeft,
   ArrowRight,
   BrainCircuit,
@@ -17,8 +22,8 @@ import {
   Route,
   Search,
   ShieldCheck,
-  Sparkles,
   UserCheck,
+  Workflow,
 } from "lucide-react";
 import { getAiraXAgents } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -425,6 +430,26 @@ export default function AgentsPage() {
                 validate, reflect, remember, and enforce approval-aware safety
                 across AIRA-X workflows.
               </p>
+
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link
+                  href="/workflows"
+                  className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+                >
+                  <Workflow className="h-3.5 w-3.5" />
+                  View Workflows
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+
+                <Link
+                  href="/approvals"
+                  className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Review Approvals
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
             </div>
 
             <div className="rounded-[1.5rem] border border-[var(--border)] bg-[var(--surface-soft)] p-4">
@@ -511,6 +536,16 @@ export default function AgentsPage() {
                 className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
               />
             </label>
+
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+              >
+                Clear Search
+              </button>
+            )}
           </section>
 
           {filteredAgents.length === 0 ? (
