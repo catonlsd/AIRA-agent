@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useEffect,
   useMemo,
   useState,
   type ChangeEvent,
@@ -17,7 +18,6 @@ import {
   FileUp,
   GitBranch,
   Globe2,
-  History,
   Library,
   RefreshCw,
   Send,
@@ -108,41 +108,6 @@ type AiraXResponse = {
   workflow_logs?: WorkflowLog[];
 };
 
-const knownLogEvents = [
-  "workflow_started",
-  "planning_started",
-  "plan_created",
-  "decision_made",
-  "safety_check_started",
-  "safety_approved",
-  "safety_blocked_action",
-  "approval_check_started",
-  "approval_required",
-  "approval_not_required",
-  "approval_already_granted",
-  "approval_granted_by_user",
-  "approval_rejected_by_user",
-  "git_staging_cleanup_after_rejection",
-  "execution_started",
-  "tool_policy_checked",
-  "execution_success",
-  "execution_failed",
-  "execution_waiting_for_approval",
-  "execution_blocked_by_safety",
-  "reflection_completed",
-  "validation_started",
-  "validation_success",
-  "validation_failed",
-  "workflow_waiting_for_approval",
-  "workflow_resumed_after_approval",
-  "workflow_blocked_by_safety",
-  "workflow_stopped_after_rejection",
-  "workflow_stopped_non_retryable_failure",
-  "workflow_failed_max_retries",
-  "workflow_completed",
-  "memory_summary_created",
-];
-
 function cleanAnswer(answer: string) {
   return answer
     .replace(/^###\s?/gm, "")
@@ -151,20 +116,6 @@ function cleanAnswer(answer: string) {
     .replace(/\*\*/g, "")
     .replace(/Sources[\s\S]*/i, "")
     .trim();
-}
-
-function formatDateTime(value?: string) {
-  if (!value) {
-    return "Not recorded";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString();
 }
 
 function getWorkflowStatusClass(status?: string) {
@@ -186,172 +137,6 @@ function getWorkflowStatusClass(status?: string) {
   }
 
   return "status-info";
-}
-
-function renderLogMessage(log: WorkflowLog) {
-  switch (log.event) {
-    case "workflow_started":
-      return <p>Workflow started for goal: {log.details.user_goal}</p>;
-
-    case "planning_started":
-      return <p>Planner started analyzing the user goal.</p>;
-
-    case "plan_created":
-      return (
-        <p>
-          Planner created {log.details.steps?.length || 0} execution step(s).
-        </p>
-      );
-
-    case "decision_made":
-      return (
-        <p>
-          Decision made: <strong>{log.details.decision}</strong>
-        </p>
-      );
-
-    case "safety_check_started":
-      return <p>Safety check started for action: {log.details.action}</p>;
-
-    case "safety_approved":
-      return <p>Safety approved the action.</p>;
-
-    case "safety_blocked_action":
-      return (
-        <p>
-          Safety blocked action: <strong>{log.details.action}</strong>
-        </p>
-      );
-
-    case "approval_check_started":
-      return <p>Approval check started for action: {log.details.action}</p>;
-
-    case "approval_required":
-      return (
-        <p>
-          Approval required before executing:{" "}
-          <strong>{log.details.action}</strong>
-        </p>
-      );
-
-    case "approval_not_required":
-      return <p>Approval was not required for this action.</p>;
-
-    case "approval_already_granted":
-      return <p>User approval was already granted for this action.</p>;
-
-    case "approval_granted_by_user":
-      return (
-        <p>
-          User approved action:{" "}
-          <strong>{log.details.approved_action}</strong>
-        </p>
-      );
-
-    case "approval_rejected_by_user":
-      return (
-        <p>
-          User rejected action:{" "}
-          <strong>{log.details.rejected_action}</strong>
-        </p>
-      );
-
-    case "git_staging_cleanup_after_rejection":
-      return (
-        <p>
-          AIRA-X unstaged Git changes after rejected approval. Cleanup status:{" "}
-          <strong>
-            {log.details.cleanup_success ? "successful" : "failed"}
-          </strong>
-          .
-        </p>
-      );
-
-    case "execution_started":
-      return <p>Execution started for step: {log.details.step_title}</p>;
-
-    case "tool_policy_checked":
-      return (
-        <p>
-          Tool policy checked. Risk level:{" "}
-          <strong>{log.details.risk_level || "unknown"}</strong>
-        </p>
-      );
-
-    case "execution_success":
-      return <p>Execution completed successfully.</p>;
-
-    case "execution_failed":
-      return (
-        <p>
-          Execution failed. Error: {log.details.error || "Unknown error"}
-        </p>
-      );
-
-    case "execution_waiting_for_approval":
-      return (
-        <p>
-          Execution paused while waiting for approval:{" "}
-          <strong>{log.details.action}</strong>
-        </p>
-      );
-
-    case "execution_blocked_by_safety":
-      return (
-        <p>
-          Execution blocked by safety system:{" "}
-          <strong>{log.details.action}</strong>
-        </p>
-      );
-
-    case "reflection_completed":
-      return (
-        <p>
-          Reflection analyzed the failure and prepared retry #
-          {log.details.retry_count}.
-        </p>
-      );
-
-    case "validation_started":
-      return <p>Validation started for step: {log.details.step_title}</p>;
-
-    case "validation_success":
-      return <p>Validation passed successfully.</p>;
-
-    case "validation_failed":
-      return (
-        <p>
-          Validation failed. Error: {log.details.error || log.details.reason}
-        </p>
-      );
-
-    case "workflow_waiting_for_approval":
-      return <p>Workflow paused and is waiting for user approval.</p>;
-
-    case "workflow_resumed_after_approval":
-      return <p>Workflow resumed after user approval.</p>;
-
-    case "workflow_blocked_by_safety":
-      return <p>Workflow stopped because safety blocked the action.</p>;
-
-    case "workflow_stopped_after_rejection":
-      return <p>Workflow stopped because the user rejected the action.</p>;
-
-    case "workflow_stopped_non_retryable_failure":
-      return <p>Workflow stopped because a non-retryable action failed.</p>;
-
-    case "workflow_failed_max_retries":
-      return <p>Workflow failed after maximum retries.</p>;
-
-    case "workflow_completed":
-      return <p>Workflow completed successfully.</p>;
-
-    case "memory_summary_created":
-      return <p>Memory Agent saved a workflow summary.</p>;
-
-    default:
-      return <p>{JSON.stringify(log.details)}</p>;
-  }
 }
 
 function InfoTile({
@@ -814,6 +599,7 @@ function AiraHomeStage({
   busy,
   loading,
   onSubmit,
+  onComposerFocus,
 }: {
   question: string;
   setQuestion: (value: string) => void;
@@ -822,6 +608,7 @@ function AiraHomeStage({
   busy: boolean;
   loading: boolean;
   onSubmit: (event: FormEvent) => Promise<void>;
+  onComposerFocus: () => void;
 }) {
   return (
     <section className="flex min-h-[560px] flex-col items-center justify-center rounded-[2rem] p-4 lg:min-h-[620px]">
@@ -846,6 +633,7 @@ function AiraHomeStage({
           <textarea
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
+            onFocus={onComposerFocus}
             placeholder="Ask anything from your documents..."
             className="min-h-[82px] w-full resize-none rounded-[1.4rem] border border-transparent bg-[var(--surface-strong)] p-4 text-sm text-[var(--text-strong)] caret-[var(--accent)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)]"
           />
@@ -1059,52 +847,134 @@ function ExecutionPlanCard({ steps }: { steps: AiraXStep[] }) {
   );
 }
 
-function WorkflowLogsCard({ logs }: { logs?: WorkflowLog[] }) {
-  if (!logs || logs.length === 0) {
-    return null;
-  }
 
+function FocusComposerOverlay({
+  isAiraMode,
+  question,
+  setQuestion,
+  forceWeb,
+  setForceWeb,
+  busy,
+  loading,
+  airaXLoading,
+  onSubmit,
+  onClose,
+}: {
+  isAiraMode: boolean;
+  question: string;
+  setQuestion: (value: string) => void;
+  forceWeb: boolean;
+  setForceWeb: (value: boolean) => void;
+  busy: boolean;
+  loading: boolean;
+  airaXLoading: boolean;
+  onSubmit: (event: FormEvent) => Promise<void>;
+  onClose: () => void;
+}) {
   return (
-    <div className="sarvam-card rounded-[1.5rem] p-5">
-      <PanelHeader
-        icon={<History className="h-4 w-4" />}
-        title="Workflow Logs"
-        description="Agent events and workflow trace entries."
+    <>
+      <button
+        type="button"
+        aria-label="Close focus composer"
+        onClick={onClose}
+        className="fixed inset-0 z-30 bg-black/35 backdrop-blur-md transition"
       />
 
-      <div className="space-y-3">
-        {logs.map((log, index) => (
-          <div
-            key={`${log.timestamp}-${index}`}
-            className="rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] p-3 text-xs text-[var(--text)]"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="font-semibold text-[var(--text-strong)]">
-                {log.agent}
-              </p>
-
-              <p className="text-[var(--text-subtle)]">
-                {formatDateTime(log.timestamp)}
-              </p>
-            </div>
-
-            <p className="mt-1">
-              <strong>Event:</strong> {log.event}
-            </p>
-
-            <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-xs leading-5 text-[var(--text-muted)]">
-              {renderLogMessage(log)}
-
-              {!knownLogEvents.includes(log.event) && (
-                <pre className="mt-2 overflow-auto rounded-lg p-3 text-[11px] leading-5">
-                  {JSON.stringify(log.details, null, 2)}
-                </pre>
-              )}
-            </div>
+      <form
+        onSubmit={onSubmit}
+        className={cn(
+          "fixed left-1/2 top-1/2 z-50 w-[min(820px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-[2rem] border border-[var(--border-strong)] bg-[var(--surface)] p-4 shadow-[var(--shadow-card)] backdrop-blur-2xl",
+          isAiraMode ? "research-composer chatgpt-composer" : "aira-console"
+        )}
+      >
+        <div className="mb-3 flex items-center justify-between gap-3 px-1">
+          <div className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)]">
+            {isAiraMode ? (
+              <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />
+            ) : (
+              <Workflow className="h-3.5 w-3.5 text-[var(--secondary)]" />
+            )}
+            {isAiraMode ? "Focused research" : "Focused execution"}
           </div>
-        ))}
-      </div>
-    </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+            aria-label="Close composer focus mode"
+          >
+            <XCircle className="h-4 w-4" />
+          </button>
+        </div>
+
+        <textarea
+          autoFocus
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          placeholder={
+            isAiraMode
+              ? "Ask AIRA a research question..."
+              : "Tell AIRA-X what task to execute..."
+          }
+          className="min-h-[150px] w-full resize-none rounded-[1.4rem] border border-[var(--border)] bg-[var(--surface-strong)] p-5 text-base leading-7 text-[var(--text-strong)] caret-[var(--accent)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+        />
+
+        <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          {isAiraMode ? (
+            <label className="flex w-fit cursor-pointer items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-sm font-medium text-[var(--text-muted)]">
+              <input
+                type="checkbox"
+                checked={forceWeb}
+                onChange={(event) => setForceWeb(event.target.checked)}
+                className="accent-[var(--accent)]"
+              />
+
+              <Globe2 className="h-4 w-4 text-[var(--accent)]" />
+              Include web search
+            </label>
+          ) : (
+            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-sm font-medium text-[var(--text-muted)]">
+              <ShieldAlert className="h-4 w-4 text-[var(--warning)]" />
+              Approval-gated execution
+            </div>
+          )}
+
+          <button
+            disabled={busy || !question.trim()}
+            className={cn(
+              "group inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-black shadow-[var(--shadow-soft)] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60",
+              isAiraMode
+                ? "bg-[var(--accent)] text-[var(--accent-foreground)]"
+                : "bg-[var(--secondary)] text-white"
+            )}
+          >
+            {isAiraMode ? (
+              loading ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4 transition-all duration-500 ease-out group-hover:-translate-y-1 group-hover:translate-x-1 group-hover:rotate-12" />
+              )
+            ) : airaXLoading ? (
+              <RefreshCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <Workflow className="h-4 w-4" />
+            )}
+
+            {isAiraMode
+              ? loading
+                ? "Asking..."
+                : "Ask AIRA"
+              : airaXLoading
+                ? "Running..."
+                : "Run AIRA-X"}
+          </button>
+        </div>
+
+        <p className="mt-3 px-1 text-xs leading-5 text-[var(--text-subtle)]">
+          Press Esc or click outside to exit focus mode.
+        </p>
+      </form>
+    </>
   );
 }
 
@@ -1141,6 +1011,7 @@ export default function ChatPage() {
   const isAiraMode = mode === "aira";
 
   const [question, setQuestion] = useState("");
+  const [composerFocused, setComposerFocused] = useState(false);
   const [forceWeb, setForceWeb] = useState(false);
   const [loading, setLoading] = useState(false);
   const [airaXLoading, setAiraXLoading] = useState(false);
@@ -1166,12 +1037,36 @@ export default function ChatPage() {
     [turns.length, airaXResponse]
   );
 
+  const hasAiraActivity = isAiraMode && (loading || turns.length > 0);
+  const hasAiraXActivity =
+    !isAiraMode && (airaXLoading || Boolean(airaXResponse));
+  const showHeaderCard = !hasAiraActivity && !hasAiraXActivity;
+
+  useEffect(() => {
+    if (!composerFocused) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setComposerFocused(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [composerFocused]);
+
   async function submitAiraQuestion(event?: FormEvent) {
     event?.preventDefault();
 
     const trimmed = question.trim();
     if (!trimmed) return;
 
+    setComposerFocused(false);
     setQuestion("");
     setLoading(true);
     setTurns((prev) => [...prev, { question: trimmed }]);
@@ -1203,6 +1098,7 @@ export default function ChatPage() {
     const trimmed = question.trim();
     if (!trimmed) return;
 
+    setComposerFocused(false);
     setAiraXLoading(true);
     setAiraXResponse(null);
 
@@ -1302,7 +1198,15 @@ export default function ChatPage() {
         isAiraMode ? "aira-chat-page" : "airax-execution-page"
       )}
     >
-      <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-6">
+      <div
+        className={cn(
+          "flex flex-1 flex-col gap-5 transition duration-300",
+          composerFocused &&
+            "pointer-events-none scale-[0.99] blur-sm opacity-55"
+        )}
+      >
+        {showHeaderCard && (
+        <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-6">
         <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-[var(--accent-glow)] blur-3xl" />
         <div className="pointer-events-none absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-[var(--secondary-glow)] blur-3xl" />
 
@@ -1348,7 +1252,8 @@ export default function ChatPage() {
             </p>
           </div>
         </div>
-      </section>
+        </section>
+      )}
 
       {isAiraMode && threadIsEmpty ? (
         <div className="grid flex-1 gap-5 xl:grid-cols-[minmax(0,1fr)_440px]">
@@ -1360,6 +1265,7 @@ export default function ChatPage() {
             busy={busy}
             loading={loading}
             onSubmit={handleSubmit}
+            onComposerFocus={() => setComposerFocused(true)}
           />
 
           <aside className="space-y-4">
@@ -1373,18 +1279,9 @@ export default function ChatPage() {
             <ResearchModeCard forceWeb={forceWeb} />
           </aside>
         </div>
-      ) : (
-        <div
-          className={cn(
-            "grid flex-1 gap-5",
-            isAiraMode
-              ? "xl:grid-cols-[minmax(0,1fr)_430px]"
-              : "xl:grid-cols-[minmax(0,1fr)_440px]"
-          )}
-        >
+      ) : isAiraMode ? (
+        <div className="flex flex-1 flex-col gap-5">
           <section className="flex min-h-[520px] flex-col gap-4">
-            {threadIsEmpty && !isAiraMode && <EmptyExecutionState />}
-
             {turns.map((turn, index) => (
               <ResearchTurnCard key={`${turn.question}-${index}`} turn={turn} />
             ))}
@@ -1394,48 +1291,41 @@ export default function ChatPage() {
                 Researching sources...
               </div>
             )}
+          </section>
+        </div>
+      ) : threadIsEmpty && !airaXLoading ? (
+        <div className="grid flex-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <section className="flex min-h-[520px] flex-col gap-4">
+            <EmptyExecutionState />
+          </section>
 
+          <aside className="space-y-4">
+            <ExecutionGuideCard />
+          </aside>
+        </div>
+      ) : (
+        <div className="flex flex-1 flex-col gap-5">
+          <section className="flex min-h-[520px] flex-col gap-4">
             {airaXLoading && (
               <div className="fade-up w-fit rounded-full border border-[var(--border-strong)] bg-[var(--secondary-soft)] px-5 py-3 text-sm font-medium text-[var(--secondary)] shadow-[var(--shadow-soft)]">
                 Running AIRA-X workflow...
               </div>
             )}
-          </section>
 
-          <aside className="space-y-4">
-            {isAiraMode ? (
+            {airaXResponse && (
               <>
-                <DocumentIntakeCard
-                  uploadLoading={uploadLoading}
-                  uploadMessage={uploadMessage}
-                  uploadError={uploadError}
-                  onUpload={handleUploadDocuments}
+                <WorkflowResultCard
+                  response={airaXResponse}
+                  approvalLoading={approvalLoading}
+                  rejectionLoading={rejectionLoading}
+                  onApprove={handleApproveAiraX}
+                  onReject={handleRejectAiraX}
                 />
 
-                <ResearchModeCard forceWeb={forceWeb} />
-              </>
-            ) : (
-              <>
-                {airaXResponse ? (
-                  <>
-                    <WorkflowResultCard
-                      response={airaXResponse}
-                      approvalLoading={approvalLoading}
-                      rejectionLoading={rejectionLoading}
-                      onApprove={handleApproveAiraX}
-                      onReject={handleRejectAiraX}
-                    />
-
-                    <ExecutionPlanCard steps={airaXResponse.plan} />
-
-                    <WorkflowLogsCard logs={airaXResponse.workflow_logs} />
-                  </>
-                ) : (
-                  <ExecutionGuideCard />
-                )}
+                <ExecutionPlanCard steps={airaXResponse.plan} />
               </>
             )}
-          </aside>
+          </section>
         </div>
       )}
 
@@ -1450,6 +1340,7 @@ export default function ChatPage() {
           <textarea
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
+            onFocus={() => setComposerFocused(true)}
             placeholder={
               isAiraMode
                 ? "Ask AIRA a research question..."
@@ -1509,6 +1400,22 @@ export default function ChatPage() {
             </button>
           </div>
         </form>
+      )}
+      </div>
+
+      {composerFocused && (
+        <FocusComposerOverlay
+          isAiraMode={isAiraMode}
+          question={question}
+          setQuestion={setQuestion}
+          forceWeb={forceWeb}
+          setForceWeb={setForceWeb}
+          busy={busy}
+          loading={loading}
+          airaXLoading={airaXLoading}
+          onSubmit={handleSubmit}
+          onClose={() => setComposerFocused(false)}
+        />
       )}
     </div>
   );
