@@ -19,64 +19,119 @@ class PlannerAgent(BaseAgent):
             details={"user_goal": state.user_goal},
         )
 
-        user_goal = state.user_goal
+        user_goal = " ".join(state.user_goal.strip().split())
         goal = user_goal.lower()
-        plan = []
+        plan: list[AiraXStep] = []
 
-        if "list files" in goal:
+        if self._is_list_files_request(goal):
+            path = self._extract_path(user_goal) or "."
             plan.append(
                 AiraXStep(
                     id=1,
-                    title="List project files",
-                    description="List files in the backend directory.",
+                    title="List workspace files",
+                    description=f"List files in: {path}",
                     assigned_agent="execution_agent",
-                    tool_name="shell_tool",
-                    tool_action="run",
-                    tool_payload={"command": "dir"},
+                    tool_name="file_tool",
+                    tool_action="list_files",
+                    tool_payload={"path": path},
                 )
             )
 
-        elif "create file" in goal:
+        elif self._is_read_file_request(goal):
+            path = self._extract_path(user_goal)
+
+            if not path:
+                plan = self._clarification_plan(
+                    "I need the file path to read. Try: read file backend/main.py"
+                )
+            else:
+                plan.append(
+                    AiraXStep(
+                        id=1,
+                        title="Read file",
+                        description=f"Read the requested file: {path}",
+                        assigned_agent="execution_agent",
+                        tool_name="file_tool",
+                        tool_action="read_file",
+                        tool_payload={"path": path},
+                    )
+                )
+
+        elif self._is_write_file_request(goal):
+            path = self._extract_path(user_goal) or "tmp/aira_x_generated.txt"
+            content = self._extract_file_content(user_goal)
+
             plan.append(
                 AiraXStep(
                     id=1,
-                    title="Create a test file",
-                    description="Create a new file using the filesystem tool.",
+                    title="Write file",
+                    description=f"Write requested content to: {path}",
                     assigned_agent="execution_agent",
                     tool_name="file_tool",
                     tool_action="write_file",
                     tool_payload={
-                        "path": "tmp/aira_x_generated.txt",
-                        "content": "AIRA-X autonomously created this file.",
+                        "path": path,
+                        "content": content,
                     },
                 )
             )
 
-        elif "run python" in goal or "python code" in goal:
-            plan.append(
-                AiraXStep(
-                    id=1,
-                    title="Run Python code",
-                    description="Execute Python code using the Python tool.",
-                    assigned_agent="execution_agent",
-                    tool_name="python_tool",
-                    tool_action="run_code",
-                    tool_payload={
-                        "code": "print('AIRA-X executed Python code successfully')"
-                    },
+        elif self._is_python_request(goal):
+            code = self._extract_python_code(user_goal) or self._build_python_code(user_goal)
+
+            if not code:
+                plan = self._clarification_plan(
+                    "I need exact Python code or a clearly calculable instruction. "
+                    "Try: run python code: print('Hello from AIRA-X')"
                 )
-            )
+            else:
+                plan.append(
+                    AiraXStep(
+                        id=1,
+                        title="Run Python code",
+                        description="Execute the requested Python logic using the Python tool.",
+                        assigned_agent="execution_agent",
+                        tool_name="python_tool",
+                        tool_action="run_code",
+                        tool_payload={"code": code},
+                    )
+                )
+
+        elif self._is_shell_command_request(goal):
+            command = self._extract_shell_command(user_goal)
+
+            if not command:
+                plan = self._clarification_plan(
+                    "I need the exact shell command to run. Try: run command dir"
+                )
+            else:
+                plan.append(
+                    AiraXStep(
+                        id=1,
+                        title="Run shell command",
+                        description=f"Execute shell command: {command}",
+                        assigned_agent="execution_agent",
+                        tool_name="shell_tool",
+                        tool_action="run",
+                        tool_payload={"command": command},
+                    )
+                )
 
         elif "install package" in goal or "pip install" in goal:
+            package_name = self._extract_package_name(user_goal) or "requests"
+
             plan.append(
                 AiraXStep(
                     id=1,
                     title="Install Python package",
-                    description="Attempt to install a Python package. This should require approval.",
+                    description=(
+                        "Attempt to install a Python package. "
+                        "This may require approval depending on policy."
+                    ),
                     assigned_agent="execution_agent",
                     tool_name="shell_tool",
                     tool_action="run",
-                    tool_payload={"command": "pip install requests"},
+                    tool_payload={"command": f"pip install {package_name}"},
                 )
             )
 
@@ -195,9 +250,7 @@ class PlannerAgent(BaseAgent):
                     assigned_agent="execution_agent",
                     tool_name="git_tool",
                     tool_action="commit",
-                    tool_payload={
-                        "message": commit_message,
-                    },
+                    tool_payload={"message": commit_message},
                 ),
             ]
 
@@ -225,9 +278,7 @@ class PlannerAgent(BaseAgent):
                     assigned_agent="execution_agent",
                     tool_name="git_tool",
                     tool_action="commit",
-                    tool_payload={
-                        "message": commit_message,
-                    },
+                    tool_payload={"message": commit_message},
                 )
             )
 
@@ -276,35 +327,11 @@ class PlannerAgent(BaseAgent):
             )
 
         else:
-            plan = [
-                AiraXStep(
-                    id=1,
-                    title="Understand user goal",
-                    description=f"Analyze the task: {state.user_goal}",
-                    assigned_agent="planner_agent",
-                ),
-                AiraXStep(
-                    id=2,
-                    title="Decide execution path",
-                    description="Determine which agent should act next.",
-                    assigned_agent="decision_agent",
-                ),
-                AiraXStep(
-                    id=3,
-                    title="Execute task",
-                    description="Perform the required action using tools or execution.",
-                    assigned_agent="execution_agent",
-                    tool_name="shell_tool",
-                    tool_action="run",
-                    tool_payload={"command": "echo AIRA-X dynamic execution working"},
-                ),
-                AiraXStep(
-                    id=4,
-                    title="Validate result",
-                    description="Check whether the task was completed successfully.",
-                    assigned_agent="validation_agent",
-                ),
-            ]
+            plan = self._clarification_plan(
+                "AIRA-X needs a specific executable action before it can run tools. "
+                "Try asking it to run a command, run Python code, read/write/list a file, "
+                "or inspect Git status/diff/branch/logs."
+            )
 
         state.plan = plan
         state.current_step = 1
@@ -330,6 +357,230 @@ class PlannerAgent(BaseAgent):
         )
 
         return state
+
+    def _clarification_plan(self, message: str) -> list[AiraXStep]:
+        return [
+            AiraXStep(
+                id=1,
+                title="Clarify executable action",
+                description=message,
+                assigned_agent="planner_agent",
+            )
+        ]
+
+    def _is_list_files_request(self, goal: str) -> bool:
+        return (
+            "list files" in goal
+            or "show files" in goal
+            or "list directory" in goal
+            or "show directory" in goal
+            or goal.strip() in {"dir", "ls"}
+        )
+
+    def _is_read_file_request(self, goal: str) -> bool:
+        return (
+            "read file" in goal
+            or "open file" in goal
+            or "show file" in goal
+            or "display file" in goal
+        )
+
+    def _is_write_file_request(self, goal: str) -> bool:
+        return (
+            "create file" in goal
+            or "write file" in goal
+            or "make file" in goal
+            or "save file" in goal
+        )
+
+    def _is_python_request(self, goal: str) -> bool:
+        return (
+            "run python" in goal
+            or "python code" in goal
+            or "execute python" in goal
+            or "calculate" in goal
+            or "compute" in goal
+            or "evaluate" in goal
+            or "factorial" in goal
+            or "fibonacci" in goal
+        )
+
+    def _is_shell_command_request(self, goal: str) -> bool:
+        return (
+            "run command" in goal
+            or "execute command" in goal
+            or "shell command" in goal
+            or "terminal command" in goal
+        )
+
+    def _extract_path(self, user_goal: str) -> str | None:
+        quoted = re.search(r'["\']([^"\']+\.[A-Za-z0-9]+)["\']', user_goal)
+
+        if quoted:
+            return quoted.group(1).strip()
+
+        patterns = [
+            r"(?:file|path|folder|directory)\s+([A-Za-z0-9_./\\-]+\.[A-Za-z0-9]+)",
+            r"(?:in|inside|from)\s+([A-Za-z0-9_./\\-]+)",
+            r"([A-Za-z0-9_./\\-]+\.[A-Za-z0-9]+)",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, user_goal, flags=re.IGNORECASE)
+
+            if match:
+                return match.group(1).strip().strip(".,;:")
+
+        return None
+
+    def _extract_file_content(self, user_goal: str) -> str:
+        patterns = [
+            r"content\s*:\s*(.+)$",
+            r"with content\s+(.+)$",
+            r"containing\s+(.+)$",
+            r"write\s+(.+?)\s+to\s+file",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, user_goal, flags=re.IGNORECASE)
+
+            if match:
+                return match.group(1).strip().strip('"').strip("'")
+
+        return "Created by AIRA-X."
+
+    def _extract_python_code(self, user_goal: str) -> str | None:
+        fenced = re.search(
+            r"```(?:python)?\s*(.*?)```",
+            user_goal,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+
+        if fenced:
+            code = fenced.group(1).strip()
+
+            if code:
+                return code
+
+        patterns = [
+            r"run python code\s*:?\s*(.+)$",
+            r"python code\s*:?\s*(.+)$",
+            r"execute python\s*:?\s*(.+)$",
+            r"run this code\s*:?\s*(.+)$",
+            r"code\s*:?\s*(.+)$",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, user_goal, flags=re.IGNORECASE | re.DOTALL)
+
+            if match:
+                code = match.group(1).strip()
+
+                if code:
+                    return code
+
+        return None
+
+    def _build_python_code(self, user_goal: str) -> str | None:
+        goal = user_goal.lower()
+
+        expression = self._extract_math_expression(user_goal)
+
+        if expression:
+            return f"result = {expression}\nprint(result)"
+
+        factorial_match = re.search(r"factorial(?:\s+of)?\s+(\d+)", goal)
+
+        if factorial_match:
+            number = int(factorial_match.group(1))
+
+            return (
+                "import math\n"
+                f"number = {number}\n"
+                "print(math.factorial(number))"
+            )
+
+        fibonacci_match = re.search(r"fibonacci(?:\s+of)?\s+(\d+)", goal)
+
+        if fibonacci_match:
+            number = int(fibonacci_match.group(1))
+
+            return (
+                f"n = {number}\n"
+                "a, b = 0, 1\n"
+                "sequence = []\n"
+                "for _ in range(n):\n"
+                "    sequence.append(a)\n"
+                "    a, b = b, a + b\n"
+                "print(sequence)"
+            )
+
+        if "hello world" in goal:
+            return 'print("Hello, world!")'
+
+        print_match = re.search(
+            r"print\s+(.+)$",
+            user_goal,
+            flags=re.IGNORECASE,
+        )
+
+        if print_match:
+            message = print_match.group(1).strip().strip('"').strip("'")
+            safe_message = message.replace("\\", "\\\\").replace('"', '\\"')
+
+            return f'print("{safe_message}")'
+
+        return None
+
+    def _extract_math_expression(self, user_goal: str) -> str | None:
+        patterns = [
+            r"(?:calculate|compute|evaluate)\s+([0-9+\-*/(). %]+)",
+            r"what is\s+([0-9+\-*/(). %]+)",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, user_goal, flags=re.IGNORECASE)
+
+            if not match:
+                continue
+
+            expression = match.group(1).strip()
+
+            if expression and re.fullmatch(r"[0-9+\-*/(). %]+", expression):
+                return expression
+
+        return None
+
+    def _extract_shell_command(self, user_goal: str) -> str | None:
+        patterns = [
+            r"run command\s*:?\s*(.+)$",
+            r"execute command\s*:?\s*(.+)$",
+            r"shell command\s*:?\s*(.+)$",
+            r"terminal command\s*:?\s*(.+)$",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, user_goal, flags=re.IGNORECASE | re.DOTALL)
+
+            if match:
+                command = match.group(1).strip()
+
+                if command:
+                    return command
+
+        return None
+
+    def _extract_package_name(self, user_goal: str) -> str | None:
+        match = re.search(
+            r"(?:pip install|install package)\s+([A-Za-z0-9_.-]+)",
+            user_goal,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+            return match.group(1).strip()
+
+        return None
 
     def _extract_commit_message(self, user_goal: str) -> str:
         patterns = [

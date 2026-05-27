@@ -1170,7 +1170,7 @@ export default function WorkflowsPage() {
           <div>
             <div className="aira-chip mb-4 px-3 py-1.5 text-xs font-bold">
               <Workflow className="h-3.5 w-3.5" />
-              AIRA-X Workflow History
+              AIRA-X Workflows
             </div>
 
             <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
@@ -1178,9 +1178,9 @@ export default function WorkflowsPage() {
             </h1>
 
             <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
-              Review execution traces, approval states, decisions, Git
-              preflights, cleanup actions, stale recovery events, and final
-              outcomes for every autonomous run.
+              Review execution traces from Assistant: approval states, Git
+              preflights, cleanup actions, recovery events, and final outcomes
+              for every workflow run.
             </p>
 
             <div className="mt-5 flex flex-wrap gap-3">
@@ -1189,7 +1189,7 @@ export default function WorkflowsPage() {
                 className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
               >
                 <Workflow className="h-3.5 w-3.5" />
-                Open Execute Panel
+                Open Assistant
                 <ArrowRight className="h-3.5 w-3.5" />
               </Link>
 
@@ -1452,8 +1452,8 @@ export default function WorkflowsPage() {
                 </h2>
 
                 <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
-                  Run AIRA-X from the Execute page and every traceable workflow
-                  will appear here.
+                  Run tasks from Assistant and every traceable workflow will
+                  appear here.
                 </p>
 
                 <Link
@@ -1461,7 +1461,7 @@ export default function WorkflowsPage() {
                   className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
                 >
                   <Workflow className="h-4 w-4" />
-                  Open Execute Panel
+                  Open Assistant
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>

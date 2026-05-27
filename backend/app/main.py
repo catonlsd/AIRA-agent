@@ -3,7 +3,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes.aira_x import router as aira_x_router
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
@@ -11,15 +10,22 @@ load_dotenv(BASE_DIR / ".env")
 from app.api.routes import router
 from app.core.config import settings
 from app.db.database import init_db
+from app.routes.aira_x import router as aira_x_router
+from app.routes.assistant import router as assistant_router
 
 
 app = FastAPI(
-    title="AIRA API",
-    description="Production-style multi-document RAG API with web research, citations, memory, and summarization.",
-    version="1.0.0",
+    title="AIRA-X API",
+    description=(
+        "Unified AI research and execution API with conversational answers, "
+        "document RAG, web research, workflow execution, approvals, memory, "
+        "citations, and validation."
+    ),
+    version="2.0.0",
 )
 
 app.include_router(aira_x_router)
+app.include_router(assistant_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,9 +49,10 @@ def on_startup() -> None:
 @app.get("/")
 def root() -> dict:
     return {
-        "message": "AIRA API is running",
+        "message": "AIRA-X API is running",
         "docs": "/docs",
         "health": "/health",
+        "assistant": "/assistant/run",
     }
 
 
@@ -53,8 +60,8 @@ def root() -> dict:
 def health() -> dict:
     return {
         "status": "online",
-        "service": "AIRA API",
-        "version": "1.0.0",
+        "service": "AIRA-X API",
+        "version": "2.0.0",
     }
 
 

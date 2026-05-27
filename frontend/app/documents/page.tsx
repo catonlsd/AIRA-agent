@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   useCallback,
@@ -238,8 +238,8 @@ function DocumentCard({
           </div>
 
           <p className="mt-4 text-sm leading-6 text-[var(--text-muted)]">
-            This source is indexed into your AIRA knowledge base and can be used
-            for document-first answers, summaries, retrieval, and citations.
+            This source is indexed into your AIRA-X knowledge layer and can be used
+            for document-backed answers, summaries, retrieval, and citations.
           </p>
         </div>
 
@@ -349,7 +349,7 @@ export default function DocumentsPage() {
 
   async function removeDocument(doc: DocumentRow) {
     const confirmed = window.confirm(
-      `Delete this document from the knowledge base?\n\n${doc.filename}\n\nThis removes the indexed source from local storage.`
+      `Delete this document from AIRA-X knowledge?\n\n${doc.filename}\n\nThis removes the indexed source from local storage.`
     );
 
     if (!confirmed) {
@@ -411,17 +411,17 @@ export default function DocumentsPage() {
           <div>
             <div className="aira-chip mb-4 px-3 py-1.5 text-xs font-bold">
               <Library className="h-3.5 w-3.5" />
-              AIRA Knowledge Base
+              AIRA-X Knowledge
             </div>
 
             <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
-              Knowledge Base
+              Knowledge
             </h1>
 
             <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
               Manage uploaded sources, inspect indexed chunks, summarize
-              documents, and keep your research library ready for grounded AIRA
-              answers.
+              documents, and keep your library ready for grounded AIRA-X
+              answers in Assistant.
             </p>
           </div>
 
@@ -431,7 +431,7 @@ export default function DocumentsPage() {
             </p>
 
             <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
-              Upload documents from Ask AIRA, then manage indexed sources here.
+              Upload documents from Assistant, then manage indexed sources here.
             </p>
 
             <Link
@@ -439,7 +439,7 @@ export default function DocumentsPage() {
               className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-4 py-3 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
             >
               <UploadCloud className="h-4 w-4" />
-              Upload in Ask AIRA
+              Upload in Assistant
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
@@ -448,7 +448,7 @@ export default function DocumentsPage() {
 
       {loading && (
         <div className="w-fit rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-5 py-3 text-sm font-medium text-[var(--text-muted)] shadow-[var(--shadow-soft)]">
-          Loading knowledge base...
+          Loading knowledge sources...
         </div>
       )}
 
@@ -472,7 +472,7 @@ export default function DocumentsPage() {
             <MetricCard
               label="Documents"
               value={formatNumber(docs.length)}
-              description="Indexed sources available to AIRA."
+              description="Indexed sources available to Assistant."
               icon={<Library className="h-4 w-4" />}
             />
 
@@ -555,8 +555,8 @@ export default function DocumentsPage() {
               </h2>
 
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
-                Upload documents in Ask AIRA to build a searchable knowledge
-                base for citation-backed research.
+                Upload documents in Assistant to build a searchable knowledge
+                layer for citation-backed answers.
               </p>
 
               <Link

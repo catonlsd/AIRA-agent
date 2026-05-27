@@ -1,16 +1,52 @@
 # Python
 backend/venv/
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*$py.class
+.Python
 
-# Node
+# Secrets & local env
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env
+frontend/.env.local
+
+# Backend local storage & runtime data
+backend/storage/*.db
+backend/storage/*.log
+backend/storage/uvicorn*.log
+backend/storage/workflow_runs.json
+backend/storage/uploads/**
+!backend/storage/uploads/.gitkeep
+backend/storage/vector_index/**
+!backend/storage/vector_index/.gitkeep
+
+# Backend temp / generated test output
+backend/tmp/
+
+# Diagnostics, snapshots, and local test artifacts
+diagnostics/
+*.zip
+AIRA-agent-clean-snapshot.zip
+airax_*.txt
+step13_*.txt
+
+# Node / Next.js
 frontend/node_modules/
 frontend/.next/
 frontend/dist/
-frontend/.env.local
+frontend/out/
+frontend/.turbo/
 
 # OS / editor
 .DS_Store
+Thumbs.db
 .vscode/
+.idea/
+*.swp
+*.swo
+
+# Legacy path (kept for clarity if file still exists locally)
 backend/storage/workflow_runs.json

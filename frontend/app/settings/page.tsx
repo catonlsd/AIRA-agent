@@ -21,7 +21,6 @@ import {
   XCircle,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { useAiraMode } from "@/components/mode-provider";
 import { cn } from "@/lib/utils";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -33,7 +32,7 @@ const systemCards = [
   {
     title: "Agents",
     description:
-      "Planner, executor, validator, reflection, memory, and approval-aware specialist modules.",
+      "Planner, executor, validator, reflection, memory, routing, and approval-aware specialist modules.",
     href: "/agents",
     icon: BrainCircuit,
     label: "Inspect agents",
@@ -75,9 +74,15 @@ const safetyPolicies = [
 
 const executionBoundaries = [
   {
+    title: "Conversation Layer",
+    description:
+      "Handles everyday questions, explanations, coding help, casual replies, and assistant capability guidance.",
+    icon: Sparkles,
+  },
+  {
     title: "Research Layer",
     description:
-      "Answers questions, retrieves documents, reads sources, summarizes content, and cites evidence.",
+      "Retrieves uploaded documents, reads sources, summarizes content, and produces citation-aware answers.",
     icon: FileText,
   },
   {
@@ -94,16 +99,16 @@ const executionBoundaries = [
   },
 ];
 
-const researchModules = [
+const workspaceModules = [
   {
-    title: "Ask AIRA",
+    title: "Assistant",
     description:
-      "Question answering, summaries, citation-backed responses, and document-first research.",
+      "One unified chat surface for general answers, research, workflow execution, and previous-run followups.",
     href: "/chat",
     icon: Sparkles,
   },
   {
-    title: "Knowledge Base",
+    title: "Knowledge",
     description:
       "Uploaded PDFs, indexed documents, retrieved chunks, and source-grounded context.",
     href: "/documents",
@@ -112,7 +117,7 @@ const researchModules = [
   {
     title: "Interactions",
     description:
-      "Research sessions, question history, and previous assistant responses.",
+      "Conversation history, research sessions, and previous assistant responses.",
     href: "/history",
     icon: Layers3,
   },
@@ -261,7 +266,7 @@ function RuntimeHealthCard() {
       <SectionHeading
         icon={<Server className="h-5 w-5" />}
         title="Runtime Health"
-        description="Shared backend availability for AIRA research and AIRA-X execution."
+        description="Backend availability for the unified AIRA-X assistant, research pipeline, and execution workflows."
         action={
           <button
             type="button"
@@ -312,7 +317,7 @@ function RuntimeHealthCard() {
           </p>
 
           <p className="mt-2 text-sm font-semibold text-[var(--text-strong)]">
-            AIRA + AIRA-X
+            AIRA-X Assistant
           </p>
         </div>
       </div>
@@ -332,7 +337,7 @@ function AppearanceCard() {
       <SectionHeading
         icon={<Palette className="h-5 w-5" />}
         title="Appearance"
-        description="Switch between light, dark, and system theme without compromising the interface polish."
+        description="Switch between light, dark, and system theme without compromising interface polish."
       />
 
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
@@ -345,7 +350,7 @@ function AppearanceCard() {
             </p>
 
             <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
-              Clean research workspace with soft surfaces.
+              Clean assistant workspace with soft surfaces.
             </p>
           </div>
 
@@ -421,17 +426,17 @@ function ModuleLinkCard({
   );
 }
 
-function ResearchWorkspaceSection() {
+function WorkspaceSection() {
   return (
     <section className="sarvam-card rounded-[1.5rem] p-5">
       <SectionHeading
         icon={<Database className="h-5 w-5" />}
-        title="Research Workspace"
-        description="AIRA keeps the interface focused on document-backed answers, citations, and knowledge retrieval."
+        title="Assistant Workspace"
+        description="AIRA-X brings general chat, document-grounded research, workflow execution, and history into one assistant experience."
       />
 
       <div className="grid gap-3 md:grid-cols-3">
-        {researchModules.map((module) => {
+        {workspaceModules.map((module) => {
           const Icon = module.icon;
 
           return (
@@ -501,8 +506,8 @@ function ExecutionBoundariesSection() {
     <section className="sarvam-card rounded-[1.5rem] p-5">
       <SectionHeading
         icon={<LockKeyhole className="h-5 w-5" />}
-        title="Execution Boundaries"
-        description="AIRA-X separates research, execution, and governance so risky actions never feel hidden."
+        title="System Boundaries"
+        description="AIRA-X separates conversation, research, execution, and governance so every response remains understandable and safe."
       />
 
       <div className="grid gap-3">
@@ -535,26 +540,43 @@ function ExecutionBoundariesSection() {
   );
 }
 
-function AiraResearchSettings() {
+export default function SettingsPage() {
   return (
-    <>
+    <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-7xl flex-col gap-6">
+      <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-6">
+        <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-[var(--accent-glow)] blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-[var(--secondary-glow)] blur-3xl" />
+
+        <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="aira-chip mb-4 px-3 py-1.5 text-xs font-bold">
+              <Sparkles className="h-3.5 w-3.5" />
+              Platform settings
+            </div>
+
+            <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
+              Settings
+            </h1>
+
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
+              Configure appearance, runtime health, workspace modules, agent
+              policies, tool boundaries, and approval-aware execution rules.
+            </p>
+          </div>
+
+          <div className="inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold status-success">
+            <Activity className="h-3.5 w-3.5" />
+            Production workspace
+          </div>
+        </div>
+      </section>
+
       <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <AppearanceCard />
         <RuntimeHealthCard />
       </section>
 
-      <ResearchWorkspaceSection />
-    </>
-  );
-}
-
-function AiraXSystemSettings() {
-  return (
-    <>
-      <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <AppearanceCard />
-        <RuntimeHealthCard />
-      </section>
+      <WorkspaceSection />
 
       <section className="grid gap-4 md:grid-cols-2">
         {systemCards.map((card) => {
@@ -578,56 +600,6 @@ function AiraXSystemSettings() {
         <SafetyPoliciesSection />
         <ExecutionBoundariesSection />
       </section>
-    </>
-  );
-}
-
-export default function SettingsPage() {
-  const { mode } = useAiraMode();
-
-  const isAiraMode = mode === "aira";
-
-  return (
-    <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-7xl flex-col gap-6">
-      <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-6">
-        <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-[var(--accent-glow)] blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-[var(--secondary-glow)] blur-3xl" />
-
-        <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="aira-chip mb-4 px-3 py-1.5 text-xs font-bold">
-              {isAiraMode ? (
-                <Palette className="h-3.5 w-3.5" />
-              ) : (
-                <Sparkles className="h-3.5 w-3.5" />
-              )}
-              {isAiraMode ? "AIRA Preferences" : "AIRA-X System Console"}
-            </div>
-
-            <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
-              {isAiraMode ? "Appearance" : "System Console"}
-            </h1>
-
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
-              {isAiraMode
-                ? "Tune the visual experience and check the shared runtime used by AIRA research features."
-                : "Inspect the execution platform: runtime health, agent modules, tool boundaries, safety policies, and approval-aware execution rules."}
-            </p>
-          </div>
-
-          <div
-            className={cn(
-              "inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black",
-              isAiraMode ? "status-info" : "status-success"
-            )}
-          >
-            <Activity className="h-3.5 w-3.5" />
-            {isAiraMode ? "Research mode" : "Execution mode"}
-          </div>
-        </div>
-      </section>
-
-      {isAiraMode ? <AiraResearchSettings /> : <AiraXSystemSettings />}
     </div>
   );
 }

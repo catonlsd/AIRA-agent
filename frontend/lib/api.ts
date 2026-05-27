@@ -300,6 +300,102 @@ export type AiraXOverviewResponse = {
   };
 };
 
+export type AssistantResponseType =
+  | "casual_chat"
+  | "capability_help"
+  | "general_answer"
+  | "document_research"
+  | "web_research"
+  | "execution_result"
+  | "approval_required"
+  | "workflow_followup"
+  | "multi_task"
+  | "clarification"
+  | "error";
+
+export function isMultiTaskResponse(
+  response: AssistantRunResponse
+): response is AssistantRunResponse & {
+  response_type: "multi_task";
+  metadata: AssistantRunResponse["metadata"] & {
+    task_count?: number;
+    failed_tasks?: number[];
+    response_types?: string[];
+  };
+} {
+  return response.response_type === "multi_task";
+}
+
+export type AssistantWorkflow = Partial<AiraXWorkflowRun> & {
+  run_id?: string;
+  status?: string;
+  decision?: string;
+  final_answer?: string | null;
+  requires_approval?: boolean;
+  pending_action?: string;
+  approval_context?: AiraXApprovalContext;
+  plan?: AiraXWorkflowStep[];
+  execution_outputs?: any[];
+  memory?: Record<string, any>;
+  workflow_logs?: any[];
+  workflow_summary?: Record<string, any>;
+  [key: string]: any;
+};
+
+export type AssistantRunResponse = {
+  response_type: AssistantResponseType;
+  answer: string;
+  citations: Citation[];
+  workflow?: AssistantWorkflow | null;
+  run_id?: string | null;
+  metadata: Record<string, any>;
+};
+
+export function assistantWorkflowToAiraXRun(
+  workflow?: AssistantWorkflow | null
+): AiraXRunResponse | null {
+  if (!workflow || !workflow.run_id) {
+    return null;
+  }
+
+  return {
+    run_id: workflow.run_id,
+    user_goal: workflow.user_goal || workflow.workflow_summary?.user_goal || "",
+    status: workflow.status || "unknown",
+    decision: workflow.decision || "unknown",
+    final_answer: workflow.final_answer ?? null,
+    current_step: workflow.current_step ?? null,
+    retry_count: workflow.retry_count ?? 0,
+    created_at: workflow.created_at,
+    updated_at: workflow.updated_at,
+    completed_at: workflow.completed_at,
+    requires_approval: workflow.requires_approval ?? false,
+    pending_action: workflow.pending_action,
+    approval_context: workflow.approval_context,
+    approval_context_type: workflow.approval_context_type,
+    approval_in_progress: workflow.approval_in_progress,
+    approval_resolution: workflow.approval_resolution,
+    approval_resolution_status: workflow.approval_resolution_status,
+    approval_resolution_action: workflow.approval_resolution_action,
+    approval_stale_recovered: workflow.approval_stale_recovered,
+    approval_recovery_events: workflow.approval_recovery_events,
+    approval_recovery_count: workflow.approval_recovery_count,
+    has_approval_recovery: workflow.has_approval_recovery,
+    cleanup_actions: workflow.cleanup_actions,
+    cleanup_count: workflow.cleanup_count,
+    has_cleanup: workflow.has_cleanup,
+    step_count: workflow.step_count ?? workflow.plan?.length ?? 0,
+    log_count: workflow.log_count ?? workflow.workflow_logs?.length ?? 0,
+    plan: workflow.plan || [],
+    execution_outputs: workflow.execution_outputs || [],
+    memory: workflow.memory || {},
+    workflow_logs: workflow.workflow_logs || [],
+    workflow_summary: workflow.workflow_summary || {},
+    success: workflow.success,
+    error: workflow.error,
+  };
+}
+
 function getApiErrorMessage(data: unknown, fallback: string): string {
   if (typeof data === "string" && data.trim()) {
     return data;
@@ -369,6 +465,27 @@ export async function apiDelete<T>(path: string): Promise<T> {
   });
 
   return parseApiResponse<T>(response, "Failed to delete data");
+}
+
+export async function runAssistant(
+  message: string,
+  useWeb?: boolean
+): Promise<AssistantRunResponse> {
+  const response = await fetch(`${API_URL}/assistant/run`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message,
+      use_web: useWeb ?? false,
+    }),
+  });
+
+  return parseApiResponse<AssistantRunResponse>(
+    response,
+    "Failed to run AIRA-X assistant"
+  );
 }
 
 export async function sendChat(

@@ -20,21 +20,19 @@ const ibmPlexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "AIRA / AIRA-X | Research & Execution Platform",
-    template: "%s | AIRA-X",
+    default: "AIRA-X | AI Research & Execution Platform",
+    template: "%s · AIRA-X",
   },
   description:
-    "AIRA is a grounded AI research assistant. AIRA-X extends it into an autonomous research and execution platform with workflows, approvals, tools, validation, and traceable execution.",
+    "AIRA-X is a production AI workspace for conversational answers, document-backed research, workflow execution, approvals, and auditable tool operations.",
   applicationName: "AIRA-X",
   keywords: [
-    "AIRA",
     "AIRA-X",
-    "AI research assistant",
-    "AI execution platform",
-    "autonomous workflows",
-    "multi-agent system",
-    "RAG",
+    "AI assistant",
+    "document RAG",
     "workflow automation",
+    "human-in-the-loop",
+    "enterprise AI",
   ],
   authors: [{ name: "AIRA-X" }],
 };

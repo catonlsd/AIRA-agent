@@ -5,7 +5,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useState,
   type ReactNode,
 } from "react";
 
@@ -19,48 +18,29 @@ type ModeContextValue = {
 const ModeContext = createContext<ModeContextValue | null>(null);
 
 const STORAGE_KEY = "aira-operating-mode";
-
-function getStoredMode(): AiraOperatingMode {
-  if (typeof window === "undefined") {
-    return "aira-x";
-  }
-
-  const storedMode = window.localStorage.getItem(STORAGE_KEY);
-
-  if (storedMode === "aira" || storedMode === "aira-x") {
-    return storedMode;
-  }
-
-  return "aira-x";
-}
+const UNIFIED_MODE: AiraOperatingMode = "aira-x";
 
 export function ModeProvider({ children }: { children: ReactNode }) {
-  const [mode, setModeState] = useState<AiraOperatingMode>("aira-x");
-
   useEffect(() => {
-    setModeState(getStoredMode());
-  }, []);
-
-  useEffect(() => {
-    document.documentElement.dataset.airaMode = mode;
+    window.localStorage.setItem(STORAGE_KEY, UNIFIED_MODE);
+    document.documentElement.dataset.airaMode = UNIFIED_MODE;
 
     return () => {
       delete document.documentElement.dataset.airaMode;
     };
-  }, [mode]);
+  }, []);
 
-  function setMode(nextMode: AiraOperatingMode) {
-    setModeState(nextMode);
-    window.localStorage.setItem(STORAGE_KEY, nextMode);
-    document.documentElement.dataset.airaMode = nextMode;
+  function setMode(_nextMode: AiraOperatingMode) {
+    window.localStorage.setItem(STORAGE_KEY, UNIFIED_MODE);
+    document.documentElement.dataset.airaMode = UNIFIED_MODE;
   }
 
   const value = useMemo(
     () => ({
-      mode,
+      mode: UNIFIED_MODE,
       setMode,
     }),
-    [mode]
+    []
   );
 
   return <ModeContext.Provider value={value}>{children}</ModeContext.Provider>;

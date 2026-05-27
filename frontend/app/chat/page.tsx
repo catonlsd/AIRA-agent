@@ -1,8 +1,9 @@
-"use client";
+﻿"use client";
 
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ChangeEvent,
   type FormEvent,
@@ -14,7 +15,6 @@ import {
   ArrowRight,
   CheckCircle2,
   Database,
-  FileText,
   FileUp,
   GitBranch,
   Globe2,
@@ -28,21 +28,28 @@ import {
   Workflow,
   XCircle,
 } from "lucide-react";
+import { AssistantAnswerContent } from "@/components/assistant-answer";
 import { CitationList } from "@/components/citation-list";
 import {
+  TechnicalDetailRow,
+  TechnicalDetailsGrid,
+  TechnicalDetailsPanel,
+} from "@/components/technical-details";
+import {
+  type AssistantRunResponse,
   type ChatResponse,
   approveAiraX,
+  assistantWorkflowToAiraXRun,
+  isMultiTaskResponse,
   rejectAiraX,
-  runAiraX,
-  sendChat,
+  runAssistant,
   uploadDocuments,
 } from "@/lib/api";
-import { useAiraMode } from "@/components/mode-provider";
 import { cn } from "@/lib/utils";
 
 type Turn = {
   question: string;
-  response?: ChatResponse;
+  response?: ChatResponse | AssistantRunResponse;
   error?: string;
 };
 
@@ -108,16 +115,6 @@ type AiraXResponse = {
   workflow_logs?: WorkflowLog[];
 };
 
-function cleanAnswer(answer: string) {
-  return answer
-    .replace(/^###\s?/gm, "")
-    .replace(/^##\s?/gm, "")
-    .replace(/^#\s?/gm, "")
-    .replace(/\*\*/g, "")
-    .replace(/^\s*(Sources|Source|References|Reference)\s*:?\s*[\s\S]*$/im, "")
-    .trim();
-}
-
 function getWorkflowStatusClass(status?: string) {
   if (status === "completed" || status === "success") {
     return "status-success";
@@ -156,7 +153,7 @@ function InfoTile({
 
       <p
         className={cn(
-          "mt-1 break-words text-sm font-semibold text-[var(--text-strong)]",
+          "mt-1 whitespace-pre-wrap break-words text-sm font-semibold text-[var(--text-strong)]",
           mono && "font-mono text-xs"
         )}
       >
@@ -370,30 +367,25 @@ function CleanupActions({ memory }: { memory: any }) {
   }
 
   return (
-    <div className="mt-5 rounded-2xl border border-[color-mix(in_srgb,var(--success)_34%,transparent)] bg-[var(--success-soft)] p-5">
-      <PanelHeader
-        icon={<CheckCircle2 className="h-4 w-4" />}
-        title="Cleanup Actions"
-        description="AIRA-X performed cleanup after rejection or stop conditions."
-      />
-
+    <TechnicalDetailsPanel summary="Cleanup trace">
       <div className="space-y-3">
         {cleanupActions.map((cleanup: any, index: number) => (
           <div
             key={`${cleanup.tool_action}-${index}`}
-            className="rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] p-3 text-xs text-[var(--text)]"
+            className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-xs text-[var(--text)]"
           >
             <p>
-              <strong>Action:</strong> {cleanup.tool_name}:{cleanup.tool_action}
-            </p>
-
-            <p className="mt-1">
               <strong>Reason:</strong> {cleanup.reason}
             </p>
 
             <p className="mt-1">
               <strong>Status:</strong>{" "}
               {cleanup.result?.success ? "successful" : "failed"}
+            </p>
+
+            <p className="mt-1">
+              <strong>Tool action:</strong> {cleanup.tool_name}:
+              {cleanup.tool_action}
             </p>
 
             {cleanup.result?.command && (
@@ -404,8 +396,100 @@ function CleanupActions({ memory }: { memory: any }) {
           </div>
         ))}
       </div>
-    </div>
+    </TechnicalDetailsPanel>
   );
+}
+
+function AssistantTurnTechnicalDetails({
+  response,
+}: {
+  response: AssistantRunResponse;
+}) {
+  const workflow = response.workflow;
+  const rows: Array<{ label: string; value: string; mono?: boolean }> = [];
+
+  if (response.run_id) {
+    rows.push({ label: "Run ID", value: response.run_id, mono: true });
+  }
+
+  if (workflow?.decision) {
+    rows.push({ label: "Decision", value: String(workflow.decision) });
+  }
+
+  if (response.metadata?.tool_name) {
+    rows.push({
+      label: "Tool",
+      value: `${response.metadata.tool_name}:${response.metadata.tool_action || "action"}`,
+      mono: true,
+    });
+  }
+
+  if (Array.isArray(response.metadata?.response_types)) {
+    rows.push({
+      label: "Task routes",
+      value: response.metadata.response_types.join(", "),
+    });
+  }
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <TechnicalDetailsPanel className="mt-4">
+      <TechnicalDetailsGrid>
+        {rows.map((row) => (
+          <TechnicalDetailRow
+            key={row.label}
+            label={row.label}
+            value={row.value}
+            mono={row.mono}
+          />
+        ))}
+      </TechnicalDetailsGrid>
+    </TechnicalDetailsPanel>
+  );
+}
+
+function collectWorkflowTechnicalRows(response: AiraXResponse) {
+  const rows: Array<{ label: string; value: string; mono?: boolean }> = [
+    { label: "Status", value: response.status || "unknown" },
+    { label: "Decision", value: response.decision || "unknown" },
+  ];
+
+  if (response.run_id) {
+    rows.push({ label: "Run ID", value: response.run_id, mono: true });
+  }
+
+  const agents = [
+    ...new Set(
+      (response.plan || [])
+        .map((step) => step.assigned_agent)
+        .filter(Boolean)
+    ),
+  ];
+
+  if (agents.length > 0) {
+    rows.push({ label: "Agents", value: agents.join(", ") });
+  }
+
+  const toolActions = [
+    ...new Set(
+      (response.plan || [])
+        .filter((step) => step.tool_name && step.tool_action)
+        .map((step) => `${step.tool_name}:${step.tool_action}`)
+    ),
+  ];
+
+  if (toolActions.length > 0) {
+    rows.push({
+      label: "Tool actions",
+      value: toolActions.join(" · "),
+      mono: true,
+    });
+  }
+
+  return rows;
 }
 
 function EmptyExecutionState() {
@@ -433,8 +517,26 @@ function EmptyExecutionState() {
   );
 }
 
+function getAssistantResponse(
+  response?: ChatResponse | AssistantRunResponse
+): AssistantRunResponse | null {
+  if (response && "response_type" in response) {
+    return response;
+  }
+
+  return null;
+}
+
 function ResearchTurnCard({ turn }: { turn: Turn }) {
-  const confidence = (turn.response as any)?.confidence || "not recorded";
+  const assistantResponse = getAssistantResponse(turn.response);
+  const multiTask =
+    assistantResponse && isMultiTaskResponse(assistantResponse)
+      ? assistantResponse
+      : null;
+  const taskCount = multiTask?.metadata?.task_count ?? 0;
+  const failedTasks = multiTask?.metadata?.failed_tasks ?? [];
+  const completedTasks =
+    taskCount > 0 ? Math.max(taskCount - failedTasks.length, 0) : 0;
 
   return (
     <div className="fade-up space-y-4">
@@ -451,12 +553,25 @@ function ResearchTurnCard({ turn }: { turn: Turn }) {
       {turn.response && (
         <div className="sarvam-card rounded-[1.5rem] p-5">
           <PanelHeader
-            icon={<Sparkles className="h-4 w-4" />}
-            title="AIRA Answer"
+            icon={
+              multiTask ? (
+                <Workflow className="h-4 w-4" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )
+            }
+            title={multiTask ? "Multi-task results" : "AIRA-X Answer"}
+            description={
+              multiTask && taskCount > 0
+                ? failedTasks.length > 0
+                  ? `Ran ${taskCount} tasks — ${completedTasks} completed, ${failedTasks.length} failed.`
+                  : `Ran ${taskCount} tasks successfully, one by one.`
+                : undefined
+            }
           />
 
-          <div className="whitespace-pre-wrap rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-5 text-sm leading-7 text-[var(--text)]">
-            {cleanAnswer(turn.response.answer)}
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-5">
+            <AssistantAnswerContent answer={turn.response.answer} />
           </div>
 
           {turn.response.citations.length > 0 && (
@@ -468,103 +583,51 @@ function ResearchTurnCard({ turn }: { turn: Turn }) {
               <CitationList citations={turn.response.citations} />
             </div>
           )}
+
+          {assistantResponse &&
+            (assistantResponse.run_id ||
+              assistantResponse.workflow?.decision ||
+              assistantResponse.metadata?.tool_name ||
+              Array.isArray(assistantResponse.metadata?.response_types)) && (
+              <AssistantTurnTechnicalDetails response={assistantResponse} />
+            )}
         </div>
       )}
     </div>
   );
 }
 
-function DocumentIntakeCard({
-  uploadLoading,
-  uploadMessage,
-  uploadError,
-  onUpload,
+function AssistantWorkspaceLinks({
+  onUploadClick,
 }: {
-  uploadLoading: boolean;
-  uploadMessage: string;
-  uploadError: string;
-  onUpload: (event: ChangeEvent<HTMLInputElement>) => Promise<void>;
+  onUploadClick: () => void;
 }) {
   return (
-    <div className="sarvam-card rounded-[1.5rem] p-5">
-      <PanelHeader
-        icon={<FileUp className="h-4 w-4" />}
-        title="Document Intake"
-        description="Upload sources once, then ask AIRA against your indexed knowledge layer."
-      />
-
-      <label className="group flex min-h-[360px] cursor-pointer flex-col items-center justify-center rounded-[1.75rem] border border-dashed border-[var(--border)] bg-[var(--surface-soft)] p-8 text-center transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]">
-        <input
-          type="file"
-          multiple
-          onChange={onUpload}
-          disabled={uploadLoading}
-          className="hidden"
-        />
-
-        <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-[1.8rem] border border-[var(--border)] bg-[var(--accent-soft)] text-[var(--accent)] shadow-[var(--shadow-soft)] transition group-hover:-translate-y-1 group-hover:scale-105">
-          {uploadLoading ? (
-            <RefreshCw className="h-9 w-9 animate-spin" />
-          ) : (
-            <UploadCloud className="h-9 w-9" />
-          )}
-        </div>
-
-        <p className="text-xl font-black text-[var(--text-strong)]">
-          {uploadLoading ? "Indexing sources..." : "Upload documents"}
-        </p>
-
-        <p className="mt-2 max-w-xs text-sm leading-6 text-[var(--text-muted)]">
-          Add PDFs or source files. AIRA turns them into retrievable context for
-          summaries, citations, and grounded answers.
-        </p>
-
-        <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)]">
-          <FileText className="h-3.5 w-3.5" />
-          Select multiple files
-        </div>
-      </label>
-
-      {uploadMessage && (
-        <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--success)_34%,transparent)] bg-[var(--success-soft)] p-3 text-xs font-semibold text-[var(--success)]">
-          {uploadMessage}
-        </div>
-      )}
-
-      {uploadError && (
-        <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-3 text-xs font-semibold text-[var(--danger)]">
-          {uploadError}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ResearchModeCard({ forceWeb }: { forceWeb: boolean }) {
-  return (
-    <div className="aira-panel rounded-[1.5rem] p-4">
-      <PanelHeader
-        icon={<Database className="h-4 w-4" />}
-        title="Knowledge Context"
-        description="Compact retrieval status and source-library access."
-      />
-
-      <div className="grid gap-3">
-        <InfoTile
-          label="Mode"
-          value={forceWeb ? "Documents + Web" : "Document-first"}
-        />
-        <InfoTile label="Output" value="Answer + citations" />
-      </div>
-
-      <Link
-        href="/documents"
-        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
-      >
-        <Library className="h-4 w-4" />
-        Open Knowledge Base
-        <ArrowRight className="h-3.5 w-3.5" />
+    <div className="pro-link-row mt-8">
+      <Link href="/documents" className="pro-link-pill">
+        <Library className="h-3.5 w-3.5" />
+        Knowledge
       </Link>
+      <Link href="/workflows" className="pro-link-pill">
+        <Workflow className="h-3.5 w-3.5" />
+        Workflows
+      </Link>
+      <Link href="/approvals" className="pro-link-pill">
+        <ShieldCheck className="h-3.5 w-3.5" />
+        Approvals
+      </Link>
+      <Link href="/history" className="pro-link-pill">
+        <Database className="h-3.5 w-3.5" />
+        History
+      </Link>
+      <button type="button" onClick={onUploadClick} className="pro-link-pill">
+        <FileUp className="h-3.5 w-3.5" />
+        Upload documents
+      </button>
+      <span className="pro-link-pill cursor-default opacity-90">
+        <Globe2 className="h-3.5 w-3.5" />
+        Web search on
+      </span>
     </div>
   );
 }
@@ -582,7 +645,7 @@ function SuggestionChip({
     <button
       type="button"
       onClick={() => onSelect(prompt)}
-      className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+      className="pro-quick-action inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-bold"
     >
       <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />
       {label}
@@ -593,8 +656,6 @@ function SuggestionChip({
 function AiraHomeStage({
   question,
   setQuestion,
-  forceWeb,
-  setForceWeb,
   busy,
   loading,
   onSubmit,
@@ -602,82 +663,75 @@ function AiraHomeStage({
 }: {
   question: string;
   setQuestion: (value: string) => void;
-  forceWeb: boolean;
-  setForceWeb: (value: boolean) => void;
   busy: boolean;
   loading: boolean;
   onSubmit: (event: FormEvent) => Promise<void>;
   onComposerFocus: () => void;
 }) {
   return (
-    <section className="flex min-h-[560px] flex-col items-center justify-center rounded-[2rem] p-4 lg:min-h-[620px]">
+    <section className="assistant-empty-shell w-full">
       <div className="w-full max-w-3xl text-center">
-        <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--accent-soft)] text-[var(--accent)] shadow-[var(--shadow-soft)]">
-          <Sparkles className="h-5 w-5" />
-        </div>
+        <p className="pro-kicker mx-auto mb-4 w-fit px-3 py-1.5">
+          <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />
+          AIRA-X Assistant
+        </p>
 
-        <h2 className="text-3xl font-black tracking-tight text-[var(--text-strong)] md:text-4xl">
-          What should we research today?
+        <h2 className="text-3xl font-black tracking-tight text-[var(--text-strong)] md:text-4xl md:leading-tight">
+          How can I help you today?
         </h2>
 
         <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-[var(--text-muted)]">
-          Ask AIRA a focused question. It will search your uploaded knowledge
-          base first and return a source-backed answer.
+          Ask a question, analyze documents, run a workflow, or inspect a
+          previous execution. Routing is handled automatically.
         </p>
 
         <form
           onSubmit={onSubmit}
-          className="research-composer chatgpt-composer mx-auto mt-8 rounded-[2rem] border border-[var(--border)] bg-[var(--surface)] p-3 text-left shadow-[var(--shadow-card)] backdrop-blur-xl"
+          className="pro-composer mx-auto mt-8 w-full rounded-[1.5rem] p-3 text-left"
         >
           <textarea
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
             onFocus={onComposerFocus}
-            placeholder="Ask anything from your documents..."
-            className="min-h-[82px] w-full resize-none rounded-[1.4rem] border border-transparent bg-[var(--surface-strong)] p-4 text-sm text-[var(--text-strong)] caret-[var(--accent)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)]"
+            placeholder="Message AIRA-X..."
+            className="min-h-[88px] w-full resize-none rounded-[1rem] border border-transparent bg-transparent p-4 text-sm text-[var(--text-strong)] caret-[var(--accent)] outline-none placeholder:text-[var(--text-subtle)]"
           />
 
-          <div className="mt-2 flex flex-col gap-3 px-1 pb-1 md:flex-row md:items-center md:justify-between">
-            <label className="flex w-fit cursor-pointer items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-sm font-medium text-[var(--text-muted)]">
-              <input
-                type="checkbox"
-                checked={forceWeb}
-                onChange={(event) => setForceWeb(event.target.checked)}
-                className="accent-[var(--accent)]"
-              />
-
-              <Globe2 className="h-4 w-4 text-[var(--accent)]" />
-              Include web search
-            </label>
+          <div className="mt-2 flex items-center justify-between border-t border-[var(--border)] px-1 pb-1 pt-3">
+            {/* Web search always-on indicator */}
+            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-xs font-semibold text-[var(--text-muted)]">
+              <Globe2 className="h-3.5 w-3.5 text-[var(--accent)]" />
+              Web search on
+            </div>
 
             <button
               disabled={busy || !question.trim()}
-              className="group inline-flex items-center justify-center gap-2 rounded-full bg-[var(--accent)] px-5 py-2.5 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+              className="pro-send inline-flex items-center justify-center gap-2 rounded-full bg-[var(--accent)] px-5 py-2.5 text-sm font-bold text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? (
                 <RefreshCw className="h-4 w-4 animate-spin" />
               ) : (
-                <Send className="h-4 w-4 transition-all duration-500 ease-out group-hover:-translate-y-1 group-hover:translate-x-1 group-hover:rotate-12" />
+                <Send className="h-4 w-4" />
               )}
-              {loading ? "Researching..." : "Ask AIRA"}
+              {loading ? "Working..." : "Send"}
             </button>
           </div>
         </form>
 
         <div className="mt-5 flex flex-wrap justify-center gap-2">
           <SuggestionChip
-            label="Summarize uploaded sources"
-            prompt="Summarize the documents I uploaded and highlight the key points."
+            label="Explain a topic"
+            prompt="Explain "
             onSelect={setQuestion}
           />
           <SuggestionChip
-            label="Find cited answer"
-            prompt="Answer this using my knowledge base and include citations: "
+            label="Run Python"
+            prompt='run python code: print("Hello from AIRA-X")'
             onSelect={setQuestion}
           />
           <SuggestionChip
-            label="Compare sources"
-            prompt="Compare the relevant uploaded documents and explain the differences."
+            label="Git status"
+            prompt="git status"
             onSelect={setQuestion}
           />
         </div>
@@ -699,24 +753,67 @@ function WorkflowResultCard({
   onApprove: () => Promise<void>;
   onReject: () => Promise<void>;
 }) {
-  return (
-    <div className="sarvam-card rounded-[1.5rem] p-5">
-      <PanelHeader
-        icon={<Activity className="h-4 w-4" />}
-        title="Workflow Result"
-        description="Latest workflow status, decision, and approval state."
-      />
+  const isCompleted = response.status === "completed";
+  const isFailed =
+    response.status === "failed" ||
+    response.status === "rejected" ||
+    response.status === "blocked";
+  const finalAnswer = response.final_answer || "No final answer yet.";
 
-      <div className="grid gap-3">
-        <InfoTile label="Status" value={response.status} />
-        <InfoTile label="Decision" value={response.decision} />
-        <InfoTile
-          label="Final Answer"
-          value={response.final_answer || "No final answer yet"}
-        />
-        {response.run_id && (
-          <InfoTile label="Run ID" value={response.run_id} mono />
-        )}
+  return (
+    <div className="sarvam-card rounded-[1.75rem] p-5">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <div
+            className={cn(
+              "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border",
+              isCompleted
+                ? "border-[color-mix(in_srgb,var(--success)_36%,transparent)] bg-[var(--success-soft)] text-[var(--success)]"
+                : isFailed
+                  ? "border-[color-mix(in_srgb,var(--danger)_36%,transparent)] bg-[var(--danger-soft)] text-[var(--danger)]"
+                  : "border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[var(--warning-soft)] text-[var(--warning)]"
+            )}
+          >
+            {isCompleted ? (
+              <CheckCircle2 className="h-5 w-5" />
+            ) : isFailed ? (
+              <XCircle className="h-5 w-5" />
+            ) : (
+              <Activity className="h-5 w-5" />
+            )}
+          </div>
+
+          <div>
+            <div
+              className={cn(
+                "mb-2 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wide",
+                getWorkflowStatusClass(response.status)
+              )}
+            >
+              {response.status || "unknown"}
+            </div>
+
+            <h2 className="text-xl font-black tracking-tight text-[var(--text-strong)]">
+              {isCompleted
+                ? "Execution completed"
+                : isFailed
+                  ? "Execution stopped"
+                  : "Execution in progress"}
+            </h2>
+
+            <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
+              AIRA-X completed the workflow and prepared the result below.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-[1.4rem] border border-[var(--border-strong)] bg-[var(--surface-soft)] p-5 shadow-[var(--shadow-soft)]">
+        <p className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-[var(--text-subtle)]">
+          Final Answer
+        </p>
+
+        <AssistantAnswerContent answer={finalAnswer} />
       </div>
 
       {response.requires_approval && (
@@ -759,6 +856,19 @@ function WorkflowResultCard({
         </div>
       )}
 
+      <TechnicalDetailsPanel className="mt-4">
+        <TechnicalDetailsGrid>
+          {collectWorkflowTechnicalRows(response).map((row) => (
+            <TechnicalDetailRow
+              key={row.label}
+              label={row.label}
+              value={row.value}
+              mono={row.mono}
+            />
+          ))}
+        </TechnicalDetailsGrid>
+      </TechnicalDetailsPanel>
+
       <CleanupActions memory={response.memory} />
     </div>
   );
@@ -766,13 +876,14 @@ function WorkflowResultCard({
 
 function ExecutionPlanCard({ steps }: { steps: AiraXStep[] }) {
   return (
-    <div className="sarvam-card rounded-[1.5rem] p-5">
+    <TechnicalDetailsPanel
+      className="sarvam-card rounded-[1.5rem] p-5"
+      summary={`Execution plan (${steps.length} step${steps.length === 1 ? "" : "s"})`}
+    >
       <PanelHeader
         icon={<GitBranch className="h-4 w-4" />}
         title="Execution Plan"
-        description={`${steps.length} planned execution step${
-          steps.length === 1 ? "" : "s"
-        }.`}
+        description="Step-by-step trace for this workflow run."
       />
 
       <div className="space-y-3">
@@ -800,39 +911,47 @@ function ExecutionPlanCard({ steps }: { steps: AiraXStep[] }) {
 
             <p className="mt-1 text-[var(--text-muted)]">{step.description}</p>
 
-            <div className="mt-2 grid gap-1 text-xs text-[var(--text-muted)] sm:grid-cols-2">
-              <p>
-                <strong>Agent:</strong> {step.assigned_agent}
-              </p>
-
-              {step.tool_name && (
-                <p>
-                  <strong>Tool:</strong> {step.tool_name}
-                </p>
-              )}
-
-              {step.tool_action && (
-                <p>
-                  <strong>Action:</strong> {step.tool_action}
-                </p>
-              )}
-            </div>
-
             <div className="mt-3">
               <p className="mb-2 text-xs font-semibold text-[var(--text-muted)]">
                 Result
               </p>
 
               {step.result ? (
-                <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-xl p-4 text-xs leading-6">
-                  {step.result}
-                </pre>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+                  <AssistantAnswerContent answer={step.result} />
+                </div>
               ) : (
                 <p className="text-xs text-[var(--text-subtle)]">
                   No result yet
                 </p>
               )}
             </div>
+
+            {(step.assigned_agent || step.tool_name || step.tool_action) && (
+              <TechnicalDetailsPanel
+                className="mt-3"
+                summary="Step technical details"
+              >
+                <TechnicalDetailsGrid>
+                  {step.assigned_agent && (
+                    <TechnicalDetailRow
+                      label="Agent"
+                      value={step.assigned_agent}
+                    />
+                  )}
+                  {step.tool_name && (
+                    <TechnicalDetailRow label="Tool" value={step.tool_name} />
+                  )}
+                  {step.tool_action && (
+                    <TechnicalDetailRow
+                      label="Tool action"
+                      value={step.tool_action}
+                      mono
+                    />
+                  )}
+                </TechnicalDetailsGrid>
+              </TechnicalDetailsPanel>
+            )}
 
             {step.error && (
               <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--surface-soft)] p-3 text-xs text-[var(--danger)]">
@@ -842,28 +961,21 @@ function ExecutionPlanCard({ steps }: { steps: AiraXStep[] }) {
           </div>
         ))}
       </div>
-    </div>
+    </TechnicalDetailsPanel>
   );
 }
 
-
 function FocusComposerOverlay({
-  isAiraMode,
   question,
   setQuestion,
-  forceWeb,
-  setForceWeb,
   busy,
   loading,
   airaXLoading,
   onSubmit,
   onClose,
 }: {
-  isAiraMode: boolean;
   question: string;
   setQuestion: (value: string) => void;
-  forceWeb: boolean;
-  setForceWeb: (value: boolean) => void;
   busy: boolean;
   loading: boolean;
   airaXLoading: boolean;
@@ -883,17 +995,13 @@ function FocusComposerOverlay({
         onSubmit={onSubmit}
         className={cn(
           "fixed left-1/2 top-1/2 z-50 w-[min(820px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-[2rem] border border-[var(--border-strong)] bg-[var(--surface)] p-4 shadow-[var(--shadow-card)] backdrop-blur-2xl",
-          isAiraMode ? "research-composer chatgpt-composer" : "aira-console"
+          "research-composer chatgpt-composer"
         )}
       >
         <div className="mb-3 flex items-center justify-between gap-3 px-1">
           <div className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)]">
-            {isAiraMode ? (
-              <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />
-            ) : (
-              <Workflow className="h-3.5 w-3.5 text-[var(--secondary)]" />
-            )}
-            {isAiraMode ? "Focused research" : "Focused execution"}
+            <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />
+            Focused prompt
           </div>
 
           <button
@@ -910,62 +1018,27 @@ function FocusComposerOverlay({
           autoFocus
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
-          placeholder={
-            isAiraMode
-              ? "Ask AIRA a research question..."
-              : "Tell AIRA-X what task to execute..."
-          }
-          className="min-h-[150px] w-full resize-none rounded-[1.4rem] border border-[var(--border)] bg-[var(--surface-strong)] p-5 text-base leading-7 text-[var(--text-strong)] caret-[var(--accent)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+          placeholder="Message AIRA-X..."
+          className="min-h-[150px] w-full resize-none rounded-[1rem] border border-[var(--border)] bg-[var(--surface-strong)] p-5 text-base leading-7 text-[var(--text-strong)] caret-[var(--accent)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
         />
 
-        <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          {isAiraMode ? (
-            <label className="flex w-fit cursor-pointer items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-sm font-medium text-[var(--text-muted)]">
-              <input
-                type="checkbox"
-                checked={forceWeb}
-                onChange={(event) => setForceWeb(event.target.checked)}
-                className="accent-[var(--accent)]"
-              />
-
-              <Globe2 className="h-4 w-4 text-[var(--accent)]" />
-              Include web search
-            </label>
-          ) : (
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-sm font-medium text-[var(--text-muted)]">
-              <ShieldAlert className="h-4 w-4 text-[var(--warning)]" />
-              Approval-gated execution
-            </div>
-          )}
+        <div className="mt-3 flex items-center justify-between">
+          {/* Web search always-on indicator */}
+          <div className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-sm font-medium text-[var(--text-muted)]">
+            <Globe2 className="h-4 w-4 text-[var(--accent)]" />
+            Web search on
+          </div>
 
           <button
             disabled={busy || !question.trim()}
-            className={cn(
-              "group inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-black shadow-[var(--shadow-soft)] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60",
-              isAiraMode
-                ? "bg-[var(--accent)] text-[var(--accent-foreground)]"
-                : "bg-[var(--secondary)] text-white"
-            )}
+            className="pro-send inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold shadow-[var(--shadow-soft)] disabled:cursor-not-allowed disabled:opacity-60 bg-[var(--accent)] text-[var(--accent-foreground)]"
           >
-            {isAiraMode ? (
-              loading ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4 transition-all duration-500 ease-out group-hover:-translate-y-1 group-hover:translate-x-1 group-hover:rotate-12" />
-              )
-            ) : airaXLoading ? (
+            {loading || airaXLoading ? (
               <RefreshCw className="h-4 w-4 animate-spin" />
             ) : (
-              <Workflow className="h-4 w-4" />
+              <Send className="h-4 w-4" />
             )}
-
-            {isAiraMode
-              ? loading
-                ? "Asking..."
-                : "Ask AIRA"
-              : airaXLoading
-                ? "Running..."
-                : "Run AIRA-X"}
+            {loading || airaXLoading ? "Working..." : "Send"}
           </button>
         </div>
 
@@ -1006,12 +1079,8 @@ function ExecutionGuideCard() {
 }
 
 export default function ChatPage() {
-  const { mode } = useAiraMode();
-  const isAiraMode = mode === "aira";
-
   const [question, setQuestion] = useState("");
   const [composerFocused, setComposerFocused] = useState(false);
-  const [forceWeb, setForceWeb] = useState(false);
   const [loading, setLoading] = useState(false);
   const [airaXLoading, setAiraXLoading] = useState(false);
   const [approvalLoading, setApprovalLoading] = useState(false);
@@ -1020,9 +1089,8 @@ export default function ChatPage() {
   const [uploadMessage, setUploadMessage] = useState("");
   const [uploadError, setUploadError] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [airaXResponse, setAiraXResponse] = useState<AiraXResponse | null>(
-    null
-  );
+  const [airaXResponse, setAiraXResponse] = useState<AiraXResponse | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
   const busy =
     loading ||
@@ -1036,11 +1104,6 @@ export default function ChatPage() {
     [turns.length, airaXResponse]
   );
 
-  const hasAiraActivity = isAiraMode && (loading || turns.length > 0);
-  const hasAiraXActivity =
-    !isAiraMode && (airaXLoading || Boolean(airaXResponse));
-  const showHeaderCard = !hasAiraActivity && !hasAiraXActivity;
-
   useEffect(() => {
     if (!composerFocused) {
       return;
@@ -1053,13 +1116,10 @@ export default function ChatPage() {
     }
 
     window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [composerFocused]);
 
-  async function submitAiraQuestion(event?: FormEvent) {
+  async function handleUnifiedAssistant(event?: FormEvent) {
     event?.preventDefault();
 
     const trimmed = question.trim();
@@ -1068,56 +1128,39 @@ export default function ChatPage() {
     setComposerFocused(false);
     setQuestion("");
     setLoading(true);
-    setTurns((prev) => [...prev, { question: trimmed }]);
+    setAiraXLoading(false);
 
     try {
-      const response = await sendChat(trimmed, forceWeb || undefined);
+      // Web search is always enabled — no user toggle needed
+      const response = await runAssistant(trimmed, true);
 
-      setTurns((prev) =>
-        prev.map((turn, index) =>
-          index === prev.length - 1 ? { ...turn, response } : turn
-        )
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Chat failed.";
+      const shouldRenderAsWorkflow =
+        !isMultiTaskResponse(response) &&
+        (response.response_type === "execution_result" ||
+          response.response_type === "approval_required");
 
-      setTurns((prev) =>
-        prev.map((turn, index) =>
-          index === prev.length - 1 ? { ...turn, error: message } : turn
-        )
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
+      if (shouldRenderAsWorkflow) {
+        const workflowRun = assistantWorkflowToAiraXRun(response.workflow);
 
-  async function handleRunAiraX(event?: FormEvent) {
-    event?.preventDefault();
-
-    const trimmed = question.trim();
-    if (!trimmed) return;
-
-    setComposerFocused(false);
-    setAiraXLoading(true);
-    setAiraXResponse(null);
-
-    try {
-      const result = await runAiraX(trimmed);
-      setAiraXResponse(result);
-      setQuestion("");
+        if (workflowRun) {
+          setAiraXResponse(workflowRun);
+          setTurns([]);
+        } else {
+          setAiraXResponse(null);
+          setTurns((prev) => [...prev, { question: trimmed, response }]);
+        }
+      } else {
+        setAiraXResponse(null);
+        setTurns((prev) => [...prev, { question: trimmed, response }]);
+      }
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "AIRA-X workflow failed.";
+        error instanceof Error ? error.message : "AIRA-X assistant failed.";
 
-      setAiraXResponse({
-        status: "failed",
-        decision: "error",
-        final_answer: message,
-        plan: [],
-        execution_outputs: [],
-        memory: {},
-      });
+      setAiraXResponse(null);
+      setTurns((prev) => [...prev, { question: trimmed, error: message }]);
     } finally {
+      setLoading(false);
       setAiraXLoading(false);
     }
   }
@@ -1182,230 +1225,143 @@ export default function ChatPage() {
   }
 
   async function handleSubmit(event: FormEvent) {
-    if (isAiraMode) {
-      await submitAiraQuestion(event);
-      return;
-    }
-
-    await handleRunAiraX(event);
+    await handleUnifiedAssistant(event);
   }
 
   return (
     <div
       className={cn(
-        "mx-auto flex min-h-[calc(100vh-64px)] max-w-7xl flex-col gap-5",
-        isAiraMode ? "aira-chat-page" : "airax-execution-page"
+        "mx-auto flex min-h-[calc(100vh-64px)] w-full flex-col gap-5",
+        threadIsEmpty ? "max-w-5xl" : "max-w-6xl",
+        "aira-chat-page"
       )}
     >
+      <input
+        ref={uploadInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleUploadDocuments}
+      />
+
+      {(uploadMessage || uploadError) && (
+        <div
+          className={cn(
+            "rounded-2xl border px-4 py-3 text-sm font-semibold",
+            uploadError
+              ? "border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] text-[var(--danger)]"
+              : "border-[color-mix(in_srgb,var(--success)_34%,transparent)] bg-[var(--success-soft)] text-[var(--success)]"
+          )}
+        >
+          {uploadError || uploadMessage}
+        </div>
+      )}
+
       <div
         className="aira-focus-content flex flex-1 flex-col gap-5"
         data-composer-focused={composerFocused ? "true" : "false"}
       >
-        {showHeaderCard && (
-        <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-6">
-        <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-[var(--accent-glow)] blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-[var(--secondary-glow)] blur-3xl" />
-
-        <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="aira-chip mb-4 px-3 py-1.5 text-xs font-bold">
-              {isAiraMode ? (
-                <Sparkles className="h-3.5 w-3.5" />
-              ) : (
-                <Workflow className="h-3.5 w-3.5" />
-              )}
-              {isAiraMode ? "Research workspace" : "Execute workspace"}
-            </div>
-
-            <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
-              {isAiraMode ? "Ask AIRA" : "Execution Panel"}
-            </h1>
-
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
-              {isAiraMode
-                ? "Ask document-backed research questions, upload knowledge, and get grounded answers with citations."
-                : "Give AIRA-X a task and inspect workflow results, approval checkpoints, execution plans, and logs."}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4 lg:w-64">
-            <p className="text-[11px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
-              Active Mode
-            </p>
-
-            <p className="mt-1 text-sm font-black text-[var(--text-strong)]">
-              {isAiraMode
-                ? forceWeb
-                  ? "Documents + Web"
-                  : "Document-first"
-                : "Workflow execution"}
-            </p>
-
-            <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
-              {isAiraMode
-                ? "Supplement the document context with web search whenever necessary."
-                : "Risky actions pause for approval before execution."}
-            </p>
-          </div>
-        </div>
-        </section>
-      )}
-
-      {isAiraMode && threadIsEmpty ? (
-        <div className="grid flex-1 gap-5 xl:grid-cols-[minmax(0,1fr)_440px]">
-          <AiraHomeStage
-            question={question}
-            setQuestion={setQuestion}
-            forceWeb={forceWeb}
-            setForceWeb={setForceWeb}
-            busy={busy}
-            loading={loading}
-            onSubmit={handleSubmit}
-            onComposerFocus={() => setComposerFocused(true)}
-          />
-
-          <aside className="space-y-4">
-            <DocumentIntakeCard
-              uploadLoading={uploadLoading}
-              uploadMessage={uploadMessage}
-              uploadError={uploadError}
-              onUpload={handleUploadDocuments}
+        {threadIsEmpty && !loading && !airaXLoading ? (
+          <div className="flex flex-1 flex-col">
+            <AiraHomeStage
+              question={question}
+              setQuestion={setQuestion}
+              busy={busy}
+              loading={loading}
+              onSubmit={handleSubmit}
+              onComposerFocus={() => setComposerFocused(true)}
             />
 
-            <ResearchModeCard forceWeb={forceWeb} />
-          </aside>
-        </div>
-      ) : isAiraMode ? (
-        <div className="flex flex-1 flex-col gap-5">
-          <section className="aira-result-focus flex min-h-[260px] flex-col gap-4">
-            {turns.map((turn, index) => (
-              <ResearchTurnCard key={`${turn.question}-${index}`} turn={turn} />
-            ))}
+            <AssistantWorkspaceLinks
+              onUploadClick={() => uploadInputRef.current?.click()}
+            />
+          </div>
+        ) : (
+          <div className="assistant-thread-shell flex flex-1 flex-col gap-5">
+            <section className="aira-result-focus flex min-h-[260px] flex-col gap-4">
+              {turns.map((turn, index) => (
+                <ResearchTurnCard key={`${turn.question}-${index}`} turn={turn} />
+              ))}
 
-            {loading && (
-              <div className="fade-up w-fit rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-5 py-3 text-sm font-medium text-[var(--text-muted)] shadow-[var(--shadow-soft)]">
-                Researching sources...
-              </div>
-            )}
-          </section>
-        </div>
-      ) : threadIsEmpty && !airaXLoading ? (
-        <div className="grid flex-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <section className="flex min-h-[520px] flex-col gap-4">
-            <EmptyExecutionState />
-          </section>
-
-          <aside className="space-y-4">
-            <ExecutionGuideCard />
-          </aside>
-        </div>
-      ) : (
-        <div className="flex flex-1 flex-col gap-5">
-          <section className="aira-result-focus flex min-h-[260px] flex-col gap-4">
-            {airaXLoading && (
-              <div className="fade-up w-fit rounded-full border border-[var(--border-strong)] bg-[var(--secondary-soft)] px-5 py-3 text-sm font-medium text-[var(--secondary)] shadow-[var(--shadow-soft)]">
-                Running AIRA-X workflow...
-              </div>
-            )}
-
-            {airaXResponse && (
-              <>
-                <WorkflowResultCard
-                  response={airaXResponse}
-                  approvalLoading={approvalLoading}
-                  rejectionLoading={rejectionLoading}
-                  onApprove={handleApproveAiraX}
-                  onReject={handleRejectAiraX}
-                />
-
-                <ExecutionPlanCard steps={airaXResponse.plan} />
-              </>
-            )}
-          </section>
-        </div>
-      )}
-
-      {!(isAiraMode && threadIsEmpty) && (
-        <form
-          onSubmit={handleSubmit}
-          className={cn(
-            "sticky bottom-4 rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-card)] backdrop-blur-xl",
-            isAiraMode ? "research-composer chatgpt-composer" : "aira-console"
-          )}
-        >
-          <textarea
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            onFocus={() => setComposerFocused(true)}
-            placeholder={
-              isAiraMode
-                ? "Ask AIRA a research question..."
-                : "Tell AIRA-X what task to execute..."
-            }
-            className="h-24 w-full resize-none rounded-[1.15rem] border border-[var(--border)] bg-[var(--surface-strong)] p-4 text-sm text-[var(--text-strong)] caret-[var(--accent)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
-          />
-
-          <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            {isAiraMode ? (
-              <label className="flex w-fit cursor-pointer items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-sm font-medium text-[var(--text-muted)]">
-                <input
-                  type="checkbox"
-                  checked={forceWeb}
-                  onChange={(event) => setForceWeb(event.target.checked)}
-                  className="accent-[var(--accent)]"
-                />
-
-                <Globe2 className="h-4 w-4 text-[var(--accent)]" />
-                Include web search
-              </label>
-            ) : (
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-sm font-medium text-[var(--text-muted)]">
-                <ShieldAlert className="h-4 w-4 text-[var(--warning)]" />
-                Approval-gated execution
-              </div>
-            )}
-
-            <button
-              disabled={busy || !question.trim()}
-              className={cn(
-                "group inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-black shadow-[var(--shadow-soft)] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60",
-                isAiraMode
-                  ? "bg-[var(--accent)] text-[var(--accent-foreground)]"
-                  : "bg-[var(--secondary)] text-white"
+              {loading && (
+                <div className="fade-up w-fit rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-5 py-3 text-sm font-medium text-[var(--text-muted)] shadow-[var(--shadow-soft)]">
+                  Thinking through the best route...
+                </div>
               )}
-            >
-              {isAiraMode ? (
-                loading ? (
+
+              {airaXLoading && (
+                <div className="fade-up w-fit rounded-full border border-[var(--border-strong)] bg-[var(--secondary-soft)] px-5 py-3 text-sm font-medium text-[var(--secondary)] shadow-[var(--shadow-soft)]">
+                  Running AIRA-X workflow...
+                </div>
+              )}
+
+              {airaXResponse && (
+                <>
+                  <WorkflowResultCard
+                    response={airaXResponse}
+                    approvalLoading={approvalLoading}
+                    rejectionLoading={rejectionLoading}
+                    onApprove={handleApproveAiraX}
+                    onReject={handleRejectAiraX}
+                  />
+
+                  <ExecutionPlanCard steps={airaXResponse.plan} />
+                </>
+              )}
+            </section>
+          </div>
+        )}
+
+        {!threadIsEmpty && (
+          <form
+            onSubmit={handleSubmit}
+            className="pro-composer sticky bottom-4 rounded-[1.5rem] p-4"
+          >
+            <textarea
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              onFocus={() => setComposerFocused(true)}
+              placeholder="Message AIRA-X..."
+              className="h-24 w-full resize-none rounded-[1rem] border border-[var(--border)] bg-[var(--surface-strong)] p-4 text-sm text-[var(--text-strong)] caret-[var(--accent)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+            />
+
+            <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-wrap gap-2">
+                {/* Web search always-on indicator */}
+                <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-sm font-medium text-[var(--text-muted)]">
+                  <Globe2 className="h-4 w-4 text-[var(--accent)]" />
+                  Web search on
+                </div>
+
+                <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-sm font-medium text-[var(--text-muted)]">
+                  <ShieldAlert className="h-4 w-4 text-[var(--warning)]" />
+                  Approval-gated execution when needed
+                </div>
+              </div>
+
+              <button
+                disabled={busy || !question.trim()}
+                className={cn(
+                  "group inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-black shadow-[var(--shadow-soft)] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60",
+                  "bg-[var(--accent)] text-[var(--accent-foreground)]"
+                )}
+              >
+                {loading || airaXLoading ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />
                 ) : (
                   <Send className="h-4 w-4 transition-all duration-500 ease-out group-hover:-translate-y-1 group-hover:translate-x-1 group-hover:rotate-12" />
-                )
-              ) : airaXLoading ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : (
-                <Workflow className="h-4 w-4" />
-              )}
-
-              {isAiraMode
-                ? loading
-                  ? "Asking..."
-                  : "Ask AIRA"
-                : airaXLoading
-                  ? "Running..."
-                  : "Run AIRA-X"}
-            </button>
-          </div>
-        </form>
-      )}
+                )}
+                {loading || airaXLoading ? "Working..." : "Send"}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
       {composerFocused && (
         <FocusComposerOverlay
-          isAiraMode={isAiraMode}
           question={question}
           setQuestion={setQuestion}
-          forceWeb={forceWeb}
-          setForceWeb={setForceWeb}
           busy={busy}
           loading={loading}
           airaXLoading={airaXLoading}

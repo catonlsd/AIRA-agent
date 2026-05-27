@@ -1,30 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import {
   Activity,
-  BookOpen,
   ChevronRight,
   Database,
   GitBranch,
   History,
   LayoutDashboard,
-  MessageSquare,
-  Palette,
   Settings2,
   ShieldCheck,
   Sparkles,
-  TerminalSquare,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  useAiraMode,
-  type AiraOperatingMode,
-} from "@/components/mode-provider";
 
 type NavItem = {
   href: string;
@@ -32,97 +23,68 @@ type NavItem = {
   description: string;
   icon: LucideIcon;
   badge?: string;
+  aliases?: string[];
 };
 
 const SIDEBAR_STORAGE_KEY = "aira-sidebar-collapsed";
 
-const airaLinks: NavItem[] = [
+const navLinks: NavItem[] = [
   {
     href: "/chat",
-    label: "Ask AIRA",
-    description: "Research, upload docs, and get grounded answers",
-    icon: MessageSquare,
-    badge: "Research",
+    label: "Assistant",
+    description: "Chat, research, execution, and follow-ups",
+    icon: Sparkles,
   },
-  {
-    href: "/documents",
-    label: "Knowledge Base",
-    description: "Uploaded documents and sources",
-    icon: Database,
-  },
-  {
-    href: "/history",
-    label: "Interactions",
-    description: "Conversation and research history",
-    icon: History,
-  },
-  {
-    href: "/settings",
-    label: "Appearance",
-    description: "Theme and interface settings",
-    icon: Palette,
-  },
-];
-
-const airaXLinks: NavItem[] = [
   {
     href: "/overview",
-    label: "Command Center",
-    description: "Platform health and execution state",
+    label: "Operations",
+    description: "Health, throughput, and workflow metrics",
     icon: LayoutDashboard,
-  },
-  {
-    href: "/chat",
-    label: "Execute",
-    description: "Launch research and execution tasks",
-    icon: TerminalSquare,
-    badge: "Core",
   },
   {
     href: "/workflows",
     label: "Workflows",
-    description: "Runs, traces, logs, and outcomes",
+    description: "Run history, traces, and outcomes",
     icon: GitBranch,
   },
   {
     href: "/approvals",
     label: "Approvals",
-    description: "Human-gated actions and safety checks",
+    description: "Review and resolve gated actions",
     icon: ShieldCheck,
-    badge: "Safe",
+  },
+  {
+    href: "/documents",
+    label: "Knowledge",
+    description: "Indexed documents and retrieval sources",
+    icon: Database,
+  },
+  {
+    href: "/history",
+    label: "History",
+    description: "Stored conversation turns and context",
+    icon: History,
+    aliases: ["/upload"],
   },
   {
     href: "/settings",
-    label: "System Console",
-    description: "Appearance, agents, tools, and policies",
+    label: "Settings",
+    description: "Runtime, policies, agents, and tools",
     icon: Settings2,
+    aliases: ["/agents", "/tools"],
   },
 ];
 
-function isActivePath(pathname: string, href: string) {
-  if (href === "/") {
-    return pathname === "/";
-  }
+function isActivePath(pathname: string, item: NavItem) {
+  const paths = [item.href, ...(item.aliases || [])];
 
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
+  return paths.some((href) => {
+    if (href === "/") {
+      return pathname === "/";
+    }
 
-function getModeHome(mode: AiraOperatingMode) {
-  return mode === "aira" ? "/chat" : "/overview";
-}
-
-function getModeTitle(mode: AiraOperatingMode) {
-  return mode === "aira" ? "AIRA" : "AIRA-X";
-}
-
-function getModeSubtitle(mode: AiraOperatingMode) {
-  return mode === "aira" ? "Research Assistant" : "Execution Command Center";
-}
-
-function getModeDescription(mode: AiraOperatingMode) {
-  return mode === "aira"
-    ? "Grounded research, document intake, citations, and knowledge retrieval."
-    : "Plan, execute, approve, validate, and trace autonomous workflows.";
+    return pathname === href || pathname.startsWith(`${href}/`);
+  });
 }
 
 function getStoredSidebarCollapsed() {
@@ -131,88 +93,6 @@ function getStoredSidebarCollapsed() {
   }
 
   return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true";
-}
-
-function ModeSwitcher({ collapsed }: { collapsed: boolean }) {
-  const router = useRouter();
-  const { mode, setMode } = useAiraMode();
-
-  function handleModeChange(nextMode: AiraOperatingMode) {
-    setMode(nextMode);
-    router.push(getModeHome(nextMode));
-  }
-
-  if (collapsed) {
-    return (
-      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-1 shadow-[var(--shadow-soft)]">
-        <div className="grid gap-1">
-          <button
-            type="button"
-            onClick={() => handleModeChange("aira")}
-            title="Switch to AIRA"
-            aria-label="Switch to AIRA"
-            className={cn(
-              "flex h-10 items-center justify-center rounded-xl transition",
-              mode === "aira"
-                ? "bg-[var(--accent)] text-[var(--accent-foreground)] shadow-[var(--shadow-soft)]"
-                : "text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
-            )}
-          >
-            <BookOpen className="h-4 w-4" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleModeChange("aira-x")}
-            title="Switch to AIRA-X"
-            aria-label="Switch to AIRA-X"
-            className={cn(
-              "flex h-10 items-center justify-center rounded-xl transition",
-              mode === "aira-x"
-                ? "bg-[var(--accent)] text-[var(--accent-foreground)] shadow-[var(--shadow-soft)]"
-                : "text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
-            )}
-          >
-            <Zap className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-1 shadow-[var(--shadow-soft)]">
-      <div className="grid grid-cols-2 gap-1">
-        <button
-          type="button"
-          onClick={() => handleModeChange("aira")}
-          className={cn(
-            "flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-black transition",
-            mode === "aira"
-              ? "bg-[var(--accent)] text-[var(--accent-foreground)] shadow-[var(--shadow-soft)]"
-              : "text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
-          )}
-        >
-          <BookOpen className="h-3.5 w-3.5" />
-          AIRA
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleModeChange("aira-x")}
-          className={cn(
-            "flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-black transition",
-            mode === "aira-x"
-              ? "bg-[var(--accent)] text-[var(--accent-foreground)] shadow-[var(--shadow-soft)]"
-              : "text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
-          )}
-        >
-          <Zap className="h-3.5 w-3.5" />
-          AIRA-X
-        </button>
-      </div>
-    </div>
-  );
 }
 
 function NavLink({
@@ -316,7 +196,6 @@ function NavLink({
 
 export function Nav() {
   const pathname = usePathname();
-  const { mode } = useAiraMode();
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
@@ -333,11 +212,6 @@ export function Nav() {
     });
   }
 
-  const links = useMemo(
-    () => (mode === "aira" ? airaLinks : airaXLinks),
-    [mode]
-  );
-
   return (
     <aside
       className={cn(
@@ -351,7 +225,12 @@ export function Nav() {
         <div className="absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-[var(--border-strong)] to-transparent" />
       </div>
 
-      <div className={cn("mb-3 flex", collapsed ? "justify-center" : "justify-end")}>
+      <div
+        className={cn(
+          "mb-3 flex",
+          collapsed ? "justify-center" : "justify-end"
+        )}
+      >
         <button
           type="button"
           onClick={toggleSidebar}
@@ -370,94 +249,66 @@ export function Nav() {
       </div>
 
       <Link
-        href={getModeHome(mode)}
-        title={collapsed ? `${getModeTitle(mode)} Home` : undefined}
+        href="/chat"
+        title={collapsed ? "AIRA-X Home" : undefined}
         className={cn(
-          "group mb-4 block border border-[var(--border)] bg-[var(--surface-soft)] shadow-[var(--shadow-soft)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]",
+          "group mb-5 block border border-[var(--border)] bg-[var(--surface-soft)] shadow-[var(--shadow-soft)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]",
           collapsed ? "rounded-2xl p-2" : "rounded-[1.75rem] p-4"
         )}
       >
-        <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
+        <div
+          className={cn(
+            "flex items-center gap-3",
+            collapsed && "justify-center"
+          )}
+        >
           <div
             className={cn(
-              "relative flex items-center justify-center rounded-2xl border border-[var(--border-strong)] bg-[var(--accent-soft)] text-[var(--accent)] shadow-[0_0_30px_var(--accent-glow)] transition-transform duration-200 group-hover:rotate-2 group-hover:scale-105",
+              "relative flex items-center justify-center rounded-2xl border border-[var(--border-strong)] bg-[var(--accent-soft)] text-[var(--accent)] shadow-[var(--shadow-soft)] transition duration-200 group-hover:border-[var(--border-strong)]",
               collapsed ? "h-11 w-11" : "h-12 w-12"
             )}
           >
-            {mode === "aira" ? (
-              <BookOpen className="h-5 w-5" />
-            ) : (
-              <Sparkles className="h-5 w-5" />
-            )}
-
-            <span className="absolute inset-0 rounded-2xl bg-[var(--accent-soft)] blur-xl" />
+            <Sparkles className="h-5 w-5" />
           </div>
 
           {!collapsed && (
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="truncate text-xl font-black tracking-tight text-[var(--text-strong)]">
-                  {getModeTitle(mode)}
+                  AIRA-X
                 </h1>
-
-                <span className="rounded-full border border-[var(--border-strong)] bg-[var(--accent-soft)] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.18em] text-[var(--accent)]">
-                  {mode === "aira" ? "Research" : "Ops"}
-                </span>
               </div>
 
-              <p className="mt-1 text-xs font-semibold uppercase tracking-[0.22em] text-[var(--accent)]">
-                {getModeSubtitle(mode)}
+              <p className="mt-1 text-xs font-semibold text-[var(--text-muted)]">
+                Research & Execution Platform
               </p>
             </div>
           )}
         </div>
 
         {!collapsed && (
-          <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--text-subtle)]">
-                Operating Mode
-              </span>
+          
 
-              {mode === "aira" ? (
-                <BookOpen className="h-3.5 w-3.5 text-[var(--accent)]" />
-              ) : (
-                <Zap className="h-3.5 w-3.5 text-[var(--accent)]" />
-              )}
-            </div>
-
-            <p className="text-xs leading-5 text-[var(--text-muted)]">
-              {getModeDescription(mode)}
-            </p>
-          </div>
+            <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+              AI powered assistant with document retrieval, web research, workflow
+            execution, and approval gates.
+          </p>
         )}
       </Link>
-
-      <div className="mb-5">
-        <ModeSwitcher collapsed={collapsed} />
-      </div>
 
       {!collapsed && (
         <div className="mb-3 flex items-center justify-between px-2">
           <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[var(--text-subtle)]">
-            {mode === "aira" ? "Research Mode" : "Mission Control"}
+            Workspace
           </p>
 
-          {mode === "aira" ? (
-            <BookOpen className="h-3.5 w-3.5 text-[var(--accent)] opacity-80" />
-          ) : (
-            <Activity className="h-3.5 w-3.5 text-[var(--accent)] opacity-80" />
-          )}
+          <Activity className="h-3.5 w-3.5 text-[var(--accent)] opacity-80" />
         </div>
       )}
 
       {collapsed && (
         <div className="mb-3 flex justify-center">
-          {mode === "aira" ? (
-            <BookOpen className="h-3.5 w-3.5 text-[var(--accent)] opacity-80" />
-          ) : (
-            <Activity className="h-3.5 w-3.5 text-[var(--accent)] opacity-80" />
-          )}
+          <Activity className="h-3.5 w-3.5 text-[var(--accent)] opacity-80" />
         </div>
       )}
 
@@ -467,11 +318,11 @@ export function Nav() {
           collapsed ? "pr-0" : "pr-1"
         )}
       >
-        {links.map((item) => (
+        {navLinks.map((item) => (
           <NavLink
-            key={`${mode}-${item.href}-${item.label}`}
+            key={item.href}
             item={item}
-            active={isActivePath(pathname, item.href)}
+            active={isActivePath(pathname, item)}
             collapsed={collapsed}
           />
         ))}

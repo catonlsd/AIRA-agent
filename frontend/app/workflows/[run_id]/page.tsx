@@ -1244,7 +1244,7 @@ export default function WorkflowDetailPage() {
               className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
             >
               <TerminalSquare className="h-3.5 w-3.5" />
-              Open Execute Panel
+              Open Assistant
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>
 
@@ -1269,8 +1269,9 @@ export default function WorkflowDetailPage() {
                 Workflow Run
               </h1>
 
-              <p className="mt-3 max-w-3xl break-all font-mono text-xs leading-6 text-[var(--text-subtle)]">
-                {runId}
+              <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
+                Trace, approvals, and outcomes for a single Assistant workflow
+                run. Open technical details below for run identifiers.
               </p>
 
               {run && (

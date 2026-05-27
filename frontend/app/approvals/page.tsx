@@ -879,7 +879,7 @@ export default function ApprovalsPage() {
           <div>
             <div className="aira-chip mb-4 px-3 py-1.5 text-xs font-bold">
               <ShieldCheck className="h-3.5 w-3.5" />
-              Human-gated execution
+              AIRA-X Safety
             </div>
 
             <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
@@ -887,10 +887,10 @@ export default function ApprovalsPage() {
             </h1>
 
             <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
-              Review actions that can modify your environment, write Git
-              history, or push to a remote repository. Pending approvals are
-              isolated from processing and resolved approvals for clean
-              human-in-the-loop control.
+              Review risky actions requested by Assistant that can modify your
+              environment, write Git history, or push to a remote repository.
+              Pending, processing, and resolved approvals stay separated for
+              clear human-in-the-loop control.
             </p>
 
             <div className="mt-5 flex flex-wrap gap-3">
@@ -899,7 +899,7 @@ export default function ApprovalsPage() {
                 className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
               >
                 <Workflow className="h-3.5 w-3.5" />
-                Open Execute Panel
+                Open Assistant
                 <ArrowRight className="h-3.5 w-3.5" />
               </Link>
 
@@ -1105,7 +1105,7 @@ export default function ApprovalsPage() {
               className="inline-flex items-center gap-2 rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
             >
               <Workflow className="h-4 w-4" />
-              Open Execute Panel
+              Open Assistant
               <ArrowRight className="h-4 w-4" />
             </Link>
 

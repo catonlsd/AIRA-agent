@@ -341,17 +341,17 @@ export default function OverviewPage() {
           <div>
             <div className="aira-chip mb-4 px-3 py-1.5 text-xs font-bold">
               <Activity className="h-3.5 w-3.5" />
-              AIRA-X Command Center
+              AIRA-X Operations
             </div>
 
             <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
-              Command Center
+              Operations
             </h1>
 
             <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
               Monitor workflow health, approval queues, Git preflights, cleanup
-              activity, validation traces, and recent autonomous execution
-              history from one focused console.
+              activity, and recent execution history from a single operations
+              view.
             </p>
 
             {cleanupMessage && (

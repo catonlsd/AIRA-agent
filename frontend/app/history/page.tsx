@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   useCallback,
@@ -425,7 +425,7 @@ export default function HistoryPage() {
           <div>
             <div className="aira-chip mb-4 px-3 py-1.5 text-xs font-bold">
               <History className="h-3.5 w-3.5" />
-              AIRA Research Memory
+              AIRA-X Conversation History
             </div>
 
             <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
@@ -434,17 +434,18 @@ export default function HistoryPage() {
 
             <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
               Review stored conversation turns used for recent context,
-              follow-up continuity, and research-session traceability.
+              follow-up continuity, and assistant-session traceability.
             </p>
           </div>
 
           <div className="rounded-[1.5rem] border border-[var(--border)] bg-[var(--surface-soft)] p-4">
             <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
-              Continue Research
+              Continue in Assistant
             </p>
 
             <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
-              Return to Ask AIRA to continue document-backed research.
+              Return to Assistant for chat, document-backed answers, and
+              workflow follow-ups.
             </p>
 
             <Link
@@ -452,7 +453,7 @@ export default function HistoryPage() {
               className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-4 py-3 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
             >
               <Sparkles className="h-4 w-4" />
-              Ask AIRA
+              Assistant
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
@@ -500,7 +501,7 @@ export default function HistoryPage() {
             <MetricCard
               label="Assistant Turns"
               value={formatNumber(assistantMessageCount)}
-              description="AIRA responses stored in history."
+              description="AIRA-X responses stored in history."
               icon={<Bot className="h-4 w-4" />}
               tone="secondary"
             />
@@ -588,8 +589,8 @@ export default function HistoryPage() {
               </h2>
 
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
-                Start a research conversation in Ask AIRA and stored turns will
-                appear here.
+                Start a conversation in Assistant and stored turns will appear
+                here.
               </p>
 
               <Link
@@ -597,7 +598,7 @@ export default function HistoryPage() {
                 className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
               >
                 <Sparkles className="h-4 w-4" />
-                Ask AIRA
+                Assistant
               </Link>
             </section>
           ) : filteredMessages.length === 0 ? (
@@ -626,3 +627,4 @@ export default function HistoryPage() {
     </div>
   );
 }
+
