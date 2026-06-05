@@ -4,7 +4,7 @@ from graph.aira_workflow import AiraXWorkflow
 
 
 async def main():
-    workflow = AiraXWorkflow()
+    workflow = LangGraphAiraXWorkflow()
 
     state = await workflow.run("Build and deploy a RAG pipeline")
 

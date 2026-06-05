@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 from pathlib import Path
 import asyncio
 
@@ -105,16 +105,20 @@ def build_stale_approval_processing_state(run_id: str) -> AiraXState:
 async def test_normal_python_execution():
     print("Testing normal Python execution...")
 
-    response = await run_aira_x(AiraXRunRequest(goal="run python code"))
+    response = await run_aira_x(
+        AiraXRunRequest(
+            goal='run python code: print("Hello from AIRA-X")'
+        )
+    )
 
     assert_equal(response["status"], "completed", "Python execution status")
     assert_contains(
         response["final_answer"],
-        "Workflow completed successfully",
+        "Hello from AIRA-X",
         "Python execution final answer",
     )
 
-    print("✅ Normal Python execution passed")
+    print("[PASS] Normal Python execution passed")
 
     return response
 
@@ -127,7 +131,7 @@ async def test_retry_self_correction():
     assert_equal(response["status"], "completed", "Retry workflow status")
     assert_true(response["memory"].get("reflections"), "Reflection memory exists")
 
-    print("✅ Retry self-correction passed")
+    print("[PASS] Retry self-correction passed")
 
     return response
 
@@ -147,7 +151,7 @@ async def test_safety_block():
         "Safety final answer",
     )
 
-    print("✅ Safety block passed")
+    print("[PASS] Safety block passed")
 
     return response
 
@@ -183,7 +187,7 @@ async def test_approval_rejection():
         "Approval rejection decision",
     )
 
-    print("✅ Approval rejection passed")
+    print("[PASS] Approval rejection passed")
 
     return rejected_response
 
@@ -215,11 +219,17 @@ async def test_approval_continuation():
 
     assert_contains(
         approved_response["final_answer"],
-        "Workflow completed successfully",
+        "Task completed successfully",
         "Approval continuation final answer",
     )
 
-    print("✅ Approval continuation passed")
+    assert_contains(
+    approved_response["final_answer"],
+    "pip install requests",
+    "Approval continuation command output",
+)
+
+    print("[PASS] Approval continuation passed")
 
     return approved_response
 
@@ -236,7 +246,7 @@ async def test_git_status():
     assert_equal(first_step["tool_name"], "git_tool", "Git tool selection")
     assert_equal(first_step["tool_action"], "status", "Git action selection")
 
-    print("✅ Git status passed")
+    print("[PASS] Git status passed")
 
     return response
 
@@ -253,7 +263,7 @@ async def test_git_diff():
     assert_equal(first_step["tool_name"], "git_tool", "Git diff tool selection")
     assert_equal(first_step["tool_action"], "diff", "Git diff action selection")
 
-    print("✅ Git diff passed")
+    print("[PASS] Git diff passed")
 
     return response
 
@@ -280,7 +290,7 @@ async def test_git_commit_requires_approval():
     assert_equal(first_step["tool_name"], "git_tool", "Git commit tool selection")
     assert_equal(first_step["tool_action"], "commit", "Git commit action selection")
 
-    print("✅ Git commit approval requirement passed")
+    print("[PASS] Git commit approval requirement passed")
 
     return response
 
@@ -332,7 +342,7 @@ async def test_git_commit_custom_message_requires_approval():
         "Git commit custom message extraction",
     )
 
-    print("✅ Git commit custom message approval requirement passed")
+    print("[PASS] Git commit custom message approval requirement passed")
 
     return response
 
@@ -402,7 +412,7 @@ async def test_multi_step_commit_requires_stage_approval():
         "Multi-step commit message extraction",
     )
 
-    print("✅ Multi-step commit workflow approval requirement passed")
+    print("[PASS] Multi-step commit workflow approval requirement passed")
 
     return response
 
@@ -489,7 +499,7 @@ async def test_git_preflight_context():
         "Approval context contains diff success flag",
     )
 
-    print("✅ Git preflight approval context passed")
+    print("[PASS] Git preflight approval context passed")
 
     return response
 
@@ -601,7 +611,7 @@ async def test_git_push_requires_approval():
         "Git push approval context contains recent commits",
     )
 
-    print("✅ Git push approval requirement passed")
+    print("[PASS] Git push approval requirement passed")
 
     return response
 
@@ -680,7 +690,7 @@ async def test_git_push_custom_target_requires_approval():
         "Git push custom target approval context branch",
     )
 
-    print("✅ Git push custom target approval requirement passed")
+    print("[PASS] Git push custom target approval requirement passed")
 
     return response
 
@@ -818,8 +828,14 @@ async def test_approved_git_push_success_uses_git_tool_without_real_push():
 
         assert_contains(
             approved_response["final_answer"],
-            "Workflow completed successfully",
+            "Task completed successfully",
             "Approved mocked Git push final answer",
+        )
+
+        assert_contains(
+            approved_response["final_answer"],
+            "git push origin main",
+            "Approved mocked Git push command",
         )
 
         first_step = approved_response["plan"][0]
@@ -868,7 +884,7 @@ async def test_approved_git_push_success_uses_git_tool_without_real_push():
         if "initial_response" in locals() and initial_response.get("run_id"):
             WorkflowStore.delete(initial_response["run_id"])
 
-    print("✅ Approved Git push success path passed")
+    print("[PASS] Approved Git push success path passed")
 
     return True
 
@@ -1025,7 +1041,7 @@ async def test_double_approval_is_blocked_after_completion():
         if created_run_id:
             WorkflowStore.delete(created_run_id)
 
-    print("✅ Double approval block passed")
+    print("[PASS] Double approval block passed")
 
     return True
 
@@ -1094,7 +1110,7 @@ async def test_double_rejection_is_blocked_after_rejection():
     finally:
         WorkflowStore.delete(run_id)
 
-    print("✅ Double rejection block passed")
+    print("[PASS] Double rejection block passed")
 
     return True
 
@@ -1145,7 +1161,7 @@ async def test_concurrent_double_approval_uses_per_run_lock():
 
     WorkflowStore.save(state)
 
-    original_workflow_class = aira_x_routes.AiraXWorkflow
+    original_workflow_class = aira_x_routes.LangGraphAiraXWorkflow
     resume_calls = []
 
     class FakeWorkflow:
@@ -1170,7 +1186,7 @@ async def test_concurrent_double_approval_uses_per_run_lock():
 
             approval_state.status = "completed"
             approval_state.decision = "finish"
-            approval_state.final_answer = "Workflow completed successfully."
+            approval_state.final_answer = "Task completed successfully."
             approval_state.execution_outputs.append(
                 {
                     "step_id": 1,
@@ -1187,7 +1203,7 @@ async def test_concurrent_double_approval_uses_per_run_lock():
             return approval_state
 
     try:
-        aira_x_routes.AiraXWorkflow = FakeWorkflow
+        aira_x_routes.LangGraphAiraXWorkflow = FakeWorkflow
 
         first_result, second_result = await asyncio.gather(
             approve_aira_x_action(AiraXApproveRequest(run_id=run_id)),
@@ -1261,13 +1277,13 @@ async def test_concurrent_double_approval_uses_per_run_lock():
         )
 
     finally:
-        aira_x_routes.AiraXWorkflow = original_workflow_class
+        aira_x_routes.LangGraphAiraXWorkflow = original_workflow_class
         WorkflowStore.delete(run_id)
 
         if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
             aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
 
-    print("✅ Concurrent double approval lock passed")
+    print("[PASS] Concurrent double approval lock passed")
 
     return True
 
@@ -1318,7 +1334,7 @@ async def test_concurrent_approve_reject_uses_per_run_lock():
 
     WorkflowStore.save(state)
 
-    original_workflow_class = aira_x_routes.AiraXWorkflow
+    original_workflow_class = aira_x_routes.LangGraphAiraXWorkflow
     resume_calls = []
 
     class FakeWorkflow:
@@ -1343,12 +1359,12 @@ async def test_concurrent_approve_reject_uses_per_run_lock():
 
             approval_state.status = "completed"
             approval_state.decision = "finish"
-            approval_state.final_answer = "Workflow completed successfully."
+            approval_state.final_answer = "Task completed successfully."
 
             return approval_state
 
     try:
-        aira_x_routes.AiraXWorkflow = FakeWorkflow
+        aira_x_routes.LangGraphAiraXWorkflow = FakeWorkflow
 
         approve_task = asyncio.create_task(
             approve_aira_x_action(AiraXApproveRequest(run_id=run_id))
@@ -1415,13 +1431,13 @@ async def test_concurrent_approve_reject_uses_per_run_lock():
         )
 
     finally:
-        aira_x_routes.AiraXWorkflow = original_workflow_class
+        aira_x_routes.LangGraphAiraXWorkflow = original_workflow_class
         WorkflowStore.delete(run_id)
 
         if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
             aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
 
-    print("✅ Concurrent approve/reject lock passed")
+    print("[PASS] Concurrent approve/reject lock passed")
 
     return True
 
@@ -1481,7 +1497,7 @@ async def test_git_push_failure_is_non_retryable():
         "Git push failure should not increment retry count",
     )
 
-    print("✅ Git push non-retryable failure passed")
+    print("[PASS] Git push non-retryable failure passed")
 
     return response_state
 
@@ -1544,7 +1560,7 @@ async def test_workflow_runs_include_git_preflight_summary():
         "Workflow run summary should include diff summary",
     )
 
-    print("✅ Workflow Runs Git preflight summary passed")
+    print("[PASS] Workflow Runs Git preflight summary passed")
 
     return matching_run
 
@@ -1609,7 +1625,7 @@ async def test_overview_latest_runs_include_git_preflight_summary():
         "Overview latest run should include diff summary",
     )
 
-    print("✅ Overview Git preflight summary passed")
+    print("[PASS] Overview Git preflight summary passed")
 
     return matching_run
 
@@ -1791,7 +1807,7 @@ async def test_git_preflight_metrics_in_overview():
         WorkflowStore.delete(write_run_id)
         WorkflowStore.delete(push_run_id)
 
-    print("✅ Git preflight metrics in overview passed")
+    print("[PASS] Git preflight metrics in overview passed")
 
     return True
 
@@ -1948,7 +1964,7 @@ async def test_commit_rejection_triggers_unstage_cleanup():
         "Cleanup result should be successful",
     )
 
-    print("✅ Commit rejection unstage cleanup passed")
+    print("[PASS] Commit rejection unstage cleanup passed")
 
     return response
 
@@ -2058,7 +2074,7 @@ async def test_stale_approval_processing_recovered_in_detail_api():
         if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
             aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
 
-    print("✅ Stale approval detail recovery passed")
+    print("[PASS] Stale approval detail recovery passed")
 
     return True
 
@@ -2158,7 +2174,7 @@ async def test_stale_approval_processing_recovered_in_runs_and_overview():
         if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
             aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
 
-    print("✅ Stale approval runs and overview recovery passed")
+    print("[PASS] Stale approval runs and overview recovery passed")
 
     return True
 
@@ -2256,7 +2272,7 @@ async def test_stale_approval_processing_blocks_late_approval_action():
             if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
                 aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
 
-    print("✅ Stale approval late action block passed")
+    print("[PASS] Stale approval late action block passed")
 
     return True
 
@@ -2322,7 +2338,7 @@ async def test_active_approval_lock_prevents_stale_recovery():
         if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
             aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
 
-    print("✅ Active approval lock stale recovery guard passed")
+    print("[PASS] Active approval lock stale recovery guard passed")
 
     return True
 
@@ -2462,7 +2478,7 @@ async def test_stale_approval_recovery_metrics_in_runs_and_overview():
         if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
             aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
 
-    print("✅ Stale approval recovery metrics passed")
+    print("[PASS] Stale approval recovery metrics passed")
 
     return True
 
@@ -2490,7 +2506,7 @@ async def test_approval_resolution_fields_in_runs_and_overview():
     approved_state.status = "completed"
     approved_state.decision = "finish"
     approved_state.current_step = 1
-    approved_state.final_answer = "Workflow completed successfully."
+    approved_state.final_answer = "Task completed successfully."
     approved_state.memory["pending_action"] = "git_tool:push origin main"
     approved_state.memory["approval_in_progress"] = False
     approved_state.memory["approval_resolution"] = {
@@ -2818,7 +2834,7 @@ async def test_approval_resolution_fields_in_runs_and_overview():
         ]:
             WorkflowStore.delete(run_id)
 
-    print("✅ Approval resolution fields in runs and overview passed")
+    print("[PASS] Approval resolution fields in runs and overview passed")
 
     return True
 
@@ -2996,7 +3012,7 @@ async def test_cleanup_metrics_in_runs_and_overview():
     finally:
         WorkflowStore.delete(run_id)
 
-    print("✅ Cleanup metrics in runs and overview passed")
+    print("[PASS] Cleanup metrics in runs and overview passed")
 
     return True
 
@@ -3016,7 +3032,7 @@ async def test_delete_existing_workflow_run():
     state.status = "completed"
     state.decision = "finish"
     state.current_step = 1
-    state.final_answer = "Workflow completed successfully."
+    state.final_answer = "Task completed successfully."
 
     state.plan = [
         AiraXStep(
@@ -3081,7 +3097,7 @@ async def test_delete_existing_workflow_run():
         if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
             aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
 
-    print("✅ Delete existing workflow run passed")
+    print("[PASS] Delete existing workflow run passed")
 
     return True
 
@@ -3116,7 +3132,7 @@ async def test_delete_missing_workflow_run():
         "Delete missing workflow error message",
     )
 
-    print("✅ Delete missing workflow run passed")
+    print("[PASS] Delete missing workflow run passed")
 
     return True
 
@@ -3222,7 +3238,7 @@ async def test_delete_blocks_approval_in_progress_workflow():
         if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
             aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
 
-    print("✅ Delete approval-in-progress block passed")
+    print("[PASS] Delete approval-in-progress block passed")
 
     return True
 
@@ -3282,7 +3298,7 @@ async def test_delete_allows_after_stale_approval_recovery():
         if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
             aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
 
-    print("✅ Delete after stale approval recovery passed")
+    print("[PASS] Delete after stale approval recovery passed")
 
     return True
 
@@ -3525,7 +3541,7 @@ async def test_safe_bulk_cleanup_deletes_only_safe_final_runs():
             for run_id in test_run_ids:
                 aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
 
-    print("✅ Safe bulk cleanup final-state behavior passed")
+    print("[PASS] Safe bulk cleanup final-state behavior passed")
 
     return True
 
@@ -3599,7 +3615,7 @@ async def test_safe_bulk_cleanup_recovers_and_deletes_stale_approval_runs():
         if hasattr(aira_x_routes, "_APPROVAL_LOCKS"):
             aira_x_routes._APPROVAL_LOCKS.pop(run_id, None)
 
-    print("✅ Safe bulk cleanup stale approval recovery passed")
+    print("[PASS] Safe bulk cleanup stale approval recovery passed")
 
     return True
 
@@ -3720,7 +3736,7 @@ async def test_tool_registry_api():
     for tool in response["tools"]:
         assert_true("policy" in tool, f"{tool['tool_name']} has policy metadata")
 
-    print("✅ Tool Registry API passed")
+    print("[PASS] Tool Registry API passed")
 
 
 async def test_agent_registry_api():
@@ -3741,7 +3757,7 @@ async def test_agent_registry_api():
     assert_true("reflection_agent" in agent_names, "reflection_agent exists")
     assert_true("memory_agent" in agent_names, "memory_agent exists")
 
-    print("✅ Agent Registry API passed")
+    print("[PASS] Agent Registry API passed")
 
 
 async def test_platform_overview_api():
@@ -3792,7 +3808,7 @@ async def test_platform_overview_api():
         "Overview metrics total_approval_recovery_events exists",
     )
 
-    print("✅ Platform Overview API passed")
+    print("[PASS] Platform Overview API passed")
 
 
 async def test_workflow_runs_api(sample_run):
@@ -3809,7 +3825,7 @@ async def test_workflow_runs_api(sample_run):
 
     assert_true(sample_run["run_id"] in run_ids, "Sample run exists in history")
 
-    print("✅ Workflow Runs API passed")
+    print("[PASS] Workflow Runs API passed")
 
 
 async def test_workflow_detail_api(sample_run):
@@ -3825,7 +3841,7 @@ async def test_workflow_detail_api(sample_run):
     assert_true(len(run["plan"]) >= 1, "Workflow detail contains plan")
     assert_true(len(run["workflow_logs"]) >= 1, "Workflow detail contains logs")
 
-    print("✅ Workflow Detail API passed")
+    print("[PASS] Workflow Detail API passed")
 
 
 async def main():
@@ -3876,8 +3892,10 @@ async def main():
     await test_workflow_runs_api(sample_run)
     await test_workflow_detail_api(sample_run)
 
-    print("\n🎉 All AIRA-X regression tests passed successfully!\n")
+    print("\n[PASS] All AIRA-X regression tests passed successfully!\n")
 
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+

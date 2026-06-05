@@ -41,7 +41,9 @@ AssistantResponseType = Literal[
 
 class AssistantRunRequest(BaseModel):
     message: str
-    use_web: bool = False
+    # use_web is always treated as True server-side regardless of the value sent.
+    # The field is kept for API schema compatibility only.
+    use_web: bool = True
 
 
 class AssistantRunResponse(BaseModel):
@@ -57,10 +59,10 @@ def normalize_message_text(text: str) -> str:
     normalized = text.lower().strip()
 
     replacements = {
-        "’": "'",
-        "‘": "'",
-        "“": '"',
-        "”": '"',
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
         "?": "",
         "!": "",
         ".": "",
@@ -85,90 +87,49 @@ def get_direct_response(message: str) -> dict | None:
     normalized = normalize_message_text(message)
 
     greeting_messages = {
-        "hi",
-        "hii",
-        "hello",
-        "hey",
-        "heyy",
-        "yo",
-        "namaste",
-        "good morning",
-        "good afternoon",
-        "good evening",
+        "hi", "hii", "hello", "hey", "heyy", "yo", "namaste",
+        "good morning", "good afternoon", "good evening",
     }
 
     wellbeing_messages = {
-        "how are you",
-        "how r u",
-        "how are u",
-        "how are you doing",
-        "how is it going",
-        "hows it going",
-        "what's up",
-        "whats up",
-        "sup",
-        "so how's life",
-        "hows life",
+        "how are you", "how r u", "how are u", "how are you doing",
+        "how is it going", "hows it going", "what's up", "whats up",
+        "sup", "so how's life", "hows life",
     }
 
     activity_messages = {
-        "what are you doing",
-        "what r you doing",
-        "what are u doing",
-        "what do you do",
-        "what are you working on",
-        "what is your work",
+        "what are you doing", "what r you doing", "what are u doing",
+        "what do you do", "what are you working on", "what is your work",
     }
 
     thanks_messages = {
-        "thanks",
-        "thank you",
-        "thank u",
-        "ty",
-        "okay thanks",
-        "ok thanks",
-        "great thanks",
+        "thanks", "thank you", "thank u", "ty",
+        "okay thanks", "ok thanks", "great thanks",
     }
 
     goodbye_messages = {
-        "bye",
-        "goodbye",
-        "see you",
-        "see ya",
-        "talk to you later",
+        "bye", "goodbye", "see you", "see ya", "talk to you later",
     }
 
     capability_messages = {
-        "help",
-        "what can you do",
-        "what can u do",
-        "what can you help me with",
-        "what can u help me with",
-        "how can you help",
-        "how can u help",
-        "how can you assist me",
-        "how can u assist me",
-        "how can you assist",
-        "how can you support me",
-        "how can you be useful",
-        "what can aira do",
-        "what can aira-x do",
-        "what can airax do",
-        "who are you",
-        "what is aira",
-        "what is aira x",
-        "what is aira-x",
-        "tell me about aira",
-        "tell me about yourself",
+        "help", "what can you do", "what can u do",
+        "what can you help me with", "what can u help me with",
+        "how can you help", "how can u help",
+        "how can you assist me", "how can u assist me",
+        "how can you assist", "how can you support me",
+        "how can you be useful", "what can aira do",
+        "what can aira-x do", "what can airax do",
+        "who are you", "what is aira", "what is aira x",
+        "what is aira-x", "tell me about aira", "tell me about yourself",
     }
 
     if matches_any(normalized, greeting_messages):
         return {
             "response_type": "casual_chat",
             "answer": (
-                "Hey! I’m AIRA-X — your unified AI research and execution assistant. "
-                "You can ask me general questions, analyze documents, run safe tasks, "
-                "inspect Git state, execute Python snippets, and review previous workflow output."
+                "Hey! I'm AIRA-X — your unified AI research and execution assistant. "
+                "You can ask me general questions, analyze and summarize documents, "
+                "plan projects, run safe tasks, and review previous workflow output."
             ),
         }
 
@@ -176,8 +137,8 @@ def get_direct_response(message: str) -> dict | None:
         return {
             "response_type": "casual_chat",
             "answer": (
-                "I’m doing great and ready to help. Ask me anything, upload a document, "
-                "request research, or give me a task to execute."
+                "I'm doing great and ready to help. Ask me anything, upload a document "
+                "to summarize, request research, or give me a project to plan or a task to execute."
             ),
         }
 
@@ -185,7 +146,7 @@ def get_direct_response(message: str) -> dict | None:
         return {
             "response_type": "casual_chat",
             "answer": (
-                "I’m ready to help you think, research, code, summarize, inspect files, "
+                "I'm ready to help you think, research, summarize documents, plan projects, "
                 "run workflows, validate results, and handle approval-gated actions safely."
             ),
         }
@@ -193,13 +154,13 @@ def get_direct_response(message: str) -> dict | None:
     if matches_any(normalized, thanks_messages):
         return {
             "response_type": "casual_chat",
-            "answer": "You’re welcome. Send me the next question or task whenever you’re ready.",
+            "answer": "You're welcome. Send me the next question or task whenever you're ready.",
         }
 
     if matches_any(normalized, goodbye_messages):
         return {
             "response_type": "casual_chat",
-            "answer": "See you! I’ll be ready when you want to continue.",
+            "answer": "See you! I'll be ready when you want to continue.",
         }
 
     if matches_any(normalized, capability_messages):
@@ -209,13 +170,16 @@ def get_direct_response(message: str) -> dict | None:
                 "I can help across five main areas:\n\n"
                 "1. General answers — explain concepts, help with coding, writing, planning, "
                 "learning, and everyday questions.\n\n"
-                "2. Research — analyze uploaded documents, summarize sources, retrieve relevant "
-                "context, and provide citations when documents or web sources are used.\n\n"
-                "3. Execution — run safe workflows such as Python snippets, shell commands, file "
-                "operations, and Git inspection tasks.\n\n"
-                "4. Safety and approvals — pause before risky actions such as Git commits, pushes, "
-                "or environment-changing operations.\n\n"
-                "5. Workflow memory — show previous code, outputs, commands, run details, and "
+                "2. Research & summarization — analyze uploaded documents, summarize text and "
+                "sources, retrieve relevant context, and provide citations when documents or "
+                "web sources are used.\n\n"
+                "3. Project planning — break down goals into structured plans, milestones, "
+                "timelines, and actionable steps.\n\n"
+                "4. Execution — run safe workflows such as shell commands, file operations, "
+                "and environment inspection tasks.\n\n"
+                "5. Safety and approvals — pause before risky actions such as Git commits, "
+                "pushes, or environment-changing operations.\n\n"
+                "6. Workflow memory — show previous outputs, commands, run details, and "
                 "execution history when you ask follow-up questions."
             ),
         }
@@ -235,6 +199,8 @@ def classify_message(message: str, use_web: bool) -> str:
     if is_document_request(normalized):
         return "document_research"
 
+    # use_web is always True from the frontend. is_web_request provides
+    # an additional signal but use_web alone is sufficient to route web.
     if use_web or is_web_request(normalized):
         return "web_research"
 
@@ -259,75 +225,33 @@ def is_workflow_followup(normalized: str) -> bool:
     if any(pattern in normalized for pattern in direct_patterns):
         return True
 
-    previous_terms = {
-        "previous",
-        "last",
-        "earlier",
-        "just",
-        "recent",
-        "latest",
-    }
+    previous_terms = {"previous", "last", "earlier", "just", "recent", "latest"}
+    workflow_terms = {"code", "command", "output", "result", "workflow", "run", "execution", "task", "details"}
 
-    workflow_terms = {
-        "code",
-        "command",
-        "output",
-        "result",
-        "workflow",
-        "run",
-        "execution",
-        "task",
-        "details",
-    }
-
-    has_previous = any(term in normalized for term in previous_terms)
-    has_workflow = any(term in normalized for term in workflow_terms)
-
-    return has_previous and has_workflow
+    return any(t in normalized for t in previous_terms) and any(t in normalized for t in workflow_terms)
 
 
 def is_execution_request(normalized: str) -> bool:
     execution_phrases = [
-        "run python",
-        "python code",
-        "execute python",
-        "run code",
-        "run command",
-        "execute command",
-        "shell command",
-        "terminal command",
-        "create file",
-        "write file",
-        "make file",
-        "save file",
-        "read file",
-        "open file",
-        "show file",
-        "display file",
-        "list files",
-        "show files",
-        "list directory",
-        "show directory",
-        "git status",
-        "git branch",
-        "git remote",
-        "git log",
-        "recent commits",
-        "last commit",
-        "git diff",
-        "show changes",
-        "full diff",
-        "git add",
-        "stage changes",
-        "git commit",
-        "commit changes",
-        "commit all changes",
-        "git push",
-        "push to",
-        "install package",
-        "pip install",
-        "test retry",
-        "retry demo",
+        # File operations
+        "create file", "write file", "make file", "save file",
+        "read file", "open file", "show file", "display file",
+        "list files", "show files", "list directory", "show directory",
+        # Shell / command execution
+        "run command", "execute command", "shell command", "terminal command",
+        "run code", "execute code",
+        # Git inspection (read-only, safe)
+        "git branch", "git remote", "git log",
+        "recent commits", "last commit", "git diff",
+        "show changes", "full diff",
+        # Git write operations (require approval)
+        "git add", "stage changes", "git commit",
+        "commit changes", "commit all changes",
+        "git push", "push to",
+        # Package management
+        "install package", "pip install",
+        # Internal test/debug helpers
+        "test retry", "retry demo",
     ]
 
     if normalized.strip() in {"dir", "ls", "push"}:
@@ -338,46 +262,48 @@ def is_execution_request(normalized: str) -> bool:
 
 def is_document_request(normalized: str) -> bool:
     document_phrases = [
-        "uploaded document",
-        "uploaded file",
-        "my document",
-        "my file",
-        "the document",
-        "this document",
-        "the pdf",
-        "this pdf",
-        "summarize document",
-        "summarize the document",
-        "summarize my document",
-        "summarize uploaded",
-        "according to the document",
-        "based on the document",
-        "from the document",
-        "from my file",
-        "in the pdf",
-        "knowledge base",
-        "source",
-        "sources",
-        "citations",
+        "uploaded document", "uploaded file",
+        "my document", "my file",
+        "the document", "this document",
+        "the pdf", "this pdf",
+        "summarize document", "summarize the document",
+        "summarize my document", "summarize uploaded",
+        "according to the document", "based on the document",
+        "from the document", "from my file",
+        "in the pdf", "knowledge base",
+        "source", "sources", "citations",
     ]
 
     return any(phrase in normalized for phrase in document_phrases)
 
 
 def is_web_request(normalized: str) -> bool:
+    """
+    Secondary signal — catches queries that are clearly about real-world,
+    live, or time-sensitive data even if use_web somehow arrives as False.
+    Since use_web is always True from the frontend this is a safety net only.
+    """
     web_phrases = [
-        "latest",
-        "current",
-        "today",
-        "recent news",
-        "news",
-        "search web",
-        "search the web",
-        "browse",
-        "look up",
-        "online",
-        "internet",
-        "2026",
+        # Time / recency
+        "latest", "current", "today", "tonight", "tomorrow",
+        "this week", "this month", "this year", "right now",
+        "recent news", "news", "2024", "2025", "2026",
+        # Web intent
+        "search web", "search the web", "browse", "look up",
+        "online", "internet", "website",
+        # Weather
+        "weather", "forecast", "temperature", "rain", "rainfall",
+        "humidity", "wind speed", "sunny", "cloudy", "storm",
+        "climate", "heatwave", "snowfall",
+        # Finance / markets
+        "stock price", "share price", "crypto", "bitcoin",
+        "exchange rate", "market", "nasdaq", "sensex", "nifty",
+        # Sports / events
+        "score", "match", "fixture", "standings", "results",
+        "live score", "who won",
+        # General real-world lookups
+        "population", "capital of", "president of", "prime minister",
+        "ceo of", "headquarters of",
     ]
 
     return any(phrase in normalized for phrase in web_phrases)
@@ -387,22 +313,12 @@ def is_vague_document_followup(question: str) -> bool:
     lower = question.lower().strip()
 
     followup_phrases = [
-        "what is this document about",
-        "what is the document about",
-        "summarize this document",
-        "summarize the document",
-        "summarize it",
-        "summary",
-        "list the key points",
-        "key points",
-        "main points",
-        "important points",
-        "what are the key points",
-        "explain this",
-        "explain it",
-        "tell me more",
-        "give me the overview",
-        "overview",
+        "what is this document about", "what is the document about",
+        "summarize this document", "summarize the document",
+        "summarize it", "summary", "list the key points",
+        "key points", "main points", "important points",
+        "what are the key points", "explain this", "explain it",
+        "tell me more", "give me the overview", "overview",
     ]
 
     return any(phrase in lower for phrase in followup_phrases)
@@ -470,12 +386,9 @@ def latest_workflow_state():
 
     for run_summary in sorted_runs:
         run_id = run_summary.get("run_id")
-
         if not run_id:
             continue
-
         state = WorkflowStore.get(run_id)
-
         if state:
             return state
 
@@ -490,13 +403,12 @@ def build_workflow_followup_answer(message: str) -> AssistantRunResponse:
             response_type="workflow_followup",
             answer=(
                 "I could not find a previous workflow run yet. Run a task first, "
-                "then ask me to show the previous code, output, command, or details."
+                "then ask me to show the previous output, command, or details."
             ),
             metadata={"route": "workflow_followup", "found_previous_run": False},
         )
 
     latest_output = None
-
     for output in reversed(state.execution_outputs):
         if output.get("tool_result"):
             latest_output = output
@@ -534,29 +446,21 @@ def build_workflow_followup_answer(message: str) -> AssistantRunResponse:
 
     if code:
         answer_lines.extend(["", "Code:", str(code).strip()])
-
     if command:
         answer_lines.extend(["", "Command:", str(command).strip()])
-
     if path:
         answer_lines.extend(["", "Path:", str(path).strip()])
-
     if output_text:
         if isinstance(output_text, list):
             output_text = "\n".join(str(item) for item in output_text)
-
         answer_lines.extend(["", "Output:", str(output_text).strip()])
-
     if stderr and not output_text:
         answer_lines.extend(["", "Error output:", str(stderr).strip()])
 
-    answer_lines.extend(
-        [
-            "",
-            "Execution status:",
-            f"- Success: {'yes' if success else 'no'}",
-        ]
-    )
+    answer_lines.extend([
+        "", "Execution status:",
+        f"- Success: {'yes' if success else 'no'}",
+    ])
 
     if return_code is not None:
         answer_lines.append(f"- Return code: {return_code}")
@@ -578,8 +482,6 @@ def build_workflow_followup_answer(message: str) -> AssistantRunResponse:
             "tool_action": tool_action,
         },
     )
-
-
 
 
 def is_multi_task_request(message: str) -> bool:
@@ -604,7 +506,6 @@ def split_multi_task_message(message: str) -> list[str]:
         start = match.end()
         end = matches[index + 1].start() if index + 1 < len(matches) else len(cleaned)
         task = cleaned[start:end].strip(" \n\t-:;")
-
         if task:
             tasks.append(task)
 
@@ -613,22 +514,17 @@ def split_multi_task_message(message: str) -> list[str]:
 
 def short_task_title(task: str, max_length: int = 90) -> str:
     compact = " ".join(task.strip().split())
-
     if len(compact) <= max_length:
         return compact
-
     return compact[: max_length - 3].rstrip() + "..."
 
 
 def format_subtask_answer(answer: str, max_length: int = 2200) -> str:
     cleaned = str(answer or "").strip()
-
     if not cleaned:
         return "No answer was produced."
-
     if len(cleaned) <= max_length:
         return cleaned
-
     return cleaned[: max_length - 3].rstrip() + "..."
 
 
@@ -647,28 +543,24 @@ async def handle_single_assistant_task(
             answer=direct_response["answer"],
             metadata={"route": direct_response["response_type"]},
         )
-
         if store_turn:
             store_assistant_turn(db, message, response.answer, [])
-
         return response
 
-    route = classify_message(message, use_web)
+    # Web search is permanently enabled — enforce server-side regardless of payload.
+    effective_use_web = True
+    route = classify_message(message, effective_use_web)
 
     if route == "workflow_followup":
         response = build_workflow_followup_answer(message)
-
         if store_turn:
             store_assistant_turn(db, message, response.answer, [])
-
         return response
 
     if route == "execution_workflow":
         run_id = str(uuid4())
-
         workflow = AiraXWorkflow()
         state = await workflow.run(message, run_id=run_id)
-
         WorkflowStore.save(state)
 
         serialized = serialize_state(state)
@@ -677,12 +569,10 @@ async def handle_single_assistant_task(
             if state.status == "requires_approval"
             else "execution_result"
         )
-
         answer = (
             state.final_answer
             or "AIRA-X created a workflow, but no final answer was produced."
         )
-
         if store_turn:
             store_assistant_turn(db, message, answer, [])
 
@@ -713,8 +603,11 @@ async def handle_single_assistant_task(
         plan.needs_documents = False
 
     else:
+        # general_answer: still use web since it is always enabled.
+        # This ensures questions about weather, facts, current events, etc.
+        # that weren't caught by is_web_request() still get web enrichment.
         plan.needs_documents = False
-        plan.needs_web = False
+        plan.needs_web = True
 
     if plan.needs_documents:
         if is_vague_document_followup(message):
@@ -777,10 +670,7 @@ async def handle_multi_task_request(
 
     if len(tasks) < 2:
         return await handle_single_assistant_task(
-            message,
-            use_web=use_web,
-            db=db,
-            store_turn=True,
+            message, use_web=use_web, db=db, store_turn=True,
         )
 
     sections: list[str] = [
@@ -794,57 +684,35 @@ async def handle_multi_task_request(
     for index, task in enumerate(tasks, start=1):
         try:
             response = await handle_single_assistant_task(
-                task,
-                use_web=use_web,
-                db=db,
-                store_turn=False,
+                task, use_web=use_web, db=db, store_turn=False,
             )
-
             response_types.append(response.response_type)
-
             if response.workflow:
                 workflow = response.workflow
-
             if response.run_id:
                 run_id = response.run_id
-
-            sections.extend(
-                [
-                    "",
-                    f"Task {index}: {short_task_title(task)}",
-                    "",
-                    format_subtask_answer(response.answer),
-                ]
-            )
-
+            sections.extend([
+                "", f"Task {index}: {short_task_title(task)}",
+                "", format_subtask_answer(response.answer),
+            ])
         except Exception as error:
             failed_tasks.append(index)
-            sections.extend(
-                [
-                    "",
-                    f"Task {index}: {short_task_title(task)}",
-                    "",
-                    f"This task failed: {error}",
-                ]
-            )
+            sections.extend([
+                "", f"Task {index}: {short_task_title(task)}",
+                "", f"This task failed: {error}",
+            ])
 
     if failed_tasks:
-        sections.extend(
-            [
-                "",
-                "Summary:",
-                f"- Completed: {len(tasks) - len(failed_tasks)}",
-                f"- Failed: {len(failed_tasks)}",
-            ]
-        )
+        sections.extend([
+            "", "Summary:",
+            f"- Completed: {len(tasks) - len(failed_tasks)}",
+            f"- Failed: {len(failed_tasks)}",
+        ])
     else:
-        sections.extend(
-            [
-                "",
-                "Summary:",
-                f"- Completed all {len(tasks)} tasks successfully.",
-            ]
-        )
+        sections.extend([
+            "", "Summary:",
+            f"- Completed all {len(tasks)} tasks successfully.",
+        ])
 
     final_answer = "\n".join(sections).strip()
     store_assistant_turn(db, message, final_answer, [])
@@ -879,7 +747,6 @@ def build_direct_run_response(
     db: Session,
 ) -> AssistantRunResponse:
     store_assistant_turn(db, message, answer, [])
-
     return AssistantRunResponse(
         response_type=response_type,
         answer=answer,
@@ -899,14 +766,9 @@ async def run_assistant(
 
     if is_multi_task_request(message):
         return await handle_multi_task_request(
-            message,
-            use_web=payload.use_web,
-            db=db,
+            message, use_web=True, db=db,
         )
 
     return await handle_single_assistant_task(
-        message,
-        use_web=payload.use_web,
-        db=db,
-        store_turn=True,
+        message, use_web=True, db=db, store_turn=True,
     )

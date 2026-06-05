@@ -54,8 +54,57 @@ export function isKnownSectionTitle(title: string): boolean {
   return KNOWN_SECTION_TITLES.has(title.trim().toLowerCase());
 }
 
-const SECTION_LINE =
-  /^([A-Za-z][A-Za-z0-9\s]*):\s*([\s\S]*)?$/;
+const SECTION_LINE = /^([A-Za-z][A-Za-z0-9\s]*):\s*([\s\S]*)?$/;
+
+// ─── Markdown normalisation ───────────────────────────────────────────────────
+// The backend can return raw markdown (##, **, *, -, numbered lists).
+// We convert it to plain structured text so the existing renderer handles it
+// correctly without ever showing raw syntax to the user.
+
+/**
+ * Convert markdown heading lines to plain title-cased text.
+ *   ## Life Sciences Explanation  →  Life Sciences Explanation
+ *   ### Overview                  →  Overview
+ */
+function stripMarkdownHeadings(text: string): string {
+  return text.replace(/^#{1,6}\s+(.+)$/gm, "$1");
+}
+
+/**
+ * Convert **bold** and *italic* markers to plain text.
+ * The InlineText component in assistant-answer.tsx handles **bold** itself,
+ * so we only need to strip *italic* (single asterisk/underscore) here.
+ */
+function stripMarkdownEmphasis(text: string): string {
+  // Remove italic: *word* or _word_ but leave **bold** intact for InlineText
+  return text
+    .replace(/(?<!\*)\*(?!\*)([^*]+)(?<!\*)\*(?!\*)/g, "$1")
+    .replace(/(?<!_)_(?!_)([^_]+)(?<!_)_(?!_)/g, "$1");
+}
+
+/**
+ * Convert markdown numbered lists to plain hyphen lists so parseListItems works.
+ *   1. Item one  →  - Item one
+ *   2. Item two  →  - Item two
+ */
+function normaliseNumberedLists(text: string): string {
+  return text.replace(/^\d+\.\s+/gm, "- ");
+}
+
+/**
+ * Master normaliser — run all markdown cleanup before any parsing.
+ */
+export function normaliseMarkdown(text: string): string {
+  let out = text;
+  out = stripMarkdownHeadings(out);
+  out = stripMarkdownEmphasis(out);
+  out = normaliseNumberedLists(out);
+  // Collapse 3+ blank lines to 2 so paragraph splitting stays clean
+  out = out.replace(/\n{3,}/g, "\n\n");
+  return out;
+}
+
+// ─── Existing helpers (unchanged) ────────────────────────────────────────────
 
 export function stripTrailingSources(answer: string): string {
   return answer
@@ -98,7 +147,10 @@ export function parseMultiTaskAnswer(answer: string): ParsedMultiTask | null {
   const summaryMarker = lastTask.body.search(/\n\s*Summary:\s*\n/i);
 
   if (summaryMarker >= 0) {
-    const summary = lastTask.body.slice(summaryMarker).replace(/^Summary:\s*/i, "").trim();
+    const summary = lastTask.body
+      .slice(summaryMarker)
+      .replace(/^Summary:\s*/i, "")
+      .trim();
     lastTask.body = lastTask.body.slice(0, summaryMarker).trim();
     return { intro, tasks, summary };
   }
@@ -117,17 +169,9 @@ export function parseMultiTaskAnswer(answer: string): ParsedMultiTask | null {
 export function getSectionVariant(title: string): AnswerSection["variant"] {
   const key = title.trim().toLowerCase();
 
-  if (CODE_SECTION_TITLES.has(key)) {
-    return "code";
-  }
-
-  if (OUTPUT_SECTION_TITLES.has(key)) {
-    return "output";
-  }
-
-  if (META_SECTION_TITLES.has(key)) {
-    return "meta";
-  }
+  if (CODE_SECTION_TITLES.has(key)) return "code";
+  if (OUTPUT_SECTION_TITLES.has(key)) return "output";
+  if (META_SECTION_TITLES.has(key)) return "meta";
 
   return "default";
 }
@@ -135,18 +179,19 @@ export function getSectionVariant(title: string): AnswerSection["variant"] {
 export function sectionUsesList(title: string, content: string): boolean {
   const key = title.trim().toLowerCase();
 
-  if (LIST_SECTION_TITLES.has(key)) {
-    return true;
-  }
+  if (LIST_SECTION_TITLES.has(key)) return true;
 
   if (key === "execution status") {
     return content.trim().startsWith("-");
   }
 
-  return /^-\s+/m.test(content) && content.split("\n").every((line) => {
-    const trimmed = line.trim();
-    return !trimmed || trimmed.startsWith("-");
-  });
+  return (
+    /^-\s+/m.test(content) &&
+    content.split("\n").every((line) => {
+      const trimmed = line.trim();
+      return !trimmed || trimmed.startsWith("-");
+    })
+  );
 }
 
 export function parseListItems(content: string): string[] {
@@ -194,26 +239,22 @@ export function partitionAnswerSections(sections: AnswerSection[]): {
   return { visible, technical };
 }
 
-export function parseStructuredSections(answer: string): AnswerSection[] | null {
+export function parseStructuredSections(
+  answer: string
+): AnswerSection[] | null {
   const cleaned = stripTrailingSources(answer);
   const lines = cleaned.split("\n");
 
-  if (lines.length < 2) {
-    return null;
-  }
+  if (lines.length < 2) return null;
 
   const sections: AnswerSection[] = [];
   let buffer: string[] = [];
   let currentTitle: string | null = null;
 
   function flushSection() {
-    if (!currentTitle) {
-      return;
-    }
-
+    if (!currentTitle) return;
     const content = buffer.join("\n").trim();
     buffer = [];
-
     if (content) {
       sections.push({
         title: currentTitle,
@@ -226,13 +267,8 @@ export function parseStructuredSections(answer: string): AnswerSection[] | null 
   function flushPreamble() {
     const preamble = buffer.join("\n").trim();
     buffer = [];
-
     if (preamble) {
-      sections.push({
-        title: "",
-        content: preamble,
-        variant: "default",
-      });
+      sections.push({ title: "", content: preamble, variant: "default" });
     }
   }
 
@@ -258,11 +294,7 @@ export function parseStructuredSections(answer: string): AnswerSection[] | null 
       continue;
     }
 
-    if (currentTitle) {
-      buffer.push(line);
-    } else {
-      buffer.push(line);
-    }
+    buffer.push(line);
   }
 
   if (currentTitle) {
@@ -272,12 +304,10 @@ export function parseStructuredSections(answer: string): AnswerSection[] | null 
   }
 
   const knownSections = sections.filter(
-    (section) => section.title && isKnownSectionTitle(section.title)
+    (s) => s.title && isKnownSectionTitle(s.title)
   );
 
-  if (knownSections.length === 0) {
-    return null;
-  }
+  if (knownSections.length === 0) return null;
 
   return sections;
 }

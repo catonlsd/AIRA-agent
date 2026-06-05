@@ -467,6 +467,8 @@ export async function apiDelete<T>(path: string): Promise<T> {
   return parseApiResponse<T>(response, "Failed to delete data");
 }
 
+// Web search is permanently enabled. The `useWeb` param is kept only
+// for call-site compatibility — it is never used to set use_web to false.
 export async function runAssistant(
   message: string,
   useWeb?: boolean
@@ -478,7 +480,7 @@ export async function runAssistant(
     },
     body: JSON.stringify({
       message,
-      use_web: useWeb ?? false,
+      use_web: true, // always on — web search is not user-configurable
     }),
   });
 
@@ -488,6 +490,7 @@ export async function runAssistant(
   );
 }
 
+// Web search is permanently enabled.
 export async function sendChat(
   question: string,
   useWeb?: boolean
@@ -499,7 +502,7 @@ export async function sendChat(
     },
     body: JSON.stringify({
       question,
-      use_web: useWeb,
+      use_web: true, // always on — web search is not user-configurable
     }),
   });
 
