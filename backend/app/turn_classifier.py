@@ -31,13 +31,28 @@ CLARIFICATION_MODE = "clarification"
 _GENERAL_CHAT_PATTERNS = (
     "hello",
     "hi",
+    "hiya",
     "hey",
+    "heya",
+    "yo",
+    "sup",
+    "howdy",
+    "greetings",
     "good morning",
     "good afternoon",
     "good evening",
     "how are you",
     "what's up",
     "whats up",
+    # Common greetings in other languages — AIRA-X should greet back naturally.
+    "hola",
+    "aloha",
+    "namaste",
+    "bonjour",
+    "ciao",
+    "salut",
+    "hallo",
+    "ola",
 )
 
 _IDENTITY_PATTERNS = (
