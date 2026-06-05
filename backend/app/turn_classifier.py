@@ -194,6 +194,10 @@ def classify_turn(
 
     artifact_type = _detect_artifact_type(cleaned_prompt)
 
+    # Order matters: actionable/tool intents are checked before the looser
+    # conversational greeting heuristic so that prompts like
+    # `run python code: print("Hello from AIRA-X")` are not misread as chat
+    # just because the word "hello" appears inside a code string.
     if _is_self_memory_question(cleaned_prompt):
         return TurnClassification(
             mode=SELF_MEMORY_MODE,
@@ -206,35 +210,11 @@ def classify_turn(
             artifact_type=None,
         )
 
-    if _is_general_chat(cleaned_prompt):
-        return TurnClassification(
-            mode=GENERAL_CHAT_MODE,
-            reason="The prompt is casual conversation or asks about the assistant itself.",
-            confidence=0.97,
-            needs_research=False,
-            needs_execution=False,
-            needs_document_analysis=False,
-            needs_approval_review=False,
-            artifact_type=None,
-        )
-
     if _has_explicit_document_reference(cleaned_prompt, uploaded_file_names):
         return TurnClassification(
             mode=DOCUMENT_QA_MODE,
             reason="The prompt explicitly refers to an uploaded document or file.",
             confidence=0.9,
-            needs_research=False,
-            needs_execution=False,
-            needs_document_analysis=True,
-            needs_approval_review=False,
-            artifact_type=None,
-        )
-
-    if has_uploaded_files and _looks_like_information_request(cleaned_prompt):
-        return TurnClassification(
-            mode=DOCUMENT_QA_MODE,
-            reason="Uploaded files are present and the prompt looks like an information request, so document-first analysis should run.",
-            confidence=0.76,
             needs_research=False,
             needs_execution=False,
             needs_document_analysis=True,
@@ -266,6 +246,30 @@ def classify_turn(
             artifact_type=None,
         )
 
+    if _is_general_chat(cleaned_prompt):
+        return TurnClassification(
+            mode=GENERAL_CHAT_MODE,
+            reason="The prompt is casual conversation or asks about the assistant itself.",
+            confidence=0.97,
+            needs_research=False,
+            needs_execution=False,
+            needs_document_analysis=False,
+            needs_approval_review=False,
+            artifact_type=None,
+        )
+
+    if has_uploaded_files and _looks_like_information_request(cleaned_prompt):
+        return TurnClassification(
+            mode=DOCUMENT_QA_MODE,
+            reason="Uploaded files are present and the prompt looks like an information request, so document-first analysis should run.",
+            confidence=0.76,
+            needs_research=False,
+            needs_execution=False,
+            needs_document_analysis=True,
+            needs_approval_review=False,
+            artifact_type=None,
+        )
+
     if _is_research_request(cleaned_prompt):
         return TurnClassification(
             mode=WEB_RESEARCH_MODE,
@@ -278,10 +282,13 @@ def classify_turn(
             artifact_type=None,
         )
 
+    # Low confidence on purpose: nothing matched a precise rule. The hybrid
+    # intent router treats this as "ambiguous" and escalates to an LLM (or a
+    # safe execution fallback) instead of trusting a keyword guess.
     return TurnClassification(
         mode=GENERAL_CHAT_MODE,
         reason="Defaulted to general chat because the prompt did not strongly match execution, research, or document-driven intent.",
-        confidence=0.55,
+        confidence=0.5,
         needs_research=False,
         needs_execution=False,
         needs_document_analysis=False,
@@ -299,7 +306,18 @@ def _contains_any(text: str, patterns: Sequence[str]) -> bool:
 
 
 def _is_general_chat(text: str) -> bool:
-    return _contains_any(text, _GENERAL_CHAT_PATTERNS) or _contains_any(text, _IDENTITY_PATTERNS)
+    return _starts_with_greeting(text) or _contains_any(text, _IDENTITY_PATTERNS)
+
+
+def _starts_with_greeting(text: str) -> bool:
+    stripped = text.strip()
+    for greeting in _GENERAL_CHAT_PATTERNS:
+        # Anchor at the start with a trailing word boundary so "hi" matches
+        # "hi there" but not "hide the file", and greetings buried inside a
+        # code string or longer instruction do not trigger chat mode.
+        if re.match(rf"{re.escape(greeting)}\b", stripped):
+            return True
+    return False
 
 
 def _is_self_memory_question(text: str) -> bool:

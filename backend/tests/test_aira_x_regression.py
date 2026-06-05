@@ -1998,7 +1998,7 @@ async def test_stale_approval_processing_recovered_in_detail_api():
 
         assert_equal(
             run["decision"],
-            "approval_processing_stale",
+            "approval_processing_stale_recovered",
             "Stale approval detail recovered decision",
         )
 
@@ -2021,7 +2021,7 @@ async def test_stale_approval_processing_recovered_in_detail_api():
 
         assert_contains(
             run["final_answer"],
-            "Approval processing became stale",
+            "recovered a stale approval-processing state",
             "Stale approval detail final answer",
         )
 
@@ -2031,9 +2031,11 @@ async def test_stale_approval_processing_recovered_in_detail_api():
             "Stale approval detail current step status",
         )
 
+        # Recovery preserves the step's original blocking reason; the stale
+        # recovery outcome is surfaced in final_answer and recovery events.
         assert_contains(
             run["plan"][0]["error"],
-            "Approval processing became stale",
+            "This action requires user approval.",
             "Stale approval detail current step error",
         )
 
@@ -2113,7 +2115,7 @@ async def test_stale_approval_processing_recovered_in_runs_and_overview():
 
         assert_equal(
             matching_run["decision"],
-            "approval_processing_stale",
+            "approval_processing_stale_recovered",
             "Stale approval runs summary recovered decision",
         )
 
@@ -2153,7 +2155,7 @@ async def test_stale_approval_processing_recovered_in_runs_and_overview():
 
         assert_equal(
             latest_matching_run["decision"],
-            "approval_processing_stale",
+            "approval_processing_stale_recovered",
             "Stale approval overview recovered decision",
         )
 
@@ -2209,7 +2211,7 @@ async def test_stale_approval_processing_blocks_late_approval_action():
 
         assert_equal(
             approval_response["decision"],
-            "approval_processing_stale",
+            "approval_processing_stale_recovered",
             "Late approval after stale recovery decision",
         )
 
@@ -2226,7 +2228,7 @@ async def test_stale_approval_processing_blocks_late_approval_action():
 
         assert_contains(
             approval_response["workflow"]["final_answer"],
-            "Approval processing became stale",
+            "recovered a stale approval-processing state",
             "Late approval after stale recovery final answer",
         )
 
@@ -2250,7 +2252,7 @@ async def test_stale_approval_processing_blocks_late_approval_action():
 
         assert_equal(
             rejection_response["decision"],
-            "approval_processing_stale",
+            "approval_processing_stale_recovered",
             "Late rejection after stale recovery decision",
         )
 
@@ -3275,7 +3277,7 @@ async def test_delete_allows_after_stale_approval_recovery():
 
         assert_equal(
             delete_response["deleted_run"]["decision"],
-            "approval_processing_stale",
+            "approval_processing_stale_recovered",
             "Delete stale approval should record stale decision before deletion",
         )
 
@@ -3594,7 +3596,7 @@ async def test_safe_bulk_cleanup_recovers_and_deletes_stale_approval_runs():
 
         assert_equal(
             deleted_run["decision"],
-            "approval_processing_stale",
+            "approval_processing_stale_recovered",
             "Safe cleanup should record stale approval decision before delete",
         )
 

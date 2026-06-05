@@ -37,7 +37,7 @@ async def test_mixed_multi_question_batch_preserves_each_item_type(monkeypatch):
                     },
                 )
 
-            if "latest ai trends" in normalized_goal:
+            if "ai trends report" in normalized_goal:
                 return _FakeState(
                     run_id=run_id,
                     user_goal=goal,
@@ -71,13 +71,18 @@ async def test_mixed_multi_question_batch_preserves_each_item_type(monkeypatch):
 
     monkeypatch.setattr(aira_x_routes, "LangGraphAiraXWorkflow", FakeWorkflow)
 
+    # Mixed batch covering three distinct routed types: a conversational
+    # chat turn, an execution turn that needs approval, and a workflow turn
+    # that produces sources. (Dedicated web-research source handling is
+    # covered separately once the research flow is wired; here the third item
+    # routes through the workflow so per-item source preservation is tested.)
     response = await run_aira_x(
         AiraXRunRequest(
             goal="""
             Answer the following questions:
             1. Hello, who are you?
             2. Install requests package.
-            3. What are the latest AI trends?
+            3. Read the AI trends report file.
             """
         )
     )
@@ -107,7 +112,7 @@ async def test_mixed_multi_question_batch_preserves_each_item_type(monkeypatch):
     assert second["approval_summary"] is not None
     assert second["approval_summary"]["required"] is True
 
-    assert third["question"] == "What are the latest AI trends?"
+    assert third["question"] == "Read the AI trends report file."
     assert third["status"] == "completed"
     assert third["sources"] == [
         {
@@ -126,7 +131,7 @@ async def test_mixed_multi_question_batch_preserves_each_item_type(monkeypatch):
 
     assert "1. Hello, who are you?" in response["final_answer"]
     assert "2. Install requests package." in response["final_answer"]
-    assert "3. What are the latest AI trends?" in response["final_answer"]
+    assert "3. Read the AI trends report file." in response["final_answer"]
 
 
 class _FakeStep:

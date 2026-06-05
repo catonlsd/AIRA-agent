@@ -15,8 +15,9 @@ from app.turn_classifier import (
     RESEARCH_THEN_EXECUTION_MODE,
     SELF_MEMORY_MODE,
     WEB_RESEARCH_MODE,
-    classify_turn,
 )
+from app.intent_router import route_turn
+from app.core.llm import LLMClient
 
 from graph.langgraph_aira_workflow import LangGraphAiraXWorkflow
 from tools.tool_registry import ToolRegistry
@@ -648,173 +649,59 @@ async def get_aira_x_overview():
         "workflow_metrics": workflow_metrics,
     }
 
-def _build_general_chat_response(goal: str, classification) -> dict[str, Any]:
+AIRA_X_PERSONA_SYSTEM_PROMPT = (
+    "You are AIRA-X, a helpful, friendly AI assistant. You can hold normal "
+    "conversations and answer everyday and general-knowledge questions directly "
+    "and naturally. Beyond chatting, you can research topics, analyze uploaded "
+    "documents, run safe execution workflows, and generate artifacts such as "
+    "PPTX, DOCX, and XLSX files. Keep replies concise, warm, and genuinely "
+    "useful. When asked who you are or what you can do, introduce yourself as "
+    "AIRA-X and briefly describe these abilities."
+)
+
+
+def _offline_general_chat_message(goal: str) -> str:
+    """Branded fallback used when no LLM provider is configured."""
     normalized_goal = goal.strip().lower()
 
     if "who are you" in normalized_goal:
-        message = (
+        return (
             "I’m AIRA-X, an AI assistant that can help with research, document understanding, "
             "safe task execution, and artifact generation like presentations and reports."
         )
-    elif "what can you do" in normalized_goal or "how can you help" in normalized_goal:
-        message = (
+    if "what can you do" in normalized_goal or "how can you help" in normalized_goal:
+        return (
             "I can answer questions, analyze uploaded documents, research topics, run safe execution "
             "workflows, and generate artifacts like PPTX, DOCX, and XLSX files when needed."
         )
-    elif any(greeting in normalized_goal for greeting in ("hello", "hi", "hey", "good morning", "good afternoon", "good evening")):
-        message = (
-            "Hello! I’m AIRA-X. I can help with general questions, research, document analysis, "
-            "and execution-focused tasks."
-        )
-    else:
-        message = (
-            "I understood this as a general conversation request, so I answered it directly "
-            "without running tools or execution workflows."
-        )
-
-    return {
-        "run_id": str(uuid4()),
-        "status": "completed",
-        "decision": "general_chat_completed",
-        "mode": GENERAL_CHAT_MODE,
-        "message": message,
-        "final_answer": message,
-        "sources": [],
-        "artifacts": [],
-        "approval_summary": None,
-        "meta": {
-            "is_multi_question": False,
-            "question_count": 1,
-            "has_sources": False,
-            "has_artifacts": False,
-            "requires_approval": False,
-            "turn_classification": {
-                "mode": classification.mode,
-                "reason": classification.reason,
-                "confidence": classification.confidence,
-            },
-        },
-    }
-
-
-def _build_self_memory_response(goal: str, classification) -> dict[str, Any]:
-    message = (
-        "I only know what you share with me in this conversation or what I’m explicitly allowed "
-        "to remember. I don’t know personal details about you unless you’ve provided them."
+    return (
+        "Hello! I’m AIRA-X. I can help with general questions, research, document analysis, "
+        "and execution-focused tasks."
     )
 
-    return {
-        "run_id": str(uuid4()),
-        "status": "completed",
-        "decision": "self_memory_completed",
-        "mode": SELF_MEMORY_MODE,
-        "message": message,
-        "final_answer": message,
-        "sources": [],
-        "artifacts": [],
-        "approval_summary": None,
-        "meta": {
-            "is_multi_question": False,
-            "question_count": 1,
-            "has_sources": False,
-            "has_artifacts": False,
-            "requires_approval": False,
-            "turn_classification": {
-                "mode": classification.mode,
-                "reason": classification.reason,
-                "confidence": classification.confidence,
-            },
-        },
-    }
 
-
-def _build_document_qa_placeholder_response(goal: str, classification) -> dict[str, Any]:
-    message = (
-        "I understood this as a document-based question. The next step is to route it through "
-        "document-first analysis so AIRA-X answers from uploaded files before using broader research."
+def _generate_conversational_answer(goal: str) -> str:
+    """Answer a general-chat / daily-life question, using the LLM when available."""
+    answer = LLMClient().generate(
+        system=AIRA_X_PERSONA_SYSTEM_PROMPT,
+        prompt=goal,
+        temperature=0.5,
     )
 
-    return {
-        "run_id": str(uuid4()),
-        "status": "completed",
-        "decision": "document_qa_routed",
-        "mode": DOCUMENT_QA_MODE,
-        "message": message,
-        "final_answer": message,
-        "sources": [],
-        "artifacts": [],
-        "approval_summary": None,
-        "meta": {
-            "is_multi_question": False,
-            "question_count": 1,
-            "has_sources": False,
-            "has_artifacts": False,
-            "requires_approval": False,
-            "turn_classification": {
-                "mode": classification.mode,
-                "reason": classification.reason,
-                "confidence": classification.confidence,
-            },
-        },
-    }
+    cleaned = (answer or "").strip()
 
-
-def _build_web_research_placeholder_response(goal: str, classification) -> dict[str, Any]:
-    message = (
-        "I understood this as a research request. The next step is to connect it to the dedicated "
-        "research flow so AIRA-X can gather and synthesize external information cleanly."
-    )
-
-    return {
-        "run_id": str(uuid4()),
-        "status": "completed",
-        "decision": "web_research_routed",
-        "mode": WEB_RESEARCH_MODE,
-        "message": message,
-        "final_answer": message,
-        "sources": [],
-        "artifacts": [],
-        "approval_summary": None,
-        "meta": {
-            "is_multi_question": False,
-            "question_count": 1,
-            "has_sources": False,
-            "has_artifacts": False,
-            "requires_approval": False,
-            "turn_classification": {
-                "mode": classification.mode,
-                "reason": classification.reason,
-                "confidence": classification.confidence,
-            },
-        },
-    }
-
-def _build_general_chat_response(goal: str, classification) -> dict[str, Any]:
-    normalized_goal = goal.strip().lower()
-
-    if "who are you" in normalized_goal:
-        message = (
-            "I’m AIRA-X, an AI assistant that can help with research, document understanding, "
-            "safe task execution, and artifact generation like presentations and reports."
-        )
-    elif "what can you do" in normalized_goal or "how can you help" in normalized_goal:
-        message = (
-            "I can answer questions, analyze uploaded documents, research topics, run safe execution "
-            "workflows, and generate artifacts like PPTX, DOCX, and XLSX files when needed."
-        )
-    elif any(
-        greeting in normalized_goal
-        for greeting in ("hello", "hi", "hey", "good morning", "good afternoon", "good evening")
+    # LLMClient returns a canned notice when no provider is configured or the
+    # call fails; in that case fall back to the branded offline message.
+    if not cleaned or "no language model provider" in cleaned.lower() or (
+        "could not generate a response" in cleaned.lower()
     ):
-        message = (
-            "Hello! I’m AIRA-X. I can help with general questions, research, document analysis, "
-            "and execution-focused tasks."
-        )
-    else:
-        message = (
-            "I understood this as a general conversation request, so I answered it directly "
-            "without running tools or execution workflows."
-        )
+        return _offline_general_chat_message(goal)
+
+    return cleaned
+
+
+def _build_general_chat_response(goal: str, classification) -> dict[str, Any]:
+    message = _generate_conversational_answer(goal)
 
     return {
         "run_id": str(uuid4()),
@@ -935,7 +822,7 @@ def _build_web_research_placeholder_response(goal: str, classification) -> dict[
 
 
 async def _run_single_aira_x_goal(goal: str) -> dict[str, Any]:
-    classification = classify_turn(goal)
+    classification = route_turn(goal)
 
     if classification.mode == GENERAL_CHAT_MODE:
         return _build_general_chat_response(goal, classification)

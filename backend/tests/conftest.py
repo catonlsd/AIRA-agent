@@ -1,0 +1,47 @@
+# File: backend/tests/conftest.py
+"""
+Shared test fixtures.
+
+The suite must stay hermetic: even though a real LLM provider may be configured
+in the environment, tests must never make live API calls (slow, costly,
+non-deterministic). We stub ``LLMClient.generate`` for every test with a
+deterministic, branded response. The execution workflow itself is
+LLM-free, so this only affects conversational/general-chat paths.
+"""
+
+import sys
+from pathlib import Path
+
+import pytest
+import pytest_asyncio
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+import app.core.llm as llm_module
+from app.routes.aira_x import AiraXRunRequest, run_aira_x
+
+
+_STUB_LLM_RESPONSE = "Hello! I am AIRA-X, your AI assistant. How can I help you today?"
+
+
+@pytest.fixture(autouse=True)
+def stub_llm(monkeypatch):
+    """Replace live LLM calls with a deterministic branded response."""
+
+    def _fake_generate(self, system: str, prompt: str, temperature: float = 0.2) -> str:
+        return _STUB_LLM_RESPONSE
+
+    monkeypatch.setattr(llm_module.LLMClient, "generate", _fake_generate)
+
+
+@pytest_asyncio.fixture
+async def sample_run():
+    """A real completed workflow run, persisted to the workflow store.
+
+    Used by the workflow runs/detail API tests, which assert the run shows up
+    in history. The hand-rolled suite originally passed this in manually from
+    ``main()``; under pytest it is provided as a proper fixture.
+    """
+    return await run_aira_x(
+        AiraXRunRequest(goal='run python code: print("Hello from AIRA-X")')
+    )

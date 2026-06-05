@@ -1,7 +1,6 @@
-from datetime import datetime
 from typing import Dict, Any
 
-from schemas.aira_state import AiraXState
+from schemas.aira_state import AiraXState, utc_now_iso
 
 
 class WorkflowMemory:
@@ -21,7 +20,7 @@ class WorkflowMemory:
 
         state.memory["workflow_logs"].append(
             {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
                 "agent": agent,
                 "event": event,
                 "details": details,

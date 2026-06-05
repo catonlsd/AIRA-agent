@@ -31,14 +31,17 @@ async def test_run_route_single_prompt_returns_clean_single_response(monkeypatch
 
     monkeypatch.setattr(aira_x_routes, "LangGraphAiraXWorkflow", FakeWorkflow)
 
+    # A single, non-multi prompt that routes to the execution workflow. The
+    # top-level mode reflects the routed intent (execution), and the response
+    # is a single clean response rather than a grouped multi-question one.
     response = await run_aira_x(
-        AiraXRunRequest(goal="Explain what LangGraph is.")
+        AiraXRunRequest(goal="Read file backend/app/main.py")
     )
 
     assert response["status"] == "completed"
-    assert response["mode"] == "single_question"
-    assert response["message"] == "Handled single prompt: Explain what LangGraph is."
-    assert response["final_answer"] == "Handled single prompt: Explain what LangGraph is."
+    assert response["mode"] == "execution"
+    assert response["message"] == "Handled single prompt: Read file backend/app/main.py"
+    assert response["final_answer"] == "Handled single prompt: Read file backend/app/main.py"
     assert response["meta"]["is_multi_question"] is False
     assert response["meta"]["question_count"] == 1
     assert response["sources"] == [{"type": "note", "label": "single-source"}]
