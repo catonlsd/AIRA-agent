@@ -84,76 +84,76 @@ def matches_any(normalized: str, phrases: set[str]) -> bool:
     )
 
 
+# Small talk that should be answered conversationally (warm, brief, natural,
+# context-aware) rather than with canned text or a web search.
+GREETING_MESSAGES = {
+    "hi", "hii", "hiya", "hello", "helo", "hey", "heyy", "heya",
+    "yo", "sup", "howdy", "greetings", "good morning",
+    "good afternoon", "good evening",
+    # Common greetings in other languages.
+    "hola", "ola", "aloha", "namaste", "bonjour", "salut",
+    "ciao", "hallo", "hey there", "hi there",
+}
+
+WELLBEING_MESSAGES = {
+    "how are you", "how r u", "how are u", "how are you doing",
+    "how is it going", "hows it going", "what's up", "whats up",
+    "so how's life", "hows life",
+}
+
+ACTIVITY_MESSAGES = {
+    "what are you doing", "what r you doing", "what are u doing",
+    "what do you do", "what are you working on", "what is your work",
+}
+
+THANKS_MESSAGES = {
+    "thanks", "thank you", "thank u", "ty",
+    "okay thanks", "ok thanks", "great thanks",
+}
+
+GOODBYE_MESSAGES = {
+    "bye", "goodbye", "see you", "see ya", "talk to you later",
+}
+
+CAPABILITY_MESSAGES = {
+    "help", "what can you do", "what can u do",
+    "what can you help me with", "what can u help me with",
+    "how can you help", "how can u help",
+    "how can you assist me", "how can u assist me",
+    "how can you assist", "how can you support me",
+    "how can you be useful", "what can aira do",
+    "what can aira-x do", "what can airax do",
+    "who are you", "what is aira", "what is aira x",
+    "what is aira-x", "tell me about aira", "tell me about yourself",
+}
+
+
+def is_casual_smalltalk(normalized: str) -> bool:
+    """Greetings, well-being, and 'what are you up to' style messages."""
+    return (
+        matches_any(normalized, GREETING_MESSAGES)
+        or matches_any(normalized, WELLBEING_MESSAGES)
+        or matches_any(normalized, ACTIVITY_MESSAGES)
+    )
+
+
 def get_direct_response(message: str) -> dict | None:
+    """Canned quick replies that do not need conversation context."""
     normalized = normalize_message_text(message)
 
-    greeting_messages = {
-        "hi", "hii", "hiya", "hello", "helo", "hey", "heyy", "heya",
-        "yo", "sup", "howdy", "greetings", "good morning",
-        "good afternoon", "good evening",
-        # Common greetings in other languages.
-        "hola", "ola", "aloha", "namaste", "bonjour", "salut",
-        "ciao", "hallo", "hey there", "hi there",
-    }
-
-    wellbeing_messages = {
-        "how are you", "how r u", "how are u", "how are you doing",
-        "how is it going", "hows it going", "what's up", "whats up",
-        "so how's life", "hows life",
-    }
-
-    activity_messages = {
-        "what are you doing", "what r you doing", "what are u doing",
-        "what do you do", "what are you working on", "what is your work",
-    }
-
-    thanks_messages = {
-        "thanks", "thank you", "thank u", "ty",
-        "okay thanks", "ok thanks", "great thanks",
-    }
-
-    goodbye_messages = {
-        "bye", "goodbye", "see you", "see ya", "talk to you later",
-    }
-
-    capability_messages = {
-        "help", "what can you do", "what can u do",
-        "what can you help me with", "what can u help me with",
-        "how can you help", "how can u help",
-        "how can you assist me", "how can u assist me",
-        "how can you assist", "how can you support me",
-        "how can you be useful", "what can aira do",
-        "what can aira-x do", "what can airax do",
-        "who are you", "what is aira", "what is aira x",
-        "what is aira-x", "tell me about aira", "tell me about yourself",
-    }
-
-    # Greetings, small talk, and "what are you up to" are answered
-    # conversationally (warm, brief, natural) rather than with canned text or a
-    # web search, matching AIRA-X's assistant persona.
-    if (
-        matches_any(normalized, greeting_messages)
-        or matches_any(normalized, wellbeing_messages)
-        or matches_any(normalized, activity_messages)
-    ):
-        return {
-            "response_type": "casual_chat",
-            "answer": generate_conversational_answer(message),
-        }
-
-    if matches_any(normalized, thanks_messages):
+    if matches_any(normalized, THANKS_MESSAGES):
         return {
             "response_type": "casual_chat",
             "answer": "You're welcome. Send me the next question or task whenever you're ready.",
         }
 
-    if matches_any(normalized, goodbye_messages):
+    if matches_any(normalized, GOODBYE_MESSAGES):
         return {
             "response_type": "casual_chat",
             "answer": "See you! I'll be ready when you want to continue.",
         }
 
-    if matches_any(normalized, capability_messages):
+    if matches_any(normalized, CAPABILITY_MESSAGES):
         return {
             "response_type": "capability_help",
             "answer": (
@@ -189,9 +189,10 @@ def classify_message(message: str, use_web: bool) -> str:
     if is_document_request(normalized):
         return "document_research"
 
-    # use_web is always True from the frontend. is_web_request provides
-    # an additional signal but use_web alone is sufficient to route web.
-    if use_web or is_web_request(normalized):
+    # Only go to the web for genuinely time-sensitive / current-info queries.
+    # Everything else is answered directly by the model (faster and more natural),
+    # the way a normal chat assistant handles general-knowledge questions.
+    if is_web_request(normalized):
         return "web_research"
 
     return "general_answer"
@@ -525,6 +526,22 @@ async def handle_single_assistant_task(
     db: Session,
     store_turn: bool = True,
 ) -> AssistantRunResponse:
+    normalized = normalize_message_text(message)
+    memory_agent = MemoryAgent()
+    history, preferences = memory_agent.context(db)
+
+    # Greetings and small talk → warm, context-aware conversational reply.
+    if is_casual_smalltalk(normalized):
+        answer_text = generate_conversational_answer(message, history)
+        if store_turn:
+            store_assistant_turn(db, message, answer_text, [])
+        return AssistantRunResponse(
+            response_type="casual_chat",
+            answer=answer_text,
+            metadata={"route": "casual_chat"},
+        )
+
+    # Canned quick replies (capability / thanks / goodbye).
     direct_response = get_direct_response(message)
 
     if direct_response:
@@ -537,9 +554,7 @@ async def handle_single_assistant_task(
             store_assistant_turn(db, message, response.answer, [])
         return response
 
-    # Web search is permanently enabled — enforce server-side regardless of payload.
-    effective_use_web = True
-    route = classify_message(message, effective_use_web)
+    route = classify_message(message, use_web)
 
     if route == "workflow_followup":
         response = build_workflow_followup_answer(message)
@@ -578,26 +593,28 @@ async def handle_single_assistant_task(
             },
         )
 
-    memory_agent = MemoryAgent()
-    history, preferences = memory_agent.context(db)
+    # General knowledge / daily questions the model can answer on its own —
+    # reply directly and conversationally (with recent history), no web search.
+    if route == "general_answer":
+        answer_text = generate_conversational_answer(message, history)
+        if store_turn:
+            store_assistant_turn(db, message, answer_text, [])
+        return AssistantRunResponse(
+            response_type="general_answer",
+            answer=answer_text,
+            metadata={"route": "general_answer"},
+        )
 
+    # document_research / web_research → retrieval + synthesis with citations.
     planner = QueryUnderstandingAgent()
     plan = planner.plan(message)
 
     if route == "document_research":
         plan.needs_documents = True
         plan.needs_web = False
-
-    elif route == "web_research":
+    else:  # web_research
         plan.needs_web = True
         plan.needs_documents = False
-
-    else:
-        # general_answer: still use web since it is always enabled.
-        # This ensures questions about weather, facts, current events, etc.
-        # that weren't caught by is_web_request() still get web enrichment.
-        plan.needs_documents = False
-        plan.needs_web = True
 
     if plan.needs_documents:
         if is_vague_document_followup(message):

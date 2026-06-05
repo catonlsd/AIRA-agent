@@ -9,7 +9,14 @@ replies instead of encyclopedic, headed, essay-style output.
 
 from __future__ import annotations
 
+from typing import Sequence
+
 from app.core.llm import LLMClient
+
+# How much recent conversation to feed back to the model, and how much of each
+# message to keep, so the prompt stays bounded.
+_MAX_HISTORY_TURNS = 6
+_MAX_HISTORY_CHARS_PER_MESSAGE = 600
 
 AIRA_X_PERSONA_SYSTEM_PROMPT = (
     "You are AIRA-X, a warm, friendly, and genuinely helpful AI assistant. "
@@ -51,11 +58,45 @@ def offline_general_chat_message(goal: str) -> str:
     )
 
 
-def generate_conversational_answer(goal: str) -> str:
-    """Answer a general-chat / daily-life question, using the LLM when available."""
+def _build_history_prompt(goal: str, history: Sequence[dict] | None) -> str:
+    """Prepend recent conversation turns so replies are context-aware."""
+    if not history:
+        return goal
+
+    lines: list[str] = []
+    for message in list(history)[-_MAX_HISTORY_TURNS:]:
+        content = (message.get("content") or "").strip()
+        if not content:
+            continue
+        if len(content) > _MAX_HISTORY_CHARS_PER_MESSAGE:
+            content = content[:_MAX_HISTORY_CHARS_PER_MESSAGE].rstrip() + "..."
+        speaker = "User" if message.get("role") == "user" else "AIRA-X"
+        lines.append(f"{speaker}: {content}")
+
+    if not lines:
+        return goal
+
+    transcript = "\n".join(lines)
+    return (
+        "Here is our recent conversation for context:\n"
+        f"{transcript}\n\n"
+        f"User: {goal}\n\n"
+        "Reply as AIRA-X, taking the conversation above into account."
+    )
+
+
+def generate_conversational_answer(
+    goal: str,
+    history: Sequence[dict] | None = None,
+) -> str:
+    """Answer a general-chat / daily-life question, using the LLM when available.
+
+    When ``history`` (recent {role, content} turns) is provided, it is included
+    so the reply stays aware of what was just discussed.
+    """
     answer = LLMClient().generate(
         system=AIRA_X_PERSONA_SYSTEM_PROMPT,
-        prompt=goal,
+        prompt=_build_history_prompt(goal, history),
         temperature=0.7,
     )
 
