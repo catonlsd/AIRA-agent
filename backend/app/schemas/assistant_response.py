@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # ── Top-level routed intents (frozen) ────────────────────────────────────────
 GENERAL_CHAT = "general_chat"
@@ -83,7 +83,15 @@ class TurnClassificationMeta(BaseModel):
 
 
 class AssistantResponse(BaseModel):
-    """The one payload the canonical chat route returns."""
+    """The one payload the canonical chat route returns.
+
+    The canonical fields below are always present. Execution turns additionally
+    carry the full workflow detail (plan, memory, pending_action,
+    approval_context, requires_approval, ...) as extra fields, so the contract
+    is a superset and approval/resume consumers keep working.
+    """
+
+    model_config = ConfigDict(extra="allow")
 
     run_id: str
     session_id: Optional[str] = None

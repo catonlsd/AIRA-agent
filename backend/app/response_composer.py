@@ -24,43 +24,41 @@ def compose(
     session_id: Optional[str] = None,
     trace: Any | None = None,
 ) -> AssistantResponse:
-    """Normalize a capability/handler result dict into the frozen contract."""
-    meta = dict(result.get("meta") or {})
+    """Normalize a capability/handler result into the contract.
 
+    The canonical fields are normalized/guaranteed; any extra keys the result
+    carries (execution turns include the full workflow detail) are preserved, so
+    the response is a superset and approval/resume consumers keep working.
+    """
+    data = dict(result)
+
+    meta = dict(data.get("meta") or {})
     if trace is not None:
         # Attach a compact trace summary; full tracing lands in Phase 4.
         meta.setdefault("trace", trace.as_dict() if hasattr(trace, "as_dict") else trace)
+    data["meta"] = meta
 
-    message = _first_nonempty(
-        result.get("message"),
-        result.get("final_answer"),
-        result.get("answer"),
+    data["message"] = _first_nonempty(
+        data.get("message"), data.get("final_answer"), data.get("answer")
     )
-    final_answer = _first_nonempty(
-        result.get("final_answer"),
-        result.get("message"),
-        result.get("answer"),
+    data["final_answer"] = _first_nonempty(
+        data.get("final_answer"), data.get("message"), data.get("answer")
     )
+    data["mode"] = str(data.get("mode") or "general_chat")
+    data["status"] = str(data.get("status") or STATUS_COMPLETED)
+    data["run_id"] = str(data.get("run_id") or uuid4().hex)
+    data["sources"] = _as_dict_list(data.get("sources"))
+    data["artifacts"] = _as_dict_list(data.get("artifacts"))
 
-    sub_answers = result.get("sub_answers")
-    if sub_answers is not None and not isinstance(sub_answers, list):
-        sub_answers = None
+    if session_id is not None:
+        data["session_id"] = session_id
+    elif data.get("session_id") is None:
+        data.pop("session_id", None)
 
-    return AssistantResponse(
-        run_id=str(result.get("run_id") or uuid4().hex),
-        session_id=session_id or result.get("session_id"),
-        mode=str(result.get("mode") or "general_chat"),
-        status=str(result.get("status") or STATUS_COMPLETED),
-        decision=result.get("decision"),
-        message=message,
-        final_answer=final_answer,
-        sources=_as_dict_list(result.get("sources")),
-        artifacts=_as_dict_list(result.get("artifacts")),
-        approval_summary=result.get("approval_summary"),
-        sub_answers=sub_answers,
-        workflow=result.get("workflow"),
-        meta=meta,
-    )
+    if not isinstance(data.get("sub_answers"), list):
+        data.pop("sub_answers", None)
+
+    return AssistantResponse(**data)
 
 
 def compose_chat(

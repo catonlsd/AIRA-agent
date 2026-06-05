@@ -7,20 +7,13 @@ from typing import Any, Dict, Iterable, Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.multi_question_handler import handle_multi_question_prompt
 from app.turn_classifier import (
     DOCUMENT_QA_MODE,
-    EXECUTION_MODE,
-    GENERAL_CHAT_MODE,
-    RESEARCH_THEN_EXECUTION_MODE,
     SELF_MEMORY_MODE,
     WEB_RESEARCH_MODE,
 )
-from app.intent_router import route_turn
-from app.conversation import (
-    AIRA_X_PERSONA_SYSTEM_PROMPT,
-    generate_conversational_answer,
-)
+from app.assistant_supervisor import AssistantSupervisor
+from app.context_builder import build_turn_context
 
 from graph.langgraph_aira_workflow import LangGraphAiraXWorkflow
 from tools.tool_registry import ToolRegistry
@@ -40,6 +33,7 @@ _SAFE_BULK_DELETE_STATUSES = {"completed", "failed", "rejected"}
 
 class AiraXRunRequest(BaseModel):
     goal: str
+    session_id: str | None = None
 
 
 class AiraXApproveRequest(BaseModel):
@@ -652,34 +646,6 @@ async def get_aira_x_overview():
         "workflow_metrics": workflow_metrics,
     }
 
-def _build_general_chat_response(goal: str, classification) -> dict[str, Any]:
-    message = generate_conversational_answer(goal)
-
-    return {
-        "run_id": str(uuid4()),
-        "status": "completed",
-        "decision": "general_chat_completed",
-        "mode": GENERAL_CHAT_MODE,
-        "message": message,
-        "final_answer": message,
-        "sources": [],
-        "artifacts": [],
-        "approval_summary": None,
-        "meta": {
-            "is_multi_question": False,
-            "question_count": 1,
-            "has_sources": False,
-            "has_artifacts": False,
-            "requires_approval": False,
-            "turn_classification": {
-                "mode": classification.mode,
-                "reason": classification.reason,
-                "confidence": classification.confidence,
-            },
-        },
-    }
-
-
 def _build_self_memory_response(goal: str, classification) -> dict[str, Any]:
     message = (
         "I only know what you share with me in this conversation or what I’m explicitly allowed "
@@ -773,53 +739,13 @@ def _build_web_research_placeholder_response(goal: str, classification) -> dict[
     }
 
 
-async def _run_single_aira_x_goal(goal: str) -> dict[str, Any]:
-    classification = route_turn(goal)
-
-    if classification.mode == GENERAL_CHAT_MODE:
-        return _build_general_chat_response(goal, classification)
-
-    if classification.mode == SELF_MEMORY_MODE:
-        return _build_self_memory_response(goal, classification)
-
-    if classification.mode == DOCUMENT_QA_MODE:
-        return _build_document_qa_placeholder_response(goal, classification)
-
-    if classification.mode == WEB_RESEARCH_MODE:
-        return _build_web_research_placeholder_response(goal, classification)
-
-    run_id = str(uuid4())
-
-    workflow = LangGraphAiraXWorkflow()
-    state = await workflow.run(goal, run_id=run_id)
-
-    WorkflowStore.save(state)
-
-    serialized_state = serialize_state(state)
-    cleaned_response = _build_clean_single_run_response(serialized_state)
-    cleaned_response["mode"] = (
-        RESEARCH_THEN_EXECUTION_MODE
-        if classification.mode == RESEARCH_THEN_EXECUTION_MODE
-        else EXECUTION_MODE
-    )
-    cleaned_response["meta"]["turn_classification"] = {
-        "mode": classification.mode,
-        "reason": classification.reason,
-        "confidence": classification.confidence,
-    }
-
-    return cleaned_response
-
-
 @router.post("/run")
 async def run_aira_x(request: AiraXRunRequest):
-    result = await handle_multi_question_prompt(
-        prompt=request.goal,
-        run_single_prompt=_run_single_aira_x_goal,
-        max_questions=20,
-    )
-
-    return _normalize_run_response(result)
+    """Thin adapter: build context, hand the turn to the supervisor, return one
+    normalized response. Routing/answering logic lives in the supervisor."""
+    ctx = build_turn_context(request.goal, session_id=request.session_id)
+    response = await AssistantSupervisor().run_turn(ctx)
+    return response.model_dump()
 
 
 @router.post("/approve")
