@@ -2,12 +2,10 @@
 
 import pytest
 
+import app.conversation as conversation
 import app.routes.aira_x as aira_x_routes
-from app.routes.aira_x import (
-    AIRA_X_PERSONA_SYSTEM_PROMPT,
-    AiraXRunRequest,
-    run_aira_x,
-)
+from app.conversation import AIRA_X_PERSONA_SYSTEM_PROMPT
+from app.routes.aira_x import AiraXRunRequest, run_aira_x
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +41,7 @@ async def test_conversational_answer_uses_persona_prompt(monkeypatch):
         captured["prompt"] = prompt
         return "Hey! 👋 How can I help you today?"
 
-    monkeypatch.setattr(aira_x_routes.LLMClient, "generate", _capture)
+    monkeypatch.setattr(conversation.LLMClient, "generate", _capture)
 
     response = await run_aira_x(AiraXRunRequest(goal="hey there"))
 

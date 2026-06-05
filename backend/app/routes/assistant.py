@@ -15,6 +15,7 @@ from app.agents.web_research_agent import WebResearchAgent
 from app.db.database import get_db
 from app.db.models import Document, DocumentChunk
 from app.rag.schemas import RetrievedChunk
+from app.conversation import generate_conversational_answer
 
 from app.routes.aira_x import serialize_state
 from graph.aira_workflow import AiraXWorkflow
@@ -87,14 +88,18 @@ def get_direct_response(message: str) -> dict | None:
     normalized = normalize_message_text(message)
 
     greeting_messages = {
-        "hi", "hii", "hello", "hey", "heyy", "yo", "namaste",
-        "good morning", "good afternoon", "good evening",
+        "hi", "hii", "hiya", "hello", "helo", "hey", "heyy", "heya",
+        "yo", "sup", "howdy", "greetings", "good morning",
+        "good afternoon", "good evening",
+        # Common greetings in other languages.
+        "hola", "ola", "aloha", "namaste", "bonjour", "salut",
+        "ciao", "hallo", "hey there", "hi there",
     }
 
     wellbeing_messages = {
         "how are you", "how r u", "how are u", "how are you doing",
         "how is it going", "hows it going", "what's up", "whats up",
-        "sup", "so how's life", "hows life",
+        "so how's life", "hows life",
     }
 
     activity_messages = {
@@ -123,32 +128,17 @@ def get_direct_response(message: str) -> dict | None:
         "what is aira-x", "tell me about aira", "tell me about yourself",
     }
 
-    if matches_any(normalized, greeting_messages):
+    # Greetings, small talk, and "what are you up to" are answered
+    # conversationally (warm, brief, natural) rather than with canned text or a
+    # web search, matching AIRA-X's assistant persona.
+    if (
+        matches_any(normalized, greeting_messages)
+        or matches_any(normalized, wellbeing_messages)
+        or matches_any(normalized, activity_messages)
+    ):
         return {
             "response_type": "casual_chat",
-            "answer": (
-                "Hey! I'm AIRA-X — your unified AI research and execution assistant. "
-                "You can ask me general questions, analyze and summarize documents, "
-                "plan projects, run safe tasks, and review previous workflow output."
-            ),
-        }
-
-    if matches_any(normalized, wellbeing_messages):
-        return {
-            "response_type": "casual_chat",
-            "answer": (
-                "I'm doing great and ready to help. Ask me anything, upload a document "
-                "to summarize, request research, or give me a project to plan or a task to execute."
-            ),
-        }
-
-    if matches_any(normalized, activity_messages):
-        return {
-            "response_type": "casual_chat",
-            "answer": (
-                "I'm ready to help you think, research, summarize documents, plan projects, "
-                "run workflows, validate results, and handle approval-gated actions safely."
-            ),
+            "answer": generate_conversational_answer(message),
         }
 
     if matches_any(normalized, thanks_messages):
