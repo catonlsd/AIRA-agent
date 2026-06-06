@@ -53,3 +53,6 @@ backend/storage/workflow_runs.json
 
 # Turn traces
 backend/storage/traces.jsonl
+
+# TS build info
+*.tsbuildinfo
