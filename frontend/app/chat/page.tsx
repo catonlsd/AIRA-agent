@@ -57,8 +57,6 @@ type Turn = {
   streaming?: boolean;
   streamingText?: string;
   streamSources?: Citation[];
-  runId?: string;
-  mode?: string;
 };
 
 type WorkflowLog = {
@@ -351,25 +349,6 @@ function CleanupActions({ memory }: { memory: any }) {
 
 // ─── Technical Detail Panels ──────────────────────────────────────────────────
 
-function AssistantTurnTechnicalDetails({ response }: { response: AssistantRunResponse }) {
-  const workflow = response.workflow;
-  const rows: Array<{ label: string; value: string; mono?: boolean }> = [];
-
-  if (response.run_id) rows.push({ label: "Run ID", value: response.run_id, mono: true });
-  if (workflow?.decision) rows.push({ label: "Decision", value: String(workflow.decision) });
-  if (response.metadata?.tool_name) rows.push({ label: "Tool", value: `${response.metadata.tool_name}:${response.metadata.tool_action || "action"}`, mono: true });
-  if (Array.isArray(response.metadata?.response_types)) rows.push({ label: "Task routes", value: response.metadata.response_types.join(", ") });
-  if (rows.length === 0) return null;
-
-  return (
-    <TechnicalDetailsPanel className="mt-4">
-      <TechnicalDetailsGrid>
-        {rows.map((row) => <TechnicalDetailRow key={row.label} label={row.label} value={row.value} mono={row.mono} />)}
-      </TechnicalDetailsGrid>
-    </TechnicalDetailsPanel>
-  );
-}
-
 function collectWorkflowTechnicalRows(response: AiraXResponse) {
   const rows: Array<{ label: string; value: string; mono?: boolean }> = [
     { label: "Status", value: response.status || "unknown" },
@@ -420,7 +399,7 @@ function ResearchTurnCard({ turn }: { turn: Turn }) {
           <div className="flex items-center gap-2.5 mb-4">
             <AiraLogo size="sm" />
             <p className="text-sm font-bold text-[var(--text-strong)] leading-4">
-              AIRA-X{turn.mode ? ` · ${turn.mode.replace(/_/g, " ")}` : ""}
+              AIRA-X
             </p>
           </div>
           <div className="aira-answer-body">
@@ -471,24 +450,6 @@ function ResearchTurnCard({ turn }: { turn: Turn }) {
               <p className="mb-2.5 text-xs font-bold uppercase tracking-widest text-[var(--text-subtle)]">Sources</p>
               <CitationList citations={turn.response.citations} />
             </div>
-          )}
-
-          {/* Technical details */}
-          {assistantResponse && (
-            assistantResponse.run_id ||
-            assistantResponse.workflow?.decision ||
-            assistantResponse.metadata?.tool_name ||
-            Array.isArray(assistantResponse.metadata?.response_types)
-          ) && (
-            <AssistantTurnTechnicalDetails response={assistantResponse} />
-          )}
-
-          {/* Streamed-turn meta: route + run id */}
-          {(turn.runId || turn.mode) && (
-            <p className="mt-3 text-[11px] text-[var(--text-subtle)]">
-              {turn.mode ? turn.mode.replace(/_/g, " ") : "answer"}
-              {turn.runId ? ` · run ${turn.runId.slice(0, 8)}` : ""}
-            </p>
           )}
         </div>
       )}
@@ -1445,9 +1406,6 @@ export default function ChatPage() {
                   : t
               )
             ),
-          onTrace: (data) => {
-            if (typeof data?.mode === "string") patchTurnById(turnId, { mode: data.mode });
-          },
           onFinal: (data) => {
             finalData = data;
           },
@@ -1499,12 +1457,7 @@ export default function ChatPage() {
         metadata: ((final as Record<string, unknown>).meta as Record<string, unknown>) ?? {},
       };
       setAiraXResponse(null);
-      patchTurnById(turnId, {
-        streaming: false,
-        response: synthetic,
-        runId: synthetic.run_id ?? undefined,
-        mode,
-      });
+      patchTurnById(turnId, { streaming: false, response: synthetic });
     } catch (streamError) {
       // Graceful fallback to the non-streaming endpoint.
       try {
