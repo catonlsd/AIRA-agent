@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional
 
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.turn_classifier import (
@@ -754,6 +755,32 @@ async def get_aira_x_traces(limit: int = 50):
     """Recent per-turn traces (route, latency, source type, status, events)."""
     records = TraceService().recent(limit=limit)
     return {"trace_count": len(records), "traces": records}
+
+
+def _format_sse(event: dict[str, Any]) -> str:
+    event_type = event.get("type", "message")
+    data = json.dumps(event.get("data"), default=str)
+    return f"event: {event_type}\ndata: {data}\n\n"
+
+
+@router.post("/stream")
+async def stream_aira_x(request: AiraXRunRequest):
+    """Stream a turn as Server-Sent Events: trace, token, source, final, error.
+
+    Mirrors /run but emits incremental events. /run remains the non-streaming
+    endpoint."""
+    ctx = build_turn_context(request.goal, session_id=request.session_id)
+    supervisor = AssistantSupervisor()
+
+    async def event_source():
+        async for event in supervisor.stream_turn(ctx):
+            yield _format_sse(event)
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/approve")
