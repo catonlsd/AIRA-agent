@@ -1,5 +1,7 @@
 # File: backend/tests/test_document_qa.py
 
+from uuid import uuid4
+
 import pytest
 
 from app.rag.embedding_provider import (
@@ -10,11 +12,17 @@ from app.services.document_qa_service import DocumentQnAService
 from app.services.vector_store_service import ChromaVectorStore
 
 
+def _unique(prefix: str) -> str:
+    # Ephemeral Chroma shares collections by name within a process; a unique
+    # name per call keeps tests isolated.
+    return f"{prefix}_{uuid4().hex[:10]}"
+
+
 def _service():
     # Dependency-free embeddings + an ephemeral Chroma collection per test.
     return DocumentQnAService(
         embeddings=HashingEmbeddingProvider(),
-        store=ChromaVectorStore("test_docqa", ephemeral=True),
+        store=ChromaVectorStore(_unique("test_docqa"), ephemeral=True),
     )
 
 
@@ -41,7 +49,7 @@ def test_embedding_provider_is_hashing_in_tests():
 
 def test_chroma_store_add_query_count_delete():
     emb = HashingEmbeddingProvider()
-    store = ChromaVectorStore("test_store", ephemeral=True)
+    store = ChromaVectorStore(_unique("test_store"), ephemeral=True)
     texts = ["Python programming language", "The weather is sunny today"]
     store.add(
         ["d1:0", "d1:1"],
