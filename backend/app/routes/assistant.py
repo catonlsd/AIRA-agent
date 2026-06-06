@@ -1,4 +1,6 @@
-﻿import re
+﻿import logging
+import os
+import re
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -16,11 +18,15 @@ from app.db.database import get_db
 from app.db.models import Document, DocumentChunk
 from app.rag.schemas import RetrievedChunk
 from app.conversation import generate_conversational_answer
+from app.assistant_supervisor import AssistantSupervisor
+from app.context_builder import build_turn_context
 
 from app.routes.aira_x import serialize_state
 from graph.aira_workflow import AiraXWorkflow
 from memory.workflow_store import WorkflowStore
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/assistant", tags=["AIRA-X Assistant"])
 
@@ -45,6 +51,10 @@ class AssistantRunRequest(BaseModel):
     # use_web is always treated as True server-side regardless of the value sent.
     # The field is kept for API schema compatibility only.
     use_web: bool = True
+    # Optional client-supplied conversation context (mirrors /aira-x). When
+    # absent, server-side memory (DB) is used.
+    session_id: str | None = None
+    history: list[dict] | None = None
 
 
 class AssistantRunResponse(BaseModel):
@@ -761,6 +771,97 @@ def build_direct_run_response(
     )
 
 
+# ── Supervisor flip ──────────────────────────────────────────────────────────
+# /assistant/run is now served by the unified supervisor, with the legacy path
+# kept behind a flag and as an automatic fallback. Set AIRA_ASSISTANT_SUPERVISOR=0
+# to force the legacy engine.
+
+_SUPERVISOR_MODE_TO_RESPONSE_TYPE = {
+    "general_chat": "casual_chat",
+    "self_memory": "casual_chat",
+    "document_qa": "document_research",
+    "web_research": "web_research",
+    "execution": "execution_result",
+    "research_then_execution": "execution_result",
+    "multi_question": "multi_task",
+    "clarification": "clarification",
+}
+
+
+def use_supervisor() -> bool:
+    return os.getenv("AIRA_ASSISTANT_SUPERVISOR", "1").strip().lower() not in (
+        "0", "false", "no", "off",
+    )
+
+
+def _mode_to_response_type(mode: str, status: str) -> AssistantResponseType:
+    if status == "requires_approval":
+        return "approval_required"
+    return _SUPERVISOR_MODE_TO_RESPONSE_TYPE.get(mode, "general_answer")
+
+
+def _supervisor_response_to_assistant(response: Any) -> AssistantRunResponse:
+    """Map the supervisor's AssistantResponse to the frontend contract."""
+    data = response.model_dump()
+    mode = str(data.get("mode") or "")
+    status = str(data.get("status") or "completed")
+    response_type = _mode_to_response_type(mode, status)
+
+    is_workflow = (
+        mode in ("execution", "research_then_execution")
+        or status == "requires_approval"
+    )
+    # Only forward citation-shaped sources (web/document); execution detail goes
+    # into `workflow`, not `citations`.
+    sources = data.get("sources") or []
+    citations = [
+        s for s in sources
+        if isinstance(s, dict) and ("source_type" in s or "title" in s)
+    ]
+
+    metadata = {**(data.get("meta") or {}), "route": mode, "engine": "supervisor"}
+    if mode == "multi_question":
+        metadata.setdefault("task_count", metadata.get("question_count"))
+
+    return AssistantRunResponse(
+        response_type=response_type,
+        answer=data.get("message") or data.get("final_answer") or "",
+        citations=citations,
+        workflow=data if is_workflow else None,
+        run_id=data.get("run_id"),
+        metadata=metadata,
+    )
+
+
+async def _run_via_supervisor(payload: AssistantRunRequest, db: Session) -> AssistantRunResponse:
+    message = payload.message.strip()
+    # Client-supplied history wins; otherwise use server-side memory (DB).
+    ctx = build_turn_context(
+        message,
+        session_id=payload.session_id,
+        db=db if payload.history is None else None,
+        history=payload.history,
+    )
+    response = await AssistantSupervisor().run_turn(ctx)
+    mapped = _supervisor_response_to_assistant(response)
+
+    # Persist the turn so server-side memory keeps accumulating (best-effort).
+    try:
+        store_assistant_turn(db, message, mapped.answer, mapped.citations)
+    except Exception:
+        logger.warning("Failed to persist assistant turn", exc_info=True)
+
+    return mapped
+
+
+async def _run_legacy_assistant(message: str, db: Session) -> AssistantRunResponse:
+    if is_multi_task_request(message):
+        return await handle_multi_task_request(message, use_web=True, db=db)
+    return await handle_single_assistant_task(
+        message, use_web=True, db=db, store_turn=True,
+    )
+
+
 @router.post("/run", response_model=AssistantRunResponse)
 async def run_assistant(
     payload: AssistantRunRequest,
@@ -771,11 +872,12 @@ async def run_assistant(
     if not message:
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
 
-    if is_multi_task_request(message):
-        return await handle_multi_task_request(
-            message, use_web=True, db=db,
-        )
+    if use_supervisor():
+        try:
+            return await _run_via_supervisor(payload, db)
+        except Exception:
+            # The unified supervisor failed; fall back to the legacy engine so
+            # the user still gets an answer.
+            logger.exception("Supervisor path failed; falling back to legacy assistant.")
 
-    return await handle_single_assistant_task(
-        message, use_web=True, db=db, store_turn=True,
-    )
+    return await _run_legacy_assistant(message, db)
