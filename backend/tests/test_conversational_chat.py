@@ -50,6 +50,34 @@ async def test_conversational_answer_uses_persona_prompt(monkeypatch):
     assert response["message"] == "Hey! 👋 How can I help you today?"
 
 
+@pytest.mark.asyncio
+async def test_conversation_history_is_included_in_the_prompt(monkeypatch):
+    captured = {}
+
+    def _capture(self, system, prompt, temperature=0.2):
+        # The same client is used by the intent router; route the ambiguous
+        # follow-up to a conversational mode, then capture the answer prompt.
+        if "intent router" in system.lower():
+            return "self_memory"
+        captured["prompt"] = prompt
+        return "It was the folded-hands emoji."
+
+    monkeypatch.setattr(conversation.LLMClient, "generate", _capture)
+
+    history = [
+        {"role": "user", "content": "who was lincoln"},
+        {"role": "assistant", "content": "Abraham Lincoln was the 16th US President. 🙏"},
+    ]
+    response = await run_aira_x(
+        AiraXRunRequest(goal="what emoji did you use in the last answer?", history=history)
+    )
+
+    # The prior assistant turn (with the emoji) must reach the model.
+    assert "Abraham Lincoln was the 16th US President" in captured["prompt"]
+    assert "what emoji did you use in the last answer?" in captured["prompt"]
+    assert response["message"] == "It was the folded-hands emoji."
+
+
 def test_persona_prompt_forbids_robotic_formatting():
     prompt = AIRA_X_PERSONA_SYSTEM_PROMPT.lower()
 

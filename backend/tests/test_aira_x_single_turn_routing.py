@@ -47,10 +47,12 @@ async def test_self_memory_route_does_not_use_workflow(monkeypatch):
         AiraXRunRequest(goal="Do you know me?")
     )
 
+    # Self-memory is now answered conversationally (history-aware) rather than
+    # with a canned deflection, but still without the execution workflow.
     assert response["status"] == "completed"
     assert response["decision"] == "self_memory_completed"
     assert response["mode"] == "self_memory"
-    assert "only know what you share" in response["message"].lower()
+    assert isinstance(response["message"], str) and response["message"].strip()
     assert response["sources"] == []
     assert response["artifacts"] == []
     assert response["approval_summary"] is None

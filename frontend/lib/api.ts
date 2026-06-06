@@ -580,15 +580,21 @@ export type StreamHandlers = {
  * Stream a turn from POST /aira-x/stream, dispatching SSE events to handlers.
  * Throws on transport-level failure so the caller can fall back to /run.
  */
+export type ChatHistoryMessage = { role: "user" | "assistant"; content: string };
+
 export async function streamAiraX(
   goal: string,
   handlers: StreamHandlers,
-  options?: { sessionId?: string; signal?: AbortSignal }
+  options?: { sessionId?: string; history?: ChatHistoryMessage[]; signal?: AbortSignal }
 ): Promise<void> {
   const response = await fetch(`${API_URL}/aira-x/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ goal, session_id: options?.sessionId ?? null }),
+    body: JSON.stringify({
+      goal,
+      session_id: options?.sessionId ?? null,
+      history: options?.history ?? [],
+    }),
     signal: options?.signal,
   });
 

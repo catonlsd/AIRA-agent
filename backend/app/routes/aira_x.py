@@ -36,6 +36,8 @@ _SAFE_BULK_DELETE_STATUSES = {"completed", "failed", "rejected"}
 class AiraXRunRequest(BaseModel):
     goal: str
     session_id: str | None = None
+    # Recent {role, content} turns supplied by the client for conversation memory.
+    history: list[dict] | None = None
 
 
 class AiraXApproveRequest(BaseModel):
@@ -745,7 +747,9 @@ def _build_web_research_placeholder_response(goal: str, classification) -> dict[
 async def run_aira_x(request: AiraXRunRequest):
     """Thin adapter: build context, hand the turn to the supervisor, return one
     normalized response. Routing/answering logic lives in the supervisor."""
-    ctx = build_turn_context(request.goal, session_id=request.session_id)
+    ctx = build_turn_context(
+        request.goal, session_id=request.session_id, history=request.history
+    )
     response = await AssistantSupervisor().run_turn(ctx)
     return response.model_dump()
 
@@ -769,7 +773,9 @@ async def stream_aira_x(request: AiraXRunRequest):
 
     Mirrors /run but emits incremental events. /run remains the non-streaming
     endpoint."""
-    ctx = build_turn_context(request.goal, session_id=request.session_id)
+    ctx = build_turn_context(
+        request.goal, session_id=request.session_id, history=request.history
+    )
     supervisor = AssistantSupervisor()
 
     async def event_source():

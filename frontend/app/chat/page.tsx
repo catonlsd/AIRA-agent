@@ -1382,6 +1382,18 @@ export default function ChatPage() {
     setLoading(true);
     setAiraXLoading(false);
 
+    // Build recent conversation history (last few turns) so follow-ups have context.
+    const history = turns
+      .flatMap((t) => {
+        const msgs: { role: "user" | "assistant"; content: string }[] = [
+          { role: "user", content: t.question },
+        ];
+        const answer = getAssistantResponse(t.response)?.answer ?? t.streamingText;
+        if (answer && answer.trim()) msgs.push({ role: "assistant", content: answer });
+        return msgs;
+      })
+      .slice(-8);
+
     const turnId =
       typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
     setTurns((prev) => [...prev, { id: turnId, question: trimmed, streaming: true, streamingText: "" }]);
@@ -1413,7 +1425,7 @@ export default function ChatPage() {
             throw new Error(message);
           },
         },
-        { sessionId }
+        { sessionId, history }
       );
 
       if (!finalData) {

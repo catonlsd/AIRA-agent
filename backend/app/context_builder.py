@@ -75,12 +75,18 @@ def build_turn_context(
     run_id: Optional[str] = None,
     db: Any | None = None,
     uploaded_file_names: Optional[list[str]] = None,
+    history: Optional[list[dict]] = None,
     history_limit: Optional[int] = None,
 ) -> TurnContext:
     """Assemble the normalized context for one turn.
 
-    `db` is optional so this is unit-testable without a database; when provided,
-    recent conversation history and preferences are loaded from memory.
+    Conversation history comes from one of two sources:
+    - `history`: recent {role, content} turns supplied by the caller (e.g. the
+      client sends the visible conversation). Used as-is when provided.
+    - `db`: when no explicit history is given but a DB session is, recent history
+      and preferences are loaded from server-side memory.
+
+    `db` is optional so this stays unit-testable without a database.
     """
     resolved_session = (session_id or DEFAULT_SESSION_ID).strip() or DEFAULT_SESSION_ID
     turn_id = uuid4().hex
@@ -98,9 +104,11 @@ def build_turn_context(
         resume_run_id=run_id,
     )
 
-    if db is not None:
-        history, preferences = _load_memory(db, history_limit)
-        context.history = history
+    if history is not None:
+        context.history = _normalize_history(history)
+    elif db is not None:
+        loaded_history, preferences = _load_memory(db, history_limit)
+        context.history = loaded_history
         context.preferences = preferences
 
     trace.event(
@@ -111,6 +119,21 @@ def build_turn_context(
     )
 
     return context
+
+
+def _normalize_history(history: list[dict]) -> list[dict]:
+    """Keep only well-formed {role, content} entries with non-empty content."""
+    normalized: list[dict] = []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content")
+        if not isinstance(content, str) or not content.strip():
+            continue
+        role = item.get("role")
+        role = role if role in ("user", "assistant") else "user"
+        normalized.append({"role": role, "content": content})
+    return normalized
 
 
 def _load_memory(db: Any, history_limit: Optional[int]) -> tuple[list[dict], dict]:

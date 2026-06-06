@@ -48,6 +48,9 @@ from app.turn_classifier import (
 
 MAX_QUESTIONS = 20
 
+# Modes answered directly by the LLM (history-aware), not by a tool/research path.
+CONVERSATIONAL_MODES = (GENERAL_CHAT_MODE, SELF_MEMORY_MODE)
+
 
 class AssistantSupervisor:
     """Routes one chat turn to the right capability and composes the answer."""
@@ -111,7 +114,7 @@ class AssistantSupervisor:
                 },
             }
 
-            if classification.mode == GENERAL_CHAT_MODE:
+            if classification.mode in CONVERSATIONAL_MODES:
                 chunks: list[str] = []
                 for piece in LLMClient().stream(
                     AIRA_X_PERSONA_SYSTEM_PROMPT,
@@ -123,7 +126,7 @@ class AssistantSupervisor:
                     chunks.append(piece)
                     yield {"type": "token", "data": {"text": piece}}
                 message = "".join(chunks).strip() or offline_general_chat_message(ctx.message)
-                result = self._chat_result(ctx.message, classification, message)
+                result = self._chat_result(classification, message)
             else:
                 result = await self._dispatch_non_chat(ctx.message, classification, ctx)
                 for source in result.get("sources", []):
@@ -142,12 +145,9 @@ class AssistantSupervisor:
             yield {"type": "error", "data": {"message": str(error)}}
 
     async def _dispatch_non_chat(self, goal: str, classification, ctx: TurnContext) -> dict[str, Any]:
-        """Dispatch for every mode except general chat."""
+        """Dispatch for every non-conversational mode (research/execution/document)."""
         # Lazy import to break the route<->supervisor import cycle.
         from app.routes import aira_x as ax
-
-        if classification.mode == SELF_MEMORY_MODE:
-            return ax._build_self_memory_response(goal, classification)
 
         if classification.mode == DOCUMENT_QA_MODE:
             # Real document-first retrieval lands in the ChromaDB phase; until
@@ -199,9 +199,9 @@ class AssistantSupervisor:
             confidence=classification.confidence,
         )
 
-        if classification.mode == GENERAL_CHAT_MODE:
+        if classification.mode in CONVERSATIONAL_MODES:
             message = generate_conversational_answer(goal, ctx.history)
-            return self._chat_result(goal, classification, message)
+            return self._chat_result(classification, message)
 
         return await self._dispatch_non_chat(goal, classification, ctx)
 
@@ -215,12 +215,17 @@ class AssistantSupervisor:
         }
         return result
 
-    def _chat_result(self, goal: str, classification, message: str) -> dict[str, Any]:
+    def _chat_result(self, classification, message: str) -> dict[str, Any]:
+        decision = (
+            "self_memory_completed"
+            if classification.mode == SELF_MEMORY_MODE
+            else "general_chat_completed"
+        )
         return {
             "run_id": uuid4().hex,
             "status": "completed",
-            "decision": "general_chat_completed",
-            "mode": GENERAL_CHAT_MODE,
+            "decision": decision,
+            "mode": classification.mode,
             "message": message,
             "final_answer": message,
             "sources": [],
