@@ -21,6 +21,8 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
+from app.capabilities.execution.execution_service import ExecutionService
+from app.capabilities.research.research_service import ResearchService
 from app.context_builder import TurnContext
 from app.conversation import generate_conversational_answer
 from app.intent_router import route_turn
@@ -41,6 +43,10 @@ MAX_QUESTIONS = 20
 
 class AssistantSupervisor:
     """Routes one chat turn to the right capability and composes the answer."""
+
+    def __init__(self) -> None:
+        self.research = ResearchService()
+        self.execution = ExecutionService()
 
     async def run_turn(self, ctx: TurnContext) -> AssistantResponse:
         ctx.trace.event("turn_started", message_len=len(ctx.message))
@@ -82,42 +88,40 @@ class AssistantSupervisor:
             return ax._build_self_memory_response(goal, classification)
 
         if classification.mode == DOCUMENT_QA_MODE:
+            # Real document-first retrieval lands in the ChromaDB phase; until
+            # then this is an honest placeholder.
             return ax._build_document_qa_placeholder_response(goal, classification)
 
         if classification.mode == WEB_RESEARCH_MODE:
-            return ax._build_web_research_placeholder_response(goal, classification)
+            ctx.trace.event("research_started")
+            result = self.research.run(
+                goal,
+                history=ctx.history,
+                preferences=ctx.preferences,
+                want_web=True,
+                want_documents=False,
+                mode=WEB_RESEARCH_MODE,
+            )
+            ctx.trace.event("research_completed", sources=len(result.get("sources", [])))
+            return self._with_classification(result, classification)
 
-        return await self._run_execution(goal, classification, ctx, ax)
+        return await self._run_execution(goal, classification, ctx)
 
-    async def _run_execution(
-        self,
-        goal: str,
-        classification,
-        ctx: TurnContext,
-        ax,
-    ) -> dict[str, Any]:
-        run_id = uuid4().hex
-        ctx.trace.event("execution_started", run_id=run_id)
+    async def _run_execution(self, goal: str, classification, ctx: TurnContext) -> dict[str, Any]:
+        ctx.trace.event("execution_started")
+        result = await self.execution.run(goal, mode=classification.mode)
+        ctx.trace.event("execution_completed", status=result.get("status"))
+        return self._with_classification(result, classification)
 
-        # Reference the class via the route module so test monkeypatches on
-        # aira_x.LangGraphAiraXWorkflow / WorkflowStore still apply.
-        workflow = ax.LangGraphAiraXWorkflow()
-        state = await workflow.run(goal, run_id=run_id)
-        ax.WorkflowStore.save(state)
-
-        cleaned = ax._build_clean_single_run_response(ax.serialize_state(state))
-        cleaned["mode"] = (
-            RESEARCH_THEN_EXECUTION_MODE
-            if classification.mode == RESEARCH_THEN_EXECUTION_MODE
-            else EXECUTION_MODE
-        )
-        cleaned["meta"]["turn_classification"] = {
+    @staticmethod
+    def _with_classification(result: dict[str, Any], classification) -> dict[str, Any]:
+        result.setdefault("meta", {})
+        result["meta"]["turn_classification"] = {
             "mode": classification.mode,
             "reason": classification.reason,
             "confidence": classification.confidence,
         }
-        ctx.trace.event("execution_completed", status=cleaned.get("status"))
-        return cleaned
+        return result
 
     def _chat_result(self, goal: str, classification, message: str) -> dict[str, Any]:
         return {

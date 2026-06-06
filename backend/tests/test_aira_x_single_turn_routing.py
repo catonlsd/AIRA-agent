@@ -80,10 +80,10 @@ async def test_document_qa_route_returns_placeholder_without_workflow(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_web_research_route_returns_placeholder_without_workflow(monkeypatch):
+async def test_web_research_route_uses_research_service_not_workflow(monkeypatch):
     class FailingWorkflow:
         def __init__(self):
-            raise AssertionError("Web research placeholder route should not instantiate the execution workflow.")
+            raise AssertionError("Web research should not instantiate the execution workflow.")
 
     monkeypatch.setattr(aira_x_routes, "LangGraphAiraXWorkflow", FailingWorkflow)
 
@@ -91,11 +91,12 @@ async def test_web_research_route_returns_placeholder_without_workflow(monkeypat
         AiraXRunRequest(goal="Research the latest AI trends in healthcare.")
     )
 
+    # Web research now flows through the ResearchService capability (real answer
+    # generation + citations), not a placeholder and not the execution workflow.
     assert response["status"] == "completed"
-    assert response["decision"] == "web_research_routed"
+    assert response["decision"] == "web_research_completed"
     assert response["mode"] == "web_research"
-    assert "research request" in response["message"].lower()
-    assert response["sources"] == []
+    assert isinstance(response["message"], str) and response["message"].strip()
     assert response["artifacts"] == []
     assert response["approval_summary"] is None
     assert response["meta"]["turn_classification"]["mode"] == "web_research"
