@@ -22,9 +22,17 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-1.5-flash"
 
-    embedding_provider: Literal["local"] = "local"
-    embedding_model: str = "hashing-384"
+    # Swappable embedding backend. "sentence_transformers" = local semantic model;
+    # "hashing" = dependency-free fallback (used in tests/CI). Overridable per
+    # process via the AIRA_EMBEDDING_PROVIDER env var.
+    embedding_provider: Literal["sentence_transformers", "hashing", "local"] = "sentence_transformers"
+    embedding_model: str = "all-MiniLM-L6-v2"
     openai_embedding_model: str = "text-embedding-3-small"
+
+    # Swappable vector store. "chroma" = ChromaDB (default). Overridable via env.
+    vector_store: Literal["chroma", "json"] = "chroma"
+    chroma_dir: str = "./storage/chroma"
+    document_collection: str = "aira_documents"
 
     web_search_provider: Literal["tavily", "serpapi", "brave", "none"] = "none"
     tavily_api_key: str | None = None

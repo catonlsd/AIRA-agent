@@ -60,10 +60,10 @@ async def test_self_memory_route_does_not_use_workflow(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_document_qa_route_returns_placeholder_without_workflow(monkeypatch):
+async def test_document_qa_route_uses_document_service_without_workflow(monkeypatch):
     class FailingWorkflow:
         def __init__(self):
-            raise AssertionError("Document QA placeholder route should not instantiate the execution workflow.")
+            raise AssertionError("Document QA should not instantiate the execution workflow.")
 
     monkeypatch.setattr(aira_x_routes, "LangGraphAiraXWorkflow", FailingWorkflow)
 
@@ -71,12 +71,13 @@ async def test_document_qa_route_returns_placeholder_without_workflow(monkeypatc
         AiraXRunRequest(goal="Based on the document I uploaded, what is the main conclusion?")
     )
 
+    # Routes through the real DocumentQnA service. With no documents ingested it
+    # answers honestly rather than hallucinating, and never runs the workflow.
     assert response["status"] == "completed"
-    assert response["decision"] == "document_qa_routed"
     assert response["mode"] == "document_qa"
-    assert "document-first analysis" in response["message"].lower()
+    assert response["decision"] == "document_qa_insufficient_evidence"
+    assert response["meta"]["has_evidence"] is False
     assert response["sources"] == []
-    assert response["artifacts"] == []
     assert response["approval_summary"] is None
     assert response["meta"]["turn_classification"]["mode"] == "document_qa"
 

@@ -59,6 +59,14 @@ class AssistantSupervisor:
         self.research = ResearchService()
         self.execution = ExecutionService()
         self.tracer = TraceService()
+        self._documents = None  # lazily built (constructs a vector-store client)
+
+    def _document_service(self):
+        if self._documents is None:
+            from app.services.document_qa_service import get_document_qa_service
+
+            self._documents = get_document_qa_service()
+        return self._documents
 
     async def run_turn(self, ctx: TurnContext) -> AssistantResponse:
         ctx.trace.event("turn_started", message_len=len(ctx.message))
@@ -146,13 +154,14 @@ class AssistantSupervisor:
 
     async def _dispatch_non_chat(self, goal: str, classification, ctx: TurnContext) -> dict[str, Any]:
         """Dispatch for every non-conversational mode (research/execution/document)."""
-        # Lazy import to break the route<->supervisor import cycle.
-        from app.routes import aira_x as ax
-
         if classification.mode == DOCUMENT_QA_MODE:
-            # Real document-first retrieval lands in the ChromaDB phase; until
-            # then this is an honest placeholder.
-            return ax._build_document_qa_placeholder_response(goal, classification)
+            ctx.trace.event("document_qa_started")
+            result = self._document_service().answer(goal, history=ctx.history)
+            ctx.trace.event(
+                "document_qa_completed",
+                has_evidence=result.get("meta", {}).get("has_evidence"),
+            )
+            return self._with_classification(result, classification)
 
         if classification.mode == WEB_RESEARCH_MODE:
             ctx.trace.event("research_started")

@@ -24,6 +24,11 @@ os.environ.setdefault(
     "AIRA_TRACE_LOG", str(Path(tempfile.gettempdir()) / "aira_x_test_traces.jsonl")
 )
 
+# Use the dependency-free embedding backend in tests (no model download / torch
+# load), and keep any persistent Chroma data in a temp dir.
+os.environ.setdefault("AIRA_EMBEDDING_PROVIDER", "hashing")
+os.environ.setdefault("AIRA_CHROMA_DIR", str(Path(tempfile.gettempdir()) / "aira_x_test_chroma"))
+
 import app.core.llm as llm_module
 from app.routes.aira_x import AiraXRunRequest, run_aira_x
 

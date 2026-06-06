@@ -56,3 +56,6 @@ backend/storage/traces.jsonl
 
 # TS build info
 *.tsbuildinfo
+
+# Chroma vector store
+backend/storage/chroma/

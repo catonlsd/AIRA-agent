@@ -446,6 +446,22 @@ def upload_documents(
                 vector_ids.append(vector_id)
 
             vector_store.add_chunks(texts, metadatas, vector_ids)
+
+            # Dual-write into the ChromaDB-backed store that powers the
+            # supervisor's document-first Q&A. Best-effort: the legacy store
+            # above remains the source of truth for /assistant until parity is
+            # verified, so a Chroma failure must not fail the upload.
+            try:
+                from app.services.document_qa_service import get_document_qa_service
+
+                get_document_qa_service().ingest(
+                    document_id=document.id,
+                    document_name=document.original_filename,
+                    pages=pages,
+                )
+            except Exception:
+                pass
+
             db.commit()
 
             uploaded.append(
