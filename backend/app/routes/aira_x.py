@@ -14,6 +14,7 @@ from app.turn_classifier import (
 )
 from app.assistant_supervisor import AssistantSupervisor
 from app.context_builder import build_turn_context
+from app.services.trace_service import TraceService
 
 from graph.langgraph_aira_workflow import LangGraphAiraXWorkflow
 from tools.tool_registry import ToolRegistry
@@ -746,6 +747,13 @@ async def run_aira_x(request: AiraXRunRequest):
     ctx = build_turn_context(request.goal, session_id=request.session_id)
     response = await AssistantSupervisor().run_turn(ctx)
     return response.model_dump()
+
+
+@router.get("/traces")
+async def get_aira_x_traces(limit: int = 50):
+    """Recent per-turn traces (route, latency, source type, status, events)."""
+    records = TraceService().recent(limit=limit)
+    return {"trace_count": len(records), "traces": records}
 
 
 @router.post("/approve")

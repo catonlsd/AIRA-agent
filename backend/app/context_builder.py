@@ -35,10 +35,13 @@ class TurnTrace:
         self.events.append(
             {
                 "name": name,
-                "elapsed_ms": round((time.perf_counter() - self._t0) * 1000, 2),
+                "elapsed_ms": self.elapsed_ms(),
                 **data,
             }
         )
+
+    def elapsed_ms(self) -> float:
+        return round((time.perf_counter() - self._t0) * 1000, 2)
 
     def as_dict(self) -> dict:
         return {"turn_id": self.turn_id, "events": self.events}

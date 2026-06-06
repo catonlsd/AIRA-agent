@@ -50,3 +50,6 @@ Thumbs.db
 
 # Legacy path (kept for clarity if file still exists locally)
 backend/storage/workflow_runs.json
+
+# Turn traces
+backend/storage/traces.jsonl

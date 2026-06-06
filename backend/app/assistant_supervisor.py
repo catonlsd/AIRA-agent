@@ -29,6 +29,7 @@ from app.intent_router import route_turn
 from app.multi_question_handler import handle_multi_question_prompt
 from app.response_composer import compose
 from app.schemas.assistant_response import AssistantResponse
+from app.services.trace_service import TraceService
 from app.turn_classifier import (
     DOCUMENT_QA_MODE,
     EXECUTION_MODE,
@@ -47,6 +48,7 @@ class AssistantSupervisor:
     def __init__(self) -> None:
         self.research = ResearchService()
         self.execution = ExecutionService()
+        self.tracer = TraceService()
 
     async def run_turn(self, ctx: TurnContext) -> AssistantResponse:
         ctx.trace.event("turn_started", message_len=len(ctx.message))
@@ -63,7 +65,24 @@ class AssistantSupervisor:
         normalized = _normalize_run_response(result)
         ctx.trace.event("composed", mode=normalized.get("mode"))
 
-        return compose(normalized, session_id=ctx.session_id, trace=ctx.trace)
+        response = compose(normalized, session_id=ctx.session_id, trace=ctx.trace)
+        self._persist_trace(ctx, response)
+        return response
+
+    def _persist_trace(self, ctx: TurnContext, response: AssistantResponse) -> None:
+        """Best-effort: tracing must never break a turn."""
+        try:
+            record = self.tracer.build_record(
+                session_id=ctx.session_id,
+                run_id=response.run_id,
+                mode=response.mode,
+                latency_ms=ctx.trace.elapsed_ms(),
+                final_status=response.status,
+                trace_events=ctx.trace.events,
+            )
+            self.tracer.persist(record)
+        except Exception:
+            pass
 
     async def _dispatch(self, goal: str, ctx: TurnContext) -> dict[str, Any]:
         classification = route_turn(

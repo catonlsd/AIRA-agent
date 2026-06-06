@@ -9,13 +9,20 @@ deterministic, branded response. The execution workflow itself is
 LLM-free, so this only affects conversational/general-chat paths.
 """
 
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+# Keep turn traces out of ./storage during tests — write them to a temp file.
+os.environ.setdefault(
+    "AIRA_TRACE_LOG", str(Path(tempfile.gettempdir()) / "aira_x_test_traces.jsonl")
+)
 
 import app.core.llm as llm_module
 from app.routes.aira_x import AiraXRunRequest, run_aira_x
