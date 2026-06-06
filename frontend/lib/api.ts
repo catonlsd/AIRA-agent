@@ -1,3 +1,5 @@
+import { parseSSEBlock, splitSSEBuffer } from "./sse";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export type Citation = {
@@ -562,6 +564,78 @@ export async function runAiraX(goal: string): Promise<AiraXRunResponse> {
     response,
     "Failed to run AIRA-X workflow"
   );
+}
+
+// ─── Streaming (SSE) ─────────────────────────────────────────────────────────
+
+export type StreamHandlers = {
+  onTrace?: (data: Record<string, unknown>) => void;
+  onToken?: (text: string) => void;
+  onSource?: (source: Record<string, unknown>) => void;
+  onFinal?: (data: AiraXRunResponse & Record<string, unknown>) => void;
+  onError?: (message: string) => void;
+};
+
+/**
+ * Stream a turn from POST /aira-x/stream, dispatching SSE events to handlers.
+ * Throws on transport-level failure so the caller can fall back to /run.
+ */
+export async function streamAiraX(
+  goal: string,
+  handlers: StreamHandlers,
+  options?: { sessionId?: string; signal?: AbortSignal }
+): Promise<void> {
+  const response = await fetch(`${API_URL}/aira-x/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ goal, session_id: options?.sessionId ?? null }),
+    signal: options?.signal,
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(`AIRA-X stream failed with status ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const dispatch = (block: string) => {
+    const event = parseSSEBlock(block);
+    if (!event) return;
+    const data = event.data as Record<string, unknown>;
+    switch (event.type) {
+      case "trace":
+        handlers.onTrace?.(data);
+        break;
+      case "token":
+        handlers.onToken?.(typeof data?.text === "string" ? data.text : String(data ?? ""));
+        break;
+      case "source":
+        handlers.onSource?.(data);
+        break;
+      case "final":
+        handlers.onFinal?.(data as AiraXRunResponse & Record<string, unknown>);
+        break;
+      case "error":
+        handlers.onError?.(typeof data?.message === "string" ? data.message : "Stream error");
+        break;
+      default:
+        break;
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const { blocks, rest } = splitSSEBuffer(buffer);
+    buffer = rest;
+    for (const block of blocks) dispatch(block);
+  }
+
+  // Flush any trailing block.
+  if (buffer.trim()) dispatch(buffer);
 }
 
 export async function approveAiraX(runId: string): Promise<AiraXRunResponse> {

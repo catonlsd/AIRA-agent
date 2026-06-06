@@ -40,16 +40,25 @@ import {
   isMultiTaskResponse,
   rejectAiraX,
   runAssistant,
+  streamAiraX,
   uploadDocuments,
+  type Citation,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Turn = {
+  id?: string;
   question: string;
   response?: ChatResponse | AssistantRunResponse;
   error?: string;
+  // Streaming state (live token output before the final response arrives).
+  streaming?: boolean;
+  streamingText?: string;
+  streamSources?: Citation[];
+  runId?: string;
+  mode?: string;
 };
 
 type WorkflowLog = {
@@ -405,6 +414,32 @@ function ResearchTurnCard({ turn }: { turn: Turn }) {
         </div>
       )}
 
+      {/* Live streaming card (tokens arriving before the final response) */}
+      {turn.streaming && !turn.response && (
+        <div className="aira-answer-card">
+          <div className="flex items-center gap-2.5 mb-4">
+            <AiraLogo size="sm" />
+            <p className="text-sm font-bold text-[var(--text-strong)] leading-4">
+              AIRA-X{turn.mode ? ` · ${turn.mode.replace(/_/g, " ")}` : ""}
+            </p>
+          </div>
+          <div className="aira-answer-body">
+            {turn.streamingText ? (
+              <AssistantAnswerContent answer={turn.streamingText} />
+            ) : (
+              <span className="text-sm text-[var(--text-muted)]">Thinking…</span>
+            )}
+            <span className="ml-0.5 inline-block animate-pulse text-[var(--accent)]">▌</span>
+          </div>
+          {turn.streamSources && turn.streamSources.length > 0 && (
+            <div className="mt-4 aira-citations-block">
+              <p className="mb-2.5 text-xs font-bold uppercase tracking-widest text-[var(--text-subtle)]">Sources</p>
+              <CitationList citations={turn.streamSources} />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Answer card */}
       {turn.response && (
         <div className="aira-answer-card">
@@ -446,6 +481,14 @@ function ResearchTurnCard({ turn }: { turn: Turn }) {
             Array.isArray(assistantResponse.metadata?.response_types)
           ) && (
             <AssistantTurnTechnicalDetails response={assistantResponse} />
+          )}
+
+          {/* Streamed-turn meta: route + run id */}
+          {(turn.runId || turn.mode) && (
+            <p className="mt-3 text-[11px] text-[var(--text-subtle)]">
+              {turn.mode ? turn.mode.replace(/_/g, " ") : "answer"}
+              {turn.runId ? ` · run ${turn.runId.slice(0, 8)}` : ""}
+            </p>
           )}
         </div>
       )}
@@ -1309,6 +1352,9 @@ export default function ChatPage() {
   const [uploadError, setUploadError]       = useState("");
   const [turns, setTurns]                   = useState<Turn[]>([]);
   const [airaXResponse, setAiraXResponse]   = useState<AiraXResponse | null>(null);
+  const [sessionId] = useState(() =>
+    typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now())
+  );
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const threadBottomRef = useRef<HTMLDivElement>(null);
 
@@ -1328,6 +1374,43 @@ export default function ChatPage() {
     threadBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns.length, loading, airaXResponse]);
 
+  function patchTurnById(id: string, patch: Partial<Turn>) {
+    setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  }
+
+  function removeTurnById(id: string) {
+    setTurns((prev) => prev.filter((t) => t.id !== id));
+  }
+
+  function modeToResponseType(mode?: string): AssistantRunResponse["response_type"] {
+    switch (mode) {
+      case "web_research": return "web_research";
+      case "execution":
+      case "research_then_execution": return "execution_result";
+      case "document_qa": return "document_research";
+      case "general_chat":
+      case "self_memory": return "casual_chat";
+      default: return "general_answer";
+    }
+  }
+
+  function applyNonStreamingResponse(turnId: string, trimmed: string, response: AssistantRunResponse) {
+    const shouldRenderAsWorkflow =
+      !isMultiTaskResponse(response) &&
+      (response.response_type === "execution_result" || response.response_type === "approval_required");
+
+    if (shouldRenderAsWorkflow) {
+      const workflowRun = assistantWorkflowToAiraXRun(response.workflow);
+      if (workflowRun) {
+        setAiraXResponse(workflowRun);
+        setTurns([]);
+        return;
+      }
+    }
+    setAiraXResponse(null);
+    patchTurnById(turnId, { streaming: false, streamingText: undefined, response });
+  }
+
   async function handleUnifiedAssistant(event?: FormEvent) {
     event?.preventDefault();
     const trimmed = question.trim();
@@ -1338,30 +1421,100 @@ export default function ChatPage() {
     setLoading(true);
     setAiraXLoading(false);
 
+    const turnId =
+      typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+    setTurns((prev) => [...prev, { id: turnId, question: trimmed, streaming: true, streamingText: "" }]);
+
+    let finalData: Record<string, unknown> | null = null;
+
     try {
-      const response = await runAssistant(trimmed, true);
+      await streamAiraX(
+        trimmed,
+        {
+          onToken: (text) =>
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === turnId ? { ...t, streamingText: (t.streamingText || "") + text } : t
+              )
+            ),
+          onSource: (source) =>
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === turnId
+                  ? { ...t, streamSources: [...(t.streamSources || []), source as unknown as Citation] }
+                  : t
+              )
+            ),
+          onTrace: (data) => {
+            if (typeof data?.mode === "string") patchTurnById(turnId, { mode: data.mode });
+          },
+          onFinal: (data) => {
+            finalData = data;
+          },
+          onError: (message) => {
+            throw new Error(message);
+          },
+        },
+        { sessionId }
+      );
 
-      const shouldRenderAsWorkflow =
-        !isMultiTaskResponse(response) &&
-        (response.response_type === "execution_result" || response.response_type === "approval_required");
-
-      if (shouldRenderAsWorkflow) {
-        const workflowRun = assistantWorkflowToAiraXRun(response.workflow);
-        if (workflowRun) {
-          setAiraXResponse(workflowRun);
-          setTurns([]);
-        } else {
-          setAiraXResponse(null);
-          setTurns((prev) => [...prev, { question: trimmed, response }]);
-        }
-      } else {
-        setAiraXResponse(null);
-        setTurns((prev) => [...prev, { question: trimmed, response }]);
+      if (!finalData) {
+        throw new Error("Stream ended without a final response.");
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "AIRA-X assistant failed.";
+
+      const final = finalData as AssistantRunResponse & Record<string, unknown>;
+      const mode = String((final as Record<string, unknown>).mode ?? "");
+
+      // Document Q&A still flows through the legacy route (unchanged for now):
+      // the supervisor only returns a placeholder, so fetch the real answer.
+      if (mode === "document_qa") {
+        const real = await runAssistant(trimmed, true);
+        applyNonStreamingResponse(turnId, trimmed, real);
+        return;
+      }
+
+      // Execution / approval turns render as a workflow card.
+      const isWorkflow =
+        mode === "execution" ||
+        mode === "research_then_execution" ||
+        (final as Record<string, unknown>).requires_approval === true ||
+        (final as Record<string, unknown>).status === "requires_approval";
+
+      if (isWorkflow) {
+        const run = assistantWorkflowToAiraXRun(final as unknown as Parameters<typeof assistantWorkflowToAiraXRun>[0]);
+        if (run) {
+          setAiraXResponse(run);
+          removeTurnById(turnId);
+          return;
+        }
+      }
+
+      // Chat / web research / self-memory: finalize the streamed bubble.
+      const synthetic: AssistantRunResponse = {
+        response_type: modeToResponseType(mode),
+        answer: String(final.message ?? (final as Record<string, unknown>).final_answer ?? ""),
+        citations: Array.isArray(final.sources) ? (final.sources as Citation[]) : [],
+        workflow: null,
+        run_id: typeof final.run_id === "string" ? final.run_id : null,
+        metadata: ((final as Record<string, unknown>).meta as Record<string, unknown>) ?? {},
+      };
       setAiraXResponse(null);
-      setTurns((prev) => [...prev, { question: trimmed, error: message }]);
+      patchTurnById(turnId, {
+        streaming: false,
+        response: synthetic,
+        runId: synthetic.run_id ?? undefined,
+        mode,
+      });
+    } catch (streamError) {
+      // Graceful fallback to the non-streaming endpoint.
+      try {
+        const response = await runAssistant(trimmed, true);
+        applyNonStreamingResponse(turnId, trimmed, response);
+      } catch (fallbackError) {
+        const message =
+          fallbackError instanceof Error ? fallbackError.message : "AIRA-X assistant failed.";
+        patchTurnById(turnId, { streaming: false, streamingText: undefined, error: message });
+      }
     } finally {
       setLoading(false);
       setAiraXLoading(false);
