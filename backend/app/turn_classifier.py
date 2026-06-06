@@ -195,10 +195,12 @@ def classify_turn(
 ) -> TurnClassification:
     cleaned_prompt = _normalize_text(prompt)
 
-    if not cleaned_prompt:
+    # Empty, or no word characters at all (punctuation / symbols / emoji only).
+    # \w is Unicode-aware, so real letters in any script still pass through.
+    if not cleaned_prompt or not re.search(r"\w", cleaned_prompt):
         return TurnClassification(
             mode=CLARIFICATION_MODE,
-            reason="The prompt is empty after normalization.",
+            reason="The prompt has no intelligible content after normalization.",
             confidence=1.0,
             needs_research=False,
             needs_execution=False,

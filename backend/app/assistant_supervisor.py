@@ -38,6 +38,7 @@ from app.response_composer import compose
 from app.schemas.assistant_response import AssistantResponse
 from app.services.trace_service import TraceService
 from app.turn_classifier import (
+    CLARIFICATION_MODE,
     DOCUMENT_QA_MODE,
     EXECUTION_MODE,
     GENERAL_CHAT_MODE,
@@ -154,6 +155,11 @@ class AssistantSupervisor:
 
     async def _dispatch_non_chat(self, goal: str, classification, ctx: TurnContext) -> dict[str, Any]:
         """Dispatch for every non-conversational mode (research/execution/document)."""
+        if classification.mode == CLARIFICATION_MODE:
+            # Empty / unintelligible input: ask for clarification rather than
+            # running the execution workflow on nothing.
+            return self._clarification_result(classification)
+
         if classification.mode == DOCUMENT_QA_MODE:
             ctx.trace.event("document_qa_started")
             result = self._document_service().answer(goal, history=ctx.history)
@@ -223,6 +229,35 @@ class AssistantSupervisor:
             "confidence": classification.confidence,
         }
         return result
+
+    def _clarification_result(self, classification) -> dict[str, Any]:
+        message = (
+            "I didn't quite catch that. Could you rephrase or add a bit more "
+            "detail about what you'd like me to help with?"
+        )
+        return {
+            "run_id": uuid4().hex,
+            "status": "completed",
+            "decision": "clarification",
+            "mode": CLARIFICATION_MODE,
+            "message": message,
+            "final_answer": message,
+            "sources": [],
+            "artifacts": [],
+            "approval_summary": None,
+            "meta": {
+                "is_multi_question": False,
+                "question_count": 1,
+                "has_sources": False,
+                "has_artifacts": False,
+                "requires_approval": False,
+                "turn_classification": {
+                    "mode": classification.mode,
+                    "reason": classification.reason,
+                    "confidence": classification.confidence,
+                },
+            },
+        }
 
     def _chat_result(self, classification, message: str) -> dict[str, Any]:
         decision = (

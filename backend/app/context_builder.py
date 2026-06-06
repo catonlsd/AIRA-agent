@@ -10,12 +10,23 @@ duplication and gives every capability the same inputs.
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 from uuid import uuid4
 
 DEFAULT_SESSION_ID = "default"
+
+# Strip control characters (keep tab, newline, carriage return) so null bytes and
+# other control chars never reach the LLM, the vector store, or the trace log.
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def sanitize_text(text: str) -> str:
+    if not text:
+        return ""
+    return _CONTROL_CHARS.sub("", text)
 
 
 @dataclass
@@ -92,6 +103,7 @@ def build_turn_context(
     turn_id = uuid4().hex
     trace = TurnTrace(turn_id=turn_id)
 
+    message = sanitize_text(message)
     file_names = [name for name in (uploaded_file_names or []) if name]
 
     context = TurnContext(
@@ -132,7 +144,7 @@ def _normalize_history(history: list[dict]) -> list[dict]:
             continue
         role = item.get("role")
         role = role if role in ("user", "assistant") else "user"
-        normalized.append({"role": role, "content": content})
+        normalized.append({"role": role, "content": sanitize_text(content)})
     return normalized
 
 
