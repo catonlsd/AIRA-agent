@@ -92,6 +92,7 @@ class Settings(BaseSettings):
         Path("./storage").mkdir(parents=True, exist_ok=True)
         Path(self.vector_db_dir).mkdir(parents=True, exist_ok=True)
         Path(self.upload_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.chroma_dir).mkdir(parents=True, exist_ok=True)
 
     def validate_runtime_config(self) -> None:
         if self.llm_provider == "groq" and not self.groq_api_key:
