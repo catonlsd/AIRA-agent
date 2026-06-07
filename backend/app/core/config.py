@@ -51,6 +51,21 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+    cors_origin_regex: str | None = r"https://.*\.vercel\.app"
+
+    # ── Production hardening ──────────────────────────────────────────────────
+    # When api_key is set, requests must send it in the api_key_header. Left
+    # unset for local development (auth disabled).
+    api_key: str | None = None
+    api_key_header: str = "X-API-Key"
+    # Paths that never require auth or rate limiting.
+    public_paths: list[str] = ["/", "/health", "/ready", "/docs", "/redoc", "/openapi.json"]
+
+    rate_limit_enabled: bool = True
+    rate_limit_per_minute: int = 60
+
+    security_headers_enabled: bool = True
+    request_logging_enabled: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

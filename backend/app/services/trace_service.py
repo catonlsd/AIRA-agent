@@ -21,6 +21,8 @@ from typing import Any, Optional
 
 _DEFAULT_TRACE_PATH = "./storage/traces.jsonl"
 _LOCK = threading.Lock()
+# Rotate the trace log once it exceeds this size so it never grows unbounded.
+_MAX_TRACE_BYTES = 5 * 1024 * 1024
 
 # Maps a routed mode to the kind of source of truth the answer drew on.
 _SOURCE_TYPE_BY_MODE = {
@@ -81,11 +83,22 @@ class TraceService:
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
             line = json.dumps(record, default=str)
             with _LOCK:
+                self._rotate_if_needed()
                 with self.log_path.open("a", encoding="utf-8") as handle:
                     handle.write(line + "\n")
             return True
         except Exception:
             return False
+
+    def _rotate_if_needed(self) -> None:
+        try:
+            if self.log_path.exists() and self.log_path.stat().st_size > _MAX_TRACE_BYTES:
+                rotated = self.log_path.with_name(self.log_path.name + ".1")
+                if rotated.exists():
+                    rotated.unlink()
+                self.log_path.rename(rotated)
+        except Exception:
+            pass
 
     def recent(self, limit: int = 50) -> list[dict[str, Any]]:
         """Return the most recent trace records (newest last). Best-effort."""
