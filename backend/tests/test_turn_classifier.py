@@ -117,6 +117,25 @@ def test_xlsx_request_is_classified_as_research_then_execution():
     assert result.needs_execution is True
 
 
+def test_summarize_existing_document_is_document_qa_not_artifact():
+    # "document" is an artifact noun, but with no creation verb this is a
+    # question about an existing file, not a request to generate a docx.
+    result = classify_turn("summarize this document")
+    assert result.mode == DOCUMENT_QA_MODE
+    assert result.artifact_type is None
+
+
+def test_question_about_a_report_is_not_an_artifact_request():
+    assert classify_turn("what does the report say about revenue").artifact_type is None
+    assert classify_turn("summarize the attached file").mode == DOCUMENT_QA_MODE
+
+
+def test_artifact_still_detected_with_a_creation_verb():
+    assert classify_turn("Make a PPT on renewable energy.").artifact_type == "pptx"
+    assert classify_turn("Write a report on climate change in docx format.").artifact_type == "docx"
+    assert classify_turn("Create an excel spreadsheet for monthly sales.").artifact_type == "xlsx"
+
+
 def test_empty_prompt_becomes_clarification():
     result = classify_turn("   ")
 

@@ -82,7 +82,7 @@ async def test_mixed_multi_question_batch_preserves_each_item_type(monkeypatch):
             Answer the following questions:
             1. Hello, who are you?
             2. Install requests package.
-            3. Read the AI trends report file.
+            3. Run git status for the AI trends report.
             """
         )
     )
@@ -112,7 +112,7 @@ async def test_mixed_multi_question_batch_preserves_each_item_type(monkeypatch):
     assert second["approval_summary"] is not None
     assert second["approval_summary"]["required"] is True
 
-    assert third["question"] == "Read the AI trends report file."
+    assert third["question"] == "Run git status for the AI trends report."
     assert third["status"] == "completed"
     assert third["sources"] == [
         {
@@ -131,7 +131,7 @@ async def test_mixed_multi_question_batch_preserves_each_item_type(monkeypatch):
 
     assert "1. Hello, who are you?" in response["final_answer"]
     assert "2. Install requests package." in response["final_answer"]
-    assert "3. Read the AI trends report file." in response["final_answer"]
+    assert "3. Run git status for the AI trends report." in response["final_answer"]
 
 
 class _FakeStep:

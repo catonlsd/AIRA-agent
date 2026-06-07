@@ -87,6 +87,14 @@ _DOCUMENT_REFERENCE_PATTERNS = (
     "uploaded file",
     "the document i uploaded",
     "the file i uploaded",
+    "this document",
+    "this file",
+    "this pdf",
+    "this doc",
+    "the attached",
+    "attached file",
+    "attached document",
+    "attached pdf",
 )
 
 _ARTIFACT_PATTERNS: dict[str, tuple[str, ...]] = {
@@ -103,8 +111,6 @@ _ARTIFACT_PATTERNS: dict[str, tuple[str, ...]] = {
         "document",
         "report",
         "proposal",
-        "write a report",
-        "write a document",
     ),
     "xlsx": (
         "xlsx",
@@ -114,6 +120,31 @@ _ARTIFACT_PATTERNS: dict[str, tuple[str, ...]] = {
         "table file",
     ),
 }
+
+# Artifact GENERATION requires an explicit creation intent. Without one, nouns
+# like "document"/"report"/"presentation" are about an existing file
+# (e.g. "summarize this document"), not a request to generate a new file.
+_ARTIFACT_CREATION_SIGNALS = (
+    "make ",
+    "create ",
+    "generate ",
+    "build ",
+    "write a ",
+    "write me a ",
+    "draft ",
+    "produce ",
+    "prepare a ",
+    "design ",
+    "compose ",
+    "put together",
+    "export ",
+    "convert ",
+    "turn into",
+    "turn this into",
+    "give me a ",
+    "i need a ",
+    "i want a ",
+)
 
 _EXECUTION_PATTERNS = (
     "run command",
@@ -357,6 +388,11 @@ def _has_explicit_document_reference(
 
 
 def _detect_artifact_type(text: str) -> str | None:
+    # Only treat this as an artifact request when there is a creation intent;
+    # otherwise "summarize this document" / "what's in the report" are document
+    # questions, not requests to generate a new file.
+    if not _contains_any(text, _ARTIFACT_CREATION_SIGNALS):
+        return None
     for artifact_type, patterns in _ARTIFACT_PATTERNS.items():
         if _contains_any(text, patterns):
             return artifact_type
