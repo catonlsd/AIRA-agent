@@ -585,7 +585,12 @@ export type ChatHistoryMessage = { role: "user" | "assistant"; content: string }
 export async function streamAiraX(
   goal: string,
   handlers: StreamHandlers,
-  options?: { sessionId?: string; history?: ChatHistoryMessage[]; signal?: AbortSignal }
+  options?: {
+    sessionId?: string;
+    history?: ChatHistoryMessage[];
+    uploadedFileNames?: string[];
+    signal?: AbortSignal;
+  }
 ): Promise<void> {
   const response = await fetch(`${API_URL}/aira-x/stream`, {
     method: "POST",
@@ -594,6 +599,7 @@ export async function streamAiraX(
       goal,
       session_id: options?.sessionId ?? null,
       history: options?.history ?? [],
+      uploaded_file_names: options?.uploadedFileNames ?? [],
     }),
     signal: options?.signal,
   });

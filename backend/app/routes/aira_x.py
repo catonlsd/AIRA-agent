@@ -38,6 +38,8 @@ class AiraXRunRequest(BaseModel):
     session_id: str | None = None
     # Recent {role, content} turns supplied by the client for conversation memory.
     history: list[dict] | None = None
+    # Names of documents uploaded this session — signals document-first routing.
+    uploaded_file_names: list[str] | None = None
 
 
 class AiraXApproveRequest(BaseModel):
@@ -748,7 +750,10 @@ async def run_aira_x(request: AiraXRunRequest):
     """Thin adapter: build context, hand the turn to the supervisor, return one
     normalized response. Routing/answering logic lives in the supervisor."""
     ctx = build_turn_context(
-        request.goal, session_id=request.session_id, history=request.history
+        request.goal,
+        session_id=request.session_id,
+        history=request.history,
+        uploaded_file_names=request.uploaded_file_names,
     )
     response = await AssistantSupervisor().run_turn(ctx)
     return response.model_dump()
@@ -774,7 +779,10 @@ async def stream_aira_x(request: AiraXRunRequest):
     Mirrors /run but emits incremental events. /run remains the non-streaming
     endpoint."""
     ctx = build_turn_context(
-        request.goal, session_id=request.session_id, history=request.history
+        request.goal,
+        session_id=request.session_id,
+        history=request.history,
+        uploaded_file_names=request.uploaded_file_names,
     )
     supervisor = AssistantSupervisor()
 

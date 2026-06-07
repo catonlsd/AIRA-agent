@@ -25,6 +25,24 @@ from app.turn_classifier import DOCUMENT_QA_MODE
 # Minimum top-hit similarity to treat retrieved chunks as real evidence.
 DEFAULT_MIN_EVIDENCE_SCORE = 0.15
 
+# Whole-document requests (summaries/overviews) don't semantically match any
+# single chunk, so they would score below the threshold even when documents are
+# clearly present. For these, the presence of chunks is treated as sufficient
+# evidence and more chunks are pulled for context.
+_BROAD_REQUEST_PATTERNS = (
+    "summariz", "summary", "tl;dr", "tldr", "overview", "key point", "main point",
+    "key takeaway", "the gist", "what is this", "what's this", "whats this",
+    "what is the document", "what is the file", "what does this", "what's in this",
+    "whats in this", "brief me", "explain this document", "explain this file",
+    "explain the document", "explain the file",
+)
+_BROAD_REQUEST_K = 8
+
+
+def _is_broad_document_request(query: str) -> bool:
+    lowered = query.lower()
+    return any(pattern in lowered for pattern in _BROAD_REQUEST_PATTERNS)
+
 
 class DocumentQnAService:
     def __init__(
@@ -107,9 +125,17 @@ class DocumentQnAService:
         history: Optional[Sequence[dict]] = None,
         k: Optional[int] = None,
     ) -> dict[str, Any]:
-        chunks = self.retrieve(query, k)
+        broad_request = _is_broad_document_request(query)
+        retrieve_k = k or settings.retrieval_k
+        if broad_request:
+            retrieve_k = max(retrieve_k, _BROAD_REQUEST_K)
+
+        chunks = self.retrieve(query, retrieve_k)
         top_score = chunks[0].score if chunks else 0.0
-        has_evidence = bool(chunks) and top_score >= self.min_evidence_score
+        # For summarize/overview requests, having any document chunks is enough;
+        # for specific questions, require the content-similarity threshold so we
+        # stay honest when the answer genuinely isn't in the documents.
+        has_evidence = bool(chunks) and (broad_request or top_score >= self.min_evidence_score)
 
         if not has_evidence:
             message = (

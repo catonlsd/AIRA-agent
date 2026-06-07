@@ -58,3 +58,15 @@ async def test_control_chars_in_message_route_cleanly(monkeypatch):
     monkeypatch.setattr(aira_x_routes, "LangGraphAiraXWorkflow", _FailingWorkflow)
     response = await run_aira_x(AiraXRunRequest(goal="hello\x00\x07 there"))
     assert response["mode"] == "general_chat"
+
+
+@pytest.mark.asyncio
+async def test_uploaded_files_route_questions_to_documents(monkeypatch):
+    # When documents are present, content questions go document-first instead of
+    # the web (the bug where "what was the Q3 revenue?" hit web search).
+    monkeypatch.setattr(aira_x_routes, "LangGraphAiraXWorkflow", _FailingWorkflow)
+    response = await run_aira_x(
+        AiraXRunRequest(goal="what was the Q3 revenue?", uploaded_file_names=["q3.pdf"])
+    )
+    assert response["mode"] == "document_qa"
+    assert response["meta"]["turn_classification"]["mode"] == "document_qa"

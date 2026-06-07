@@ -1551,7 +1551,7 @@ export default function ChatPage() {
             throw new Error(message);
           },
         },
-        { sessionId, history }
+        { sessionId, history, uploadedFileNames: uploadedDocs }
       );
 
       if (!finalData) {
@@ -1560,14 +1560,6 @@ export default function ChatPage() {
 
       const final = finalData as AssistantRunResponse & Record<string, unknown>;
       const mode = String((final as Record<string, unknown>).mode ?? "");
-
-      // Document Q&A still flows through the legacy route (unchanged for now):
-      // the supervisor only returns a placeholder, so fetch the real answer.
-      if (mode === "document_qa") {
-        const real = await runAssistant(trimmed, true);
-        applyNonStreamingResponse(turnId, trimmed, real);
-        return;
-      }
 
       // Execution / approval turns render as a workflow card.
       const isWorkflow =

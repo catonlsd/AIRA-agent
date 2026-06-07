@@ -55,6 +55,7 @@ class AssistantRunRequest(BaseModel):
     # absent, server-side memory (DB) is used.
     session_id: str | None = None
     history: list[dict] | None = None
+    uploaded_file_names: list[str] | None = None
 
 
 class AssistantRunResponse(BaseModel):
@@ -841,6 +842,7 @@ async def _run_via_supervisor(payload: AssistantRunRequest, db: Session) -> Assi
         session_id=payload.session_id,
         db=db if payload.history is None else None,
         history=payload.history,
+        uploaded_file_names=payload.uploaded_file_names,
     )
     response = await AssistantSupervisor().run_turn(ctx)
     mapped = _supervisor_response_to_assistant(response)

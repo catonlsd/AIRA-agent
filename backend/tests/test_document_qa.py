@@ -110,3 +110,34 @@ def test_answer_with_empty_store_is_honest():
     result = service.answer("anything at all")
     assert result["meta"]["has_evidence"] is False
     assert result["decision"] == "document_qa_insufficient_evidence"
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["summarize this file", "summarize the attached document", "what is this document about", "give me an overview"],
+)
+def test_summary_requests_use_documents_even_with_low_similarity(query):
+    # A summarize/overview request does not semantically match any single chunk,
+    # but with documents present it must still be answered from them.
+    service = _service()
+    service.ingest(document_id=7, document_name="python.txt", pages=_PYTHON_PAGES)
+
+    result = service.answer(query)
+    assert result["decision"] == "document_qa_completed"
+    assert result["meta"]["has_evidence"] is True
+    assert result["meta"]["chunk_count"] >= 1
+
+
+def test_summary_request_with_empty_store_is_still_honest():
+    service = _service()
+    result = service.answer("summarize this file")
+    assert result["meta"]["has_evidence"] is False
+    assert result["decision"] == "document_qa_insufficient_evidence"
+
+
+def test_specific_offtopic_question_stays_honest():
+    service = _service()
+    service.ingest(document_id=7, document_name="python.txt", pages=_PYTHON_PAGES)
+    result = service.answer("what is the boiling point of mercury")
+    assert result["meta"]["has_evidence"] is False
+    assert result["decision"] == "document_qa_insufficient_evidence"
