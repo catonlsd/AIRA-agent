@@ -129,6 +129,40 @@ const THINKING_PHASES = [
   { label: "Composing answer",       duration: 99999 },
 ];
 
+// ─── Pixel mascot (animated while AIRA-X works) ──────────────────────────────
+// Original AIRA-X pixel sprite. Pure SVG + CSS (no deps); bobs, blinks, and its
+// antennae/feet wiggle. Honors prefers-reduced-motion.
+function PixelMascot({ className }: { className?: string }) {
+  return (
+    <svg
+      className={cn("aira-mascot", className)}
+      viewBox="0 0 24 24"
+      role="img"
+      aria-label="AIRA-X is working"
+      shapeRendering="crispEdges"
+    >
+      {/* antennae */}
+      <rect className="m-tip" x="6" y="1" width="2" height="2" />
+      <rect className="m-tip" x="16" y="1" width="2" height="2" />
+      <rect className="m-body" x="6" y="3" width="2" height="3" />
+      <rect className="m-body" x="16" y="3" width="2" height="3" />
+      {/* body */}
+      <rect className="m-body" x="7" y="5" width="10" height="1" />
+      <rect className="m-body" x="5" y="6" width="14" height="12" />
+      {/* eyes + pupils */}
+      <rect className="m-eye m-blink" x="8" y="9" width="3" height="4" />
+      <rect className="m-eye m-blink" x="13" y="9" width="3" height="4" />
+      <rect className="m-pupil m-blink" x="9" y="10" width="1" height="2" />
+      <rect className="m-pupil m-blink" x="14" y="10" width="1" height="2" />
+      {/* mouth */}
+      <rect className="m-pupil" x="10" y="15" width="4" height="1" />
+      {/* feet */}
+      <rect className="m-body m-foot-a" x="7" y="18" width="3" height="2" />
+      <rect className="m-body m-foot-b" x="14" y="18" width="3" height="2" />
+    </svg>
+  );
+}
+
 function ThinkingIndicator({ mode = "thinking" }: { mode?: "thinking" | "executing" }) {
   const [phaseIndex, setPhaseIndex] = useState(0);
   const [visible, setVisible] = useState(true);
@@ -159,9 +193,9 @@ function ThinkingIndicator({ mode = "thinking" }: { mode?: "thinking" | "executi
 
   return (
     <div className="aira-thinking-pill fade-up">
-      {/* Animated sparkles logo */}
+      {/* Animated pixel mascot */}
       <span className="aira-thinking-icon">
-        <Sparkles className="h-3.5 w-3.5" />
+        <PixelMascot />
       </span>
 
       {/* Animated dots */}
@@ -897,7 +931,30 @@ const AIRA_STYLES = `
   display: flex;
   align-items: center;
   color: var(--accent);
-  animation: airaIconShimmer 2s ease-in-out infinite;
+}
+
+/* ── Pixel mascot ── */
+.aira-mascot {
+  width: 22px;
+  height: 22px;
+  display: block;
+  image-rendering: pixelated;
+  animation: mascot-bob 0.8s steps(2, end) infinite;
+}
+.aira-mascot .m-body { fill: var(--accent); }
+.aira-mascot .m-eye { fill: #ffffff; }
+.aira-mascot .m-pupil { fill: #16181d; }
+.aira-mascot .m-tip { fill: color-mix(in srgb, var(--accent) 60%, #ffffff); animation: mascot-tip 1.2s ease-in-out infinite; }
+.aira-mascot .m-blink { transform-box: fill-box; transform-origin: center; animation: mascot-blink 3.4s infinite; }
+.aira-mascot .m-foot-a,
+.aira-mascot .m-foot-b { transform-box: fill-box; transform-origin: center; animation: mascot-step 0.8s steps(2, end) infinite; }
+.aira-mascot .m-foot-b { animation-delay: 0.4s; }
+@keyframes mascot-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+@keyframes mascot-tip { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+@keyframes mascot-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.12); } }
+@keyframes mascot-step { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1px); } }
+@media (prefers-reduced-motion: reduce) {
+  .aira-mascot, .aira-mascot * { animation: none !important; }
 }
 .aira-thinking-dots {
   display: flex;
