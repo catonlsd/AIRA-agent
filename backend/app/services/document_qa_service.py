@@ -18,7 +18,7 @@ from uuid import uuid4
 from app.core.config import settings
 from app.rag.chunker import chunk_pages
 from app.rag.embedding_provider import EmbeddingProvider, get_embedding_provider
-from app.rag.schemas import RetrievedChunk
+from app.rag.schemas import Citation, RetrievedChunk
 from app.services.vector_store_service import VectorStore, get_document_vector_store
 from app.turn_classifier import DOCUMENT_QA_MODE
 
@@ -42,6 +42,28 @@ _BROAD_REQUEST_K = 8
 def _is_broad_document_request(query: str) -> bool:
     lowered = query.lower()
     return any(pattern in lowered for pattern in _BROAD_REQUEST_PATTERNS)
+
+
+def _citations_from_chunks(chunks: list[RetrievedChunk]) -> list[dict]:
+    """Build de-duplicated document citations directly from retrieved chunks."""
+    seen: set[tuple] = set()
+    citations: list[dict] = []
+    for chunk in chunks:
+        key = (chunk.document_id, chunk.page, chunk.chunk_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        citations.append(
+            Citation(
+                source_type="Document",
+                title=chunk.document_name,
+                document_id=chunk.document_id,
+                chunk_id=chunk.chunk_id,
+                page=chunk.page,
+                snippet=chunk.text[:260],
+            ).model_dump()
+        )
+    return citations
 
 
 class DocumentQnAService:
@@ -153,7 +175,22 @@ class DocumentQnAService:
                 chunk_count=len(chunks),
             )
 
-        # Grounded answer + citations via the existing answer-generation agent.
+        # Summarize/overview requests need a summarization prompt, not the
+        # content-Q&A agent (whose "couldn't find" rule misfires on a meta query
+        # like "summarize this document" even when the content is present).
+        if broad_request:
+            message = self._summarize_chunks(query, chunks)
+            citations = _citations_from_chunks(chunks)
+            return self._result(
+                decision="document_qa_completed",
+                message=message,
+                sources=citations,
+                has_evidence=True,
+                top_score=top_score,
+                chunk_count=len(chunks),
+            )
+
+        # Specific question: grounded answer + citations via the answer agent.
         from app.agents.answer_generation import AnswerGenerationAgent
         from app.agents.citation_verification import CitationVerificationAgent
 
@@ -169,6 +206,23 @@ class DocumentQnAService:
             top_score=top_score,
             chunk_count=len(chunks),
         )
+
+    def _summarize_chunks(self, query: str, chunks: list[RetrievedChunk]) -> str:
+        from app.core.llm import LLMClient
+
+        excerpts = "\n\n".join(
+            f"[{c.document_name}, page {c.page if c.page is not None else 'n/a'}]\n{c.text}"
+            for c in chunks
+        )
+        system = (
+            "You are AIRA-X. Summarize the user's uploaded document content using ONLY "
+            "the excerpts provided. Be clear and concise, capture the key points, and do "
+            "not invent details. If the excerpts are limited, summarize what is available "
+            "without saying the information is missing."
+        )
+        prompt = f"User request: {query}\n\nDocument excerpts:\n{excerpts}\n\nWrite the summary now."
+        text = (LLMClient().generate(system, prompt) or "").strip()
+        return text or "Here is a summary based on the uploaded document."
 
     def _result(
         self,

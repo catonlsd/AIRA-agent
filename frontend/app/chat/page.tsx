@@ -1442,6 +1442,9 @@ export default function ChatPage() {
     typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now())
   );
   const [uploadedDocs, setUploadedDocs] = useState<string[]>([]);
+  // Persistent "documents are available this conversation" signal — kept even if
+  // the user dismisses a chip, so document-first routing keeps working.
+  const [sessionDocNames, setSessionDocNames] = useState<string[]>([]);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const threadBottomRef = useRef<HTMLDivElement>(null);
 
@@ -1551,7 +1554,7 @@ export default function ChatPage() {
             throw new Error(message);
           },
         },
-        { sessionId, history, uploadedFileNames: uploadedDocs }
+        { sessionId, history, uploadedFileNames: sessionDocNames }
       );
 
       if (!finalData) {
@@ -1641,6 +1644,9 @@ export default function ChatPage() {
       const result = await uploadDocuments(files);
       const count = result.documents?.length || files.length;
       setUploadedDocs((prev) => [...prev, ...names]);
+      // Persisted for the whole conversation so document Q&A keeps working even
+      // after the visual chip is dismissed.
+      setSessionDocNames((prev) => Array.from(new Set([...prev, ...names])));
       setUploadMessage(
         `${count} document${count === 1 ? "" : "s"} uploaded and indexed. You can now ask about ${count === 1 ? "it" : "them"}.`
       );
@@ -1653,7 +1659,8 @@ export default function ChatPage() {
   }
 
   function removeUploadedDocChip(index: number) {
-    // Visual chip removal only; the document stays ingested for document Q&A.
+    // Dismisses the visual chip only. The document stays ingested AND remains in
+    // sessionDocNames, so document Q&A keeps working for the rest of the chat.
     setUploadedDocs((prev) => prev.filter((_, i) => i !== index));
   }
 
