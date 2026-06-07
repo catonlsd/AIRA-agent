@@ -136,6 +136,25 @@ def test_artifact_still_detected_with_a_creation_verb():
     assert classify_turn("Create an excel spreadsheet for monthly sales.").artifact_type == "xlsx"
 
 
+def test_knowledge_questions_route_to_general_chat():
+    # These are answered conversationally (token-streamed), not via the one-shot
+    # web-research path.
+    for query in [
+        "Explain ChromaDB",
+        "Tell me about vector databases",
+        "what is a transformer model",
+        "how does backpropagation work",
+        "define gradient descent",
+    ]:
+        assert classify_turn(query).mode == GENERAL_CHAT_MODE
+
+
+def test_research_and_execution_take_precedence_over_knowledge():
+    assert classify_turn("compare ChromaDB and Pinecone").mode == WEB_RESEARCH_MODE
+    assert classify_turn("what is the latest AI news").mode == WEB_RESEARCH_MODE
+    assert classify_turn("run git status").mode == EXECUTION_MODE
+
+
 def test_empty_prompt_becomes_clarification():
     result = classify_turn("   ")
 

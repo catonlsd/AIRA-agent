@@ -203,6 +203,31 @@ _RESEARCH_PATTERNS = (
     "compare",
 )
 
+# Plain general-knowledge / explanatory questions answerable conversationally.
+_KNOWLEDGE_QUESTION_PATTERNS = (
+    "explain",
+    "tell me about",
+    "what is",
+    "what are",
+    "what's",
+    "whats",
+    "what does",
+    "who is",
+    "who was",
+    "who are",
+    "define",
+    "definition of",
+    "how does",
+    "how do",
+    "how to",
+    "why is",
+    "why are",
+    "why do",
+    "describe",
+    "difference between",
+    "give me an overview of",
+)
+
 _INFORMATION_REQUEST_PATTERNS = (
     "what is",
     "what are",
@@ -330,6 +355,22 @@ def classify_turn(
             artifact_type=None,
         )
 
+    # Plain knowledge/explain questions (no files, no time-sensitive/research
+    # signal) are answered conversationally — which token-streams — rather than
+    # sent to the one-shot web-research path. Checked after document/research so
+    # those still take precedence.
+    if _is_knowledge_question(cleaned_prompt):
+        return TurnClassification(
+            mode=GENERAL_CHAT_MODE,
+            reason="The prompt is a general-knowledge question answerable conversationally.",
+            confidence=0.7,
+            needs_research=False,
+            needs_execution=False,
+            needs_document_analysis=False,
+            needs_approval_review=False,
+            artifact_type=None,
+        )
+
     # Low confidence on purpose: nothing matched a precise rule. The hybrid
     # intent router treats this as "ambiguous" and escalates to an LLM (or a
     # safe execution fallback) instead of trusting a keyword guess.
@@ -405,6 +446,10 @@ def _is_execution_request(text: str) -> bool:
 
 def _is_research_request(text: str) -> bool:
     return _contains_any(text, _RESEARCH_PATTERNS)
+
+
+def _is_knowledge_question(text: str) -> bool:
+    return _contains_any(text, _KNOWLEDGE_QUESTION_PATTERNS)
 
 
 def _looks_like_information_request(text: str) -> bool:

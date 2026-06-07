@@ -69,13 +69,15 @@ async def test_run_route_multi_question_returns_grouped_response(monkeypatch):
 
     monkeypatch.setattr(aira_x_routes, "LangGraphAiraXWorkflow", FakeWorkflow)
 
+    # Execution-routed sub-tasks so each flows through the (mocked) workflow and
+    # the grouping/source-aggregation mechanics are exercised.
     response = await run_aira_x(
         AiraXRunRequest(
             goal="""
-            Answer the following questions:
-            1. What is Python?
-            2. What is LangGraph?
-            3. What is ChromaDB?
+            Do the following:
+            1. Run git status.
+            2. Read file notes.txt.
+            3. List the project files.
             """
         )
     )
@@ -87,18 +89,18 @@ async def test_run_route_multi_question_returns_grouped_response(monkeypatch):
     assert response["meta"]["question_count"] == 3
     assert len(response["sub_answers"]) == 3
 
-    assert response["sub_answers"][0]["question"] == "What is Python?"
-    assert response["sub_answers"][0]["message"] == "Answer for: What is Python?"
-    assert response["sub_answers"][1]["question"] == "What is LangGraph?"
-    assert response["sub_answers"][2]["question"] == "What is ChromaDB?"
+    assert response["sub_answers"][0]["question"] == "Run git status."
+    assert response["sub_answers"][0]["message"] == "Answer for: Run git status."
+    assert response["sub_answers"][1]["question"] == "Read file notes.txt."
+    assert response["sub_answers"][2]["question"] == "List the project files."
 
     assert len(response["sources"]) == 3
     assert len(response["artifacts"]) == 3
     assert response["approval_summary"] is None
 
-    assert "1. What is Python?" in response["final_answer"]
-    assert "2. What is LangGraph?" in response["final_answer"]
-    assert "3. What is ChromaDB?" in response["final_answer"]
+    assert "1. Run git status." in response["final_answer"]
+    assert "2. Read file notes.txt." in response["final_answer"]
+    assert "3. List the project files." in response["final_answer"]
 
 
 @pytest.mark.asyncio

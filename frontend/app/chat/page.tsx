@@ -1580,17 +1580,35 @@ export default function ChatPage() {
         }
       }
 
-      // Chat / web research / self-memory: finalize the streamed bubble.
-      const synthetic: AssistantRunResponse = {
-        response_type: modeToResponseType(mode),
-        answer: String(final.message ?? (final as Record<string, unknown>).final_answer ?? ""),
-        citations: Array.isArray(final.sources) ? (final.sources as Citation[]) : [],
-        workflow: null,
-        run_id: typeof final.run_id === "string" ? final.run_id : null,
-        metadata: ((final as Record<string, unknown>).meta as Record<string, unknown>) ?? {},
-      };
+      // Chat / web research / self-memory: finalize the streamed bubble. Keep
+      // the text already streamed token-by-token; the final event only marks
+      // completion and attaches sources/metadata (it must not re-render the
+      // whole answer or duplicate it).
+      const finalAnswer = String(
+        final.message ?? (final as Record<string, unknown>).final_answer ?? ""
+      );
+      const citations = Array.isArray(final.sources) ? (final.sources as Citation[]) : [];
+      const runId = typeof final.run_id === "string" ? final.run_id : null;
+      const meta = ((final as Record<string, unknown>).meta as Record<string, unknown>) ?? {};
       setAiraXResponse(null);
-      patchTurnById(turnId, { streaming: false, response: synthetic });
+      setTurns((prev) =>
+        prev.map((t) => {
+          if (t.id !== turnId) return t;
+          const streamed = (t.streamingText || "").trim();
+          return {
+            ...t,
+            streaming: false,
+            response: {
+              response_type: modeToResponseType(mode),
+              answer: streamed || finalAnswer,
+              citations,
+              workflow: null,
+              run_id: runId,
+              metadata: meta,
+            },
+          };
+        })
+      );
     } catch (streamError) {
       // Graceful fallback to the non-streaming endpoint.
       try {
