@@ -14,9 +14,11 @@ import {
   Activity,
   CheckCircle2,
   Database,
+  FileText,
   FileUp,
   GitBranch,
   Library,
+  Paperclip,
   Send,
   ShieldAlert,
   ShieldCheck,
@@ -724,7 +726,57 @@ function ExecutionPlanCard({ steps }: { steps: AiraXStep[] }) {
 
 // ─── Focus Composer Overlay ───────────────────────────────────────────────────
 
-function FocusComposerOverlay({ question, setQuestion, busy, loading, airaXLoading, onSubmit, onClose }: {
+// ─── Uploaded document chips ──────────────────────────────────────────────────
+
+function DocChips({ docs, onRemove }: { docs: string[]; onRemove?: (index: number) => void }) {
+  if (docs.length === 0) return null;
+  return (
+    <div className="aira-doc-chips">
+      {docs.map((name, index) => (
+        <span key={`${name}-${index}`} className="aira-doc-chip" title={`${name} — uploaded`}>
+          <FileText className="h-3 w-3 shrink-0" />
+          <span className="aira-doc-chip-name">{name}</span>
+          {onRemove && (
+            <button
+              type="button"
+              className="aira-doc-chip-x"
+              aria-label={`Dismiss ${name}`}
+              onClick={() => onRemove(index)}
+            >
+              ×
+            </button>
+          )}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ─── Attach (upload) button ───────────────────────────────────────────────────
+
+function AttachButton({ onClick, uploading, disabled }: {
+  onClick: () => void;
+  uploading: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={uploading || disabled}
+      className="aira-attach-btn"
+      aria-label="Attach a document"
+      title="Attach a PDF, DOCX, TXT, or Markdown file"
+    >
+      {uploading ? <span className="aira-send-spinner" /> : <Paperclip className="h-4 w-4" />}
+    </button>
+  );
+}
+
+function FocusComposerOverlay({
+  question, setQuestion, busy, loading, airaXLoading, onSubmit, onClose,
+  onAttach, uploading, uploadedDocs, onRemoveDoc,
+}: {
   question: string;
   setQuestion: (v: string) => void;
   busy: boolean;
@@ -732,6 +784,10 @@ function FocusComposerOverlay({ question, setQuestion, busy, loading, airaXLoadi
   airaXLoading: boolean;
   onSubmit: (e: FormEvent) => Promise<void>;
   onClose: () => void;
+  onAttach: () => void;
+  uploading: boolean;
+  uploadedDocs: string[];
+  onRemoveDoc: (index: number) => void;
 }) {
   return (
     <>
@@ -751,6 +807,8 @@ function FocusComposerOverlay({ question, setQuestion, busy, loading, airaXLoadi
           </button>
         </div>
 
+        <DocChips docs={uploadedDocs} onRemove={onRemoveDoc} />
+
         <textarea
           autoFocus
           value={question}
@@ -759,10 +817,13 @@ function FocusComposerOverlay({ question, setQuestion, busy, loading, airaXLoadi
           className="aira-focus-textarea"
         />
 
-        <div className="mt-3 flex items-center justify-between">
-          <p className="text-xs text-[var(--text-subtle)]">
-            <kbd className="aira-kbd">Esc</kbd> to exit focus mode
-          </p>
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <AttachButton onClick={onAttach} uploading={uploading} disabled={busy && !uploading} />
+            <p className="hidden text-xs text-[var(--text-subtle)] sm:block">
+              <kbd className="aira-kbd">Esc</kbd> to exit focus mode
+            </p>
+          </div>
           <button disabled={busy || !question.trim()} className="aira-send-btn">
             {loading || airaXLoading
               ? <span className="aira-send-spinner" />
@@ -1157,6 +1218,70 @@ html[data-theme="dark"] .aira-answer-card {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Attach (upload) button ── */
+.aira-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 2.25rem;
+  width: 2.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.aira-attach-btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.aira-attach-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+.aira-attach-btn .aira-send-spinner {
+  border: 2px solid color-mix(in srgb, var(--text-muted) 30%, transparent);
+  border-top-color: var(--accent);
+}
+
+/* ── Uploaded document chips ── */
+.aira-doc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+.aira-doc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 240px;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  background: var(--accent-soft);
+  color: var(--text-strong);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.aira-doc-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aira-doc-chip-x {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0 0 0 0.1rem;
+}
+.aira-doc-chip-x:hover { color: var(--danger); }
+
 /* ── Kicker ── */
 .aira-kicker {
   display: inline-flex;
@@ -1316,6 +1441,7 @@ export default function ChatPage() {
   const [sessionId] = useState(() =>
     typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now())
   );
+  const [uploadedDocs, setUploadedDocs] = useState<string[]>([]);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const threadBottomRef = useRef<HTMLDivElement>(null);
 
@@ -1515,19 +1641,28 @@ export default function ChatPage() {
   async function handleUploadDocuments(event: ChangeEvent<HTMLInputElement>) {
     const files = event.target.files;
     if (!files || files.length === 0) return;
+    const names = Array.from(files).map((f) => f.name);
     setUploadLoading(true);
     setUploadMessage("");
     setUploadError("");
     try {
       const result = await uploadDocuments(files);
       const count = result.documents?.length || files.length;
-      setUploadMessage(`${count} document${count === 1 ? "" : "s"} uploaded and indexed.`);
+      setUploadedDocs((prev) => [...prev, ...names]);
+      setUploadMessage(
+        `${count} document${count === 1 ? "" : "s"} uploaded and indexed. You can now ask about ${count === 1 ? "it" : "them"}.`
+      );
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : "Document upload failed.");
     } finally {
       setUploadLoading(false);
       event.target.value = "";
     }
+  }
+
+  function removeUploadedDocChip(index: number) {
+    // Visual chip removal only; the document stays ingested for document Q&A.
+    setUploadedDocs((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -1543,7 +1678,14 @@ export default function ChatPage() {
         threadIsEmpty ? "max-w-2xl" : "max-w-3xl",
         "aira-chat-page"
       )}>
-        <input ref={uploadInputRef} type="file" multiple className="hidden" onChange={handleUploadDocuments} />
+        <input
+          ref={uploadInputRef}
+          type="file"
+          multiple
+          accept=".pdf,.doc,.docx,.txt,.md,.markdown"
+          className="hidden"
+          onChange={handleUploadDocuments}
+        />
 
         {/* Upload feedback */}
         {(uploadMessage || uploadError) && (
@@ -1609,6 +1751,7 @@ export default function ChatPage() {
               onSubmit={handleSubmit}
               className="aira-home-composer sticky bottom-4"
             >
+              <DocChips docs={uploadedDocs} onRemove={removeUploadedDocChip} />
               <textarea
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
@@ -1623,10 +1766,17 @@ export default function ChatPage() {
                   }
                 }}
               />
-              <div className="flex items-center justify-between px-1 pt-3 pb-1 border-t border-[var(--border)]">
-                <div className="inline-flex items-center gap-1.5 text-xs text-[var(--text-subtle)]">
-                  <ShieldAlert className="h-3.5 w-3.5 text-[var(--warning)]" />
-                  Approval-gated when needed
+              <div className="flex items-center justify-between gap-2 px-1 pt-3 pb-1 border-t border-[var(--border)]">
+                <div className="flex min-w-0 items-center gap-2">
+                  <AttachButton
+                    onClick={() => uploadInputRef.current?.click()}
+                    uploading={uploadLoading}
+                    disabled={busy && !uploadLoading}
+                  />
+                  <span className="hidden items-center gap-1.5 text-xs text-[var(--text-subtle)] sm:inline-flex">
+                    <ShieldAlert className="h-3.5 w-3.5 text-[var(--warning)]" />
+                    Approval-gated when needed
+                  </span>
                 </div>
                 <button disabled={busy || !question.trim()} className="aira-send-btn">
                   {loading || airaXLoading
@@ -1650,6 +1800,10 @@ export default function ChatPage() {
             airaXLoading={airaXLoading}
             onSubmit={handleSubmit}
             onClose={() => setComposerFocused(false)}
+            onAttach={() => uploadInputRef.current?.click()}
+            uploading={uploadLoading}
+            uploadedDocs={uploadedDocs}
+            onRemoveDoc={removeUploadedDocChip}
           />
         )}
       </div>
