@@ -75,10 +75,133 @@ function BulletList({ items }: { items: string[] }) {
       {items.map((item, index) => (
         <li key={index} className="flex gap-2 text-sm leading-6 text-[var(--text)]">
           <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" />
-          <span><InlineText text={item} /></span>
+          <span><InlineText text={cleanInline(item)} /></span>
         </li>
       ))}
     </ul>
+  );
+}
+
+// ─── Ordered list ─────────────────────────────────────────────────────────────
+
+function OrderedList({ items }: { items: string[] }) {
+  return (
+    <ol className="space-y-2 pl-1">
+      {items.map((item, index) => (
+        <li key={index} className="flex gap-2.5 text-sm leading-6 text-[var(--text)]">
+          <span className="mt-px min-w-[1.15rem] shrink-0 text-right font-bold text-[var(--accent)]">
+            {index + 1}.
+          </span>
+          <span><InlineText text={cleanInline(item)} /></span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// ─── Rich answer (paragraphs + bullet / numbered lists + light headings) ──────
+// Plain conversational answers can mix prose with Markdown lists. The structured-
+// section renderer only handles titled execution sections, so for everyday chat
+// we parse the text into blocks here and render real lists instead of flattening
+// everything into one run-on paragraph.
+
+type AnswerBlock =
+  | { type: "p"; text: string }
+  | { type: "h"; text: string }
+  | { type: "ul"; items: string[] }
+  | { type: "ol"; items: string[] };
+
+/** Strip single-* / single-_ italics but keep **bold** for InlineText. */
+function cleanInline(text: string): string {
+  return text
+    .replace(/(?<!\*)\*(?!\*)([^*\n]+?)\*(?!\*)/g, "$1")
+    .replace(/(?<!_)_(?!_)([^_\n]+?)_(?!_)/g, "$1")
+    .trim();
+}
+
+function parseAnswerBlocks(text: string): AnswerBlock[] {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const blocks: AnswerBlock[] = [];
+
+  let para: string[] = [];
+  let list: string[] = [];
+  let listType: "ul" | "ol" = "ul";
+
+  const flushPara = () => {
+    if (para.length) {
+      blocks.push({ type: "p", text: para.join(" ").trim() });
+      para = [];
+    }
+  };
+  const flushList = () => {
+    if (list.length) {
+      blocks.push({ type: listType, items: list });
+      list = [];
+    }
+  };
+
+  for (const raw of lines) {
+    const line = raw.trim();
+
+    if (!line) {
+      flushPara();
+      flushList();
+      continue;
+    }
+
+    const heading = line.match(/^#{1,6}\s+(.+)$/);
+    const ulItem = line.match(/^[-*•]\s+(.+)$/);
+    const olItem = line.match(/^\d+[.)]\s+(.+)$/);
+
+    if (heading) {
+      flushPara();
+      flushList();
+      blocks.push({ type: "h", text: heading[1].trim() });
+    } else if (ulItem) {
+      flushPara();
+      if (list.length && listType !== "ul") flushList();
+      listType = "ul";
+      list.push(ulItem[1].trim());
+    } else if (olItem) {
+      flushPara();
+      if (list.length && listType !== "ol") flushList();
+      listType = "ol";
+      list.push(olItem[1].trim());
+    } else {
+      flushList();
+      para.push(line);
+    }
+  }
+
+  flushPara();
+  flushList();
+  return blocks;
+}
+
+function RichAnswer({ text }: { text: string }) {
+  const blocks = parseAnswerBlocks(text);
+
+  if (blocks.length === 0) return null;
+  // Nothing list-like or heading-like → fall back to the simple paragraph block.
+  if (blocks.every((b) => b.type === "p")) {
+    return <ParagraphBlock text={text} />;
+  }
+
+  return (
+    <div className="space-y-3">
+      {blocks.map((block, index) => {
+        if (block.type === "h") {
+          return (
+            <p key={index} className="text-sm font-black text-[var(--text-strong)]">
+              <InlineText text={cleanInline(block.text)} />
+            </p>
+          );
+        }
+        if (block.type === "ul") return <BulletList key={index} items={block.items} />;
+        if (block.type === "ol") return <OrderedList key={index} items={block.items} />;
+        return <ParagraphBlock key={index} text={block.text} />;
+      })}
+    </div>
   );
 }
 
@@ -271,10 +394,12 @@ export function AssistantAnswerContent({
   answer,
   className,
 }: AssistantAnswerContentProps) {
-  // 1. Strip trailing source blocks
-  // 2. Normalise any raw markdown (##, *, numbered lists) into plain text
-  //    so the renderer never shows raw syntax to the user.
-  const cleaned = normaliseMarkdown(stripTrailingSources(answer));
+  // Strip trailing source blocks once. `cleaned` (markdown flattened) is used
+  // only to DETECT multi-task / titled-section execution answers. The everyday
+  // chat fallback renders from `base` so real Markdown lists, numbered lists,
+  // and light headings survive into proper list elements.
+  const base = stripTrailingSources(answer);
+  const cleaned = normaliseMarkdown(base);
 
   if (isMultiTaskAnswer(cleaned)) {
     const parsed = parseMultiTaskAnswer(cleaned);
@@ -300,7 +425,7 @@ export function AssistantAnswerContent({
 
   return (
     <div className={cn("assistant-answer", className)}>
-      <ParagraphBlock text={cleaned} />
+      <RichAnswer text={base} />
     </div>
   );
 }
