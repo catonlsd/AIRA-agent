@@ -149,15 +149,14 @@ const OCTA_STATUS: Record<OctaState, { label: string; Icon: typeof Sparkles }> =
   error:       { label: "Something went wrong.",    Icon: XCircle },
 };
 
-// Friendly tips Octa cycles through when the user taps it (idle easter-egg).
-const OCTA_TIPS = [
-  "Hi, I'm Octa — your AIRA-X co-pilot.",
-  "Ask me anything; I route it to the right skill automatically.",
-  "Upload a document and I'll answer straight from it.",
-  "I can research the web for up-to-date answers.",
-  "I run safe tasks — and pause for approval on risky ones.",
-  'Try: "summarize this in bullet points".',
-  "Tip: press Shift + Enter for a new line.",
+// Starter prompts Octa offers when tapped while idle. Each tap loads the next
+// one into the composer (if empty) and focuses it.
+const OCTA_STARTERS = [
+  "Summarize my uploaded document.",
+  "Research the latest updates about vector databases.",
+  "Create a step-by-step plan for my project.",
+  "Compare the uploaded documents.",
+  "List project files.",
 ];
 
 /** Map a supervisor routing mode to an Octa working-state. */
@@ -241,30 +240,48 @@ function OctaStatus({
   message,
   size = "lg",
   className,
+  composerEmpty = true,
+  onInsertPrompt,
 }: {
   state: OctaState;
   message?: string;
   size?: "lg" | "sm";
   className?: string;
+  composerEmpty?: boolean;
+  onInsertPrompt?: (text: string) => void;
 }) {
   const status = OCTA_STATUS[state];
   const Icon = status.Icon;
   const [tip, setTip] = useState<string | null>(null);
   const [reacting, setReacting] = useState(false);
-  const tipIndexRef = useRef(0);
+  const starterIndexRef = useRef(0);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => () => timersRef.current.forEach(clearTimeout), []);
 
-  // Tap Octa → it reacts with a little wiggle and surfaces a rotating tip.
+  // Tap Octa → wiggle, then load the next starter prompt into the composer (when
+  // empty) and focus it. If the composer already has text, nudge instead.
   const handlePoke = () => {
+    // Live workflow status has priority — never act while Octa is working.
+    if (state !== "idle") return;
+
     timersRef.current.forEach(clearTimeout);
     timersRef.current = [];
-    const next = OCTA_TIPS[tipIndexRef.current % OCTA_TIPS.length];
-    tipIndexRef.current += 1;
-    setTip(next);
     setReacting(true);
     timersRef.current.push(setTimeout(() => setReacting(false), 650));
+
+    let note: string;
+    if (!composerEmpty) {
+      note = "Finish or clear your current message first.";
+    } else if (onInsertPrompt) {
+      const prompt = OCTA_STARTERS[starterIndexRef.current % OCTA_STARTERS.length];
+      starterIndexRef.current += 1;
+      onInsertPrompt(prompt);
+      note = "Loaded a starter — tweak it and send.";
+    } else {
+      note = status.label;
+    }
+    setTip(note);
     timersRef.current.push(setTimeout(() => setTip(null), 4200));
   };
 
@@ -281,7 +298,7 @@ function OctaStatus({
         type="button"
         className={cn("octa-figure", reacting && "octa-figure--react")}
         onClick={handlePoke}
-        aria-label="Octa — tap for a quick tip"
+        aria-label="Octa — tap to load a starter prompt"
       >
         <Octa />
       </button>
@@ -643,7 +660,16 @@ function AiraHomeStage({
         </p>
 
         {/* Octa — companion above the composer */}
-        <OctaStatus state={octaState} size="lg" className="mt-8" />
+        <OctaStatus
+          state={octaState}
+          size="lg"
+          className="mt-8"
+          composerEmpty={!question.trim()}
+          onInsertPrompt={(text) => {
+            setQuestion(text);
+            onComposerFocus();
+          }}
+        />
 
         {/* Composer */}
         <form onSubmit={onSubmit} className="aira-home-composer mt-4 text-left">
@@ -2022,7 +2048,16 @@ export default function ChatPage() {
           {/* Sticky composer */}
           {!threadIsEmpty && (
             <div className="sticky bottom-4 flex flex-col gap-2">
-              <OctaStatus state={octaState} size="sm" className="px-1" />
+              <OctaStatus
+                state={octaState}
+                size="sm"
+                className="px-1"
+                composerEmpty={!question.trim()}
+                onInsertPrompt={(text) => {
+                  setQuestion(text);
+                  setComposerFocused(true);
+                }}
+              />
               <form
                 onSubmit={handleSubmit}
                 className="aira-home-composer"
