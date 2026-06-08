@@ -163,6 +163,66 @@ function PixelMascot({ className }: { className?: string }) {
   );
 }
 
+// ─── Working mascot (ambient composer loop) ──────────────────────────────────
+// A second pixel sprite that lives on the composer bar and runs a recurring
+// flipbook: idle → takes out a laptop → opens it & types → closes it → puts it
+// back. Pure SVG + CSS (frame opacity windows + sub-animations). No deps.
+// Honors prefers-reduced-motion (settles on the idle frame).
+function WorkingMascot({ className }: { className?: string }) {
+  return (
+    <svg
+      className={cn("aira-worker", className)}
+      viewBox="0 0 30 22"
+      role="img"
+      aria-label="AIRA-X working"
+      shapeRendering="crispEdges"
+    >
+      {/* persistent creature (right) */}
+      <g className="w-creature">
+        {/* antennae */}
+        <rect className="w-tip" x="21" y="2" width="1" height="1" />
+        <rect className="w-tip" x="26" y="2" width="1" height="1" />
+        <rect className="w-body" x="21" y="3" width="1" height="1" />
+        <rect className="w-body" x="26" y="3" width="1" height="1" />
+        {/* body */}
+        <rect className="w-body" x="20" y="4" width="8" height="10" />
+        {/* eyes + pupils */}
+        <rect className="w-eye" x="21" y="7" width="2" height="2" />
+        <rect className="w-eye" x="25" y="7" width="2" height="2" />
+        <rect className="w-pupil" x="22" y="8" width="1" height="1" />
+        <rect className="w-pupil" x="26" y="8" width="1" height="1" />
+        {/* feet */}
+        <rect className="w-body w-foot-a" x="21" y="14" width="2" height="2" />
+        <rect className="w-body w-foot-b" x="25" y="14" width="2" height="2" />
+      </g>
+
+      {/* idle frame: arm resting at side */}
+      <g className="w-frame w-idle">
+        <rect className="w-body" x="19" y="8" width="1" height="4" />
+      </g>
+
+      {/* closed laptop: taking out / putting back */}
+      <g className="w-frame w-closed">
+        <rect className="w-lid" x="9" y="11" width="9" height="1" />
+        <rect className="w-laptop" x="9" y="12" width="9" height="2" />
+        <rect className="w-body" x="18" y="10" width="2" height="2" />
+      </g>
+
+      {/* open laptop + typing */}
+      <g className="w-frame w-open">
+        {/* screen */}
+        <rect className="w-laptop" x="8" y="4" width="8" height="9" />
+        <rect className="w-screen" x="9" y="5" width="6" height="6" />
+        {/* keyboard base */}
+        <rect className="w-laptop" x="7" y="13" width="11" height="2" />
+        {/* arm reaching from creature + typing hand */}
+        <rect className="w-body" x="17" y="10" width="3" height="1" />
+        <rect className="w-body w-hand" x="15" y="11" width="2" height="1" />
+      </g>
+    </svg>
+  );
+}
+
 function ThinkingIndicator({ mode = "thinking" }: { mode?: "thinking" | "executing" }) {
   const [phaseIndex, setPhaseIndex] = useState(0);
   const [visible, setVisible] = useState(true);
@@ -955,6 +1015,58 @@ const AIRA_STYLES = `
 @keyframes mascot-step { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1px); } }
 @media (prefers-reduced-motion: reduce) {
   .aira-mascot, .aira-mascot * { animation: none !important; }
+}
+
+/* ── Working mascot (composer bar, recurring laptop loop) ── */
+.aira-worker-wrap {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 2px;
+  opacity: 0.9;
+}
+.aira-worker {
+  width: 30px;
+  height: 22px;
+  display: block;
+  image-rendering: pixelated;
+}
+.aira-worker .w-body { fill: var(--accent); }
+.aira-worker .w-eye { fill: #ffffff; }
+.aira-worker .w-pupil { fill: #16181d; }
+.aira-worker .w-tip { fill: color-mix(in srgb, var(--accent) 55%, #ffffff); animation: worker-tip 1.4s ease-in-out infinite; }
+.aira-worker .w-laptop { fill: color-mix(in srgb, var(--accent) 30%, #14161b); }
+.aira-worker .w-lid { fill: color-mix(in srgb, var(--accent) 45%, #2a2f38); }
+.aira-worker .w-screen { fill: color-mix(in srgb, var(--accent) 45%, #bfe9ff); animation: worker-screen 0.55s steps(2, end) infinite; }
+/* gentle continuous bob of the whole creature */
+.aira-worker .w-creature { transform-box: fill-box; transform-origin: center bottom; animation: worker-bob 2.4s ease-in-out infinite; }
+.aira-worker .w-foot-a, .aira-worker .w-foot-b { transform-box: fill-box; transform-origin: center; animation: worker-step 0.9s steps(2, end) infinite; }
+.aira-worker .w-foot-b { animation-delay: 0.45s; }
+.aira-worker .w-hand { transform-box: fill-box; transform-origin: center; animation: worker-type 0.28s steps(2, end) infinite; }
+/* frame flipbook — opacity windows over a 9s loop */
+.aira-worker .w-idle { opacity: 1; animation: worker-idle 9s linear infinite; }
+.aira-worker .w-closed { opacity: 0; animation: worker-closed 9s linear infinite; }
+.aira-worker .w-open { opacity: 0; animation: worker-open 9s linear infinite; }
+@keyframes worker-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1px); } }
+@keyframes worker-tip { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+@keyframes worker-screen { 0% { opacity: 0.65; } 100% { opacity: 1; } }
+@keyframes worker-step { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1px); } }
+@keyframes worker-type { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1px); } }
+@keyframes worker-idle {
+  0% { opacity: 1; } 17.9% { opacity: 1; } 18% { opacity: 0; }
+  85.9% { opacity: 0; } 86% { opacity: 1; } 100% { opacity: 1; }
+}
+@keyframes worker-closed {
+  0% { opacity: 0; } 17.9% { opacity: 0; } 18% { opacity: 1; } 27.9% { opacity: 1; } 28% { opacity: 0; }
+  77.9% { opacity: 0; } 78% { opacity: 1; } 85.9% { opacity: 1; } 86% { opacity: 0; } 100% { opacity: 0; }
+}
+@keyframes worker-open {
+  0% { opacity: 0; } 27.9% { opacity: 0; } 28% { opacity: 1; }
+  77.9% { opacity: 1; } 78% { opacity: 0; } 100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aira-worker, .aira-worker * { animation: none !important; }
+  .aira-worker .w-closed, .aira-worker .w-open { opacity: 0; }
+  .aira-worker .w-idle { opacity: 1; }
 }
 .aira-thinking-dots {
   display: flex;
@@ -1847,6 +1959,9 @@ export default function ChatPage() {
                     uploading={uploadLoading}
                     disabled={busy && !uploadLoading}
                   />
+                  <span className="aira-worker-wrap" aria-hidden="true">
+                    <WorkingMascot />
+                  </span>
                   <span className="hidden items-center gap-1.5 text-xs text-[var(--text-subtle)] sm:inline-flex">
                     <ShieldAlert className="h-3.5 w-3.5 text-[var(--warning)]" />
                     Approval-gated when needed
