@@ -149,6 +149,17 @@ const OCTA_STATUS: Record<OctaState, { label: string; Icon: typeof Sparkles }> =
   error:       { label: "Something went wrong.",    Icon: XCircle },
 };
 
+// Friendly tips Octa cycles through when the user taps it (idle easter-egg).
+const OCTA_TIPS = [
+  "Hi, I'm Octa — your AIRA-X co-pilot.",
+  "Ask me anything; I route it to the right skill automatically.",
+  "Upload a document and I'll answer straight from it.",
+  "I can research the web for up-to-date answers.",
+  "I run safe tasks — and pause for approval on risky ones.",
+  'Try: "summarize this in bullet points".',
+  "Tip: press Shift + Enter for a new line.",
+];
+
 /** Map a supervisor routing mode to an Octa working-state. */
 function octaStateForMode(mode: string): OctaState {
   if (mode === "web_research") return "researching";
@@ -238,19 +249,46 @@ function OctaStatus({
 }) {
   const status = OCTA_STATUS[state];
   const Icon = status.Icon;
+  const [tip, setTip] = useState<string | null>(null);
+  const [reacting, setReacting] = useState(false);
+  const tipIndexRef = useRef(0);
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => () => timersRef.current.forEach(clearTimeout), []);
+
+  // Tap Octa → it reacts with a little wiggle and surfaces a rotating tip.
+  const handlePoke = () => {
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+    const next = OCTA_TIPS[tipIndexRef.current % OCTA_TIPS.length];
+    tipIndexRef.current += 1;
+    setTip(next);
+    setReacting(true);
+    timersRef.current.push(setTimeout(() => setReacting(false), 650));
+    timersRef.current.push(setTimeout(() => setTip(null), 4200));
+  };
+
+  // While the assistant is actively working, the live status wins over a tip.
+  const label = state === "idle" ? (tip ?? message ?? status.label) : (message ?? status.label);
+
   return (
     <div
       className={cn("octa-companion", `octa-companion--${size}`, className)}
       data-octa-state={state}
       aria-live="polite"
     >
-      <div className="octa-figure" aria-hidden="true">
+      <button
+        type="button"
+        className={cn("octa-figure", reacting && "octa-figure--react")}
+        onClick={handlePoke}
+        aria-label="Octa — tap for a quick tip"
+      >
         <Octa />
-      </div>
+      </button>
       <div className="octa-bubble" role="status">
         <span className="octa-bubble-dot" aria-hidden="true" />
         <Icon className="octa-bubble-icon" aria-hidden="true" />
-        <span className="octa-bubble-label">{message ?? status.label}</span>
+        <span className="octa-bubble-label">{label}</span>
       </div>
     </div>
   );
@@ -973,7 +1011,29 @@ html[data-theme="dark"] .octa-companion {
   --octa-glow: rgba(0, 212, 255, 0.7);
 }
 
-.octa-figure { line-height: 0; animation: octa-float 4s ease-in-out infinite; }
+.octa-figure {
+  line-height: 0;
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  border-radius: 14px;
+  -webkit-tap-highlight-color: transparent;
+  animation: octa-float 4s ease-in-out infinite;
+  transition: filter 0.2s ease;
+}
+.octa-figure:hover { filter: drop-shadow(0 0 9px var(--octa-glow)); }
+.octa-figure:active { filter: drop-shadow(0 0 12px var(--octa-glow)); }
+.octa-figure:focus-visible { outline: 2px solid var(--octa-accent); outline-offset: 4px; }
+.octa-figure--react { animation: octa-react 0.65s ease; }
+@keyframes octa-react {
+  0%   { transform: translateY(0) rotate(0deg); }
+  20%  { transform: translateY(-4px) rotate(-9deg); }
+  45%  { transform: translateY(0) rotate(8deg); }
+  70%  { transform: translateY(-2px) rotate(-4deg); }
+  100% { transform: translateY(0) rotate(0deg); }
+}
 .octa-svg { display: block; overflow: visible; image-rendering: pixelated; animation: octa-breathe 5s ease-in-out infinite; }
 .octa-companion--lg .octa-svg { width: 76px; height: 76px; }
 .octa-companion--sm .octa-svg { width: 44px; height: 44px; }
