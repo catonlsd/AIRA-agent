@@ -121,49 +121,6 @@ type AiraXResponse = {
   workflow_logs?: WorkflowLog[];
 };
 
-// ─── Thinking / Status Indicator ──────────────────────────────────────────────
-
-const THINKING_PHASES = [
-  { label: "Routing your request",   duration: 1800 },
-  { label: "Searching knowledge",    duration: 2200 },
-  { label: "Reasoning through it",   duration: 2000 },
-  { label: "Composing answer",       duration: 99999 },
-];
-
-// ─── Pixel mascot (animated while AIRA-X works) ──────────────────────────────
-// Original AIRA-X pixel sprite. Pure SVG + CSS (no deps); bobs, blinks, and its
-// antennae/feet wiggle. Honors prefers-reduced-motion.
-function PixelMascot({ className }: { className?: string }) {
-  return (
-    <svg
-      className={cn("aira-mascot", className)}
-      viewBox="0 0 24 24"
-      role="img"
-      aria-label="AIRA-X is working"
-      shapeRendering="crispEdges"
-    >
-      {/* antennae */}
-      <rect className="m-tip" x="6" y="1" width="2" height="2" />
-      <rect className="m-tip" x="16" y="1" width="2" height="2" />
-      <rect className="m-body" x="6" y="3" width="2" height="3" />
-      <rect className="m-body" x="16" y="3" width="2" height="3" />
-      {/* body */}
-      <rect className="m-body" x="7" y="5" width="10" height="1" />
-      <rect className="m-body" x="5" y="6" width="14" height="12" />
-      {/* eyes + pupils */}
-      <rect className="m-eye m-blink" x="8" y="9" width="3" height="4" />
-      <rect className="m-eye m-blink" x="13" y="9" width="3" height="4" />
-      <rect className="m-pupil m-blink" x="9" y="10" width="1" height="2" />
-      <rect className="m-pupil m-blink" x="14" y="10" width="1" height="2" />
-      {/* mouth */}
-      <rect className="m-pupil" x="10" y="15" width="4" height="1" />
-      {/* feet */}
-      <rect className="m-body m-foot-a" x="7" y="18" width="3" height="2" />
-      <rect className="m-body m-foot-b" x="14" y="18" width="3" height="2" />
-    </svg>
-  );
-}
-
 // ─── Octa — the AIRA-X Supervisor mascot ─────────────────────────────────────
 // A premium pixel cyber-octopus: one intelligent core, many capabilities. Octa
 // is state-aware and mirrors the live supervisor state (idle → thinking →
@@ -181,15 +138,15 @@ type OctaState =
   | "success"
   | "error";
 
-const OCTA_STATUS: Record<OctaState, { label: string; tone: string; Icon: typeof Sparkles }> = {
-  idle:        { label: "Ready to help.",          tone: "calm",   Icon: Sparkles },
-  thinking:    { label: "Thinking…",               tone: "active", Icon: Activity },
-  researching: { label: "Searching sources…",      tone: "active", Icon: Search },
-  reading:     { label: "Reading your documents…", tone: "active", Icon: FileText },
-  executing:   { label: "Executing workflow…",     tone: "active", Icon: Workflow },
-  approval:    { label: "Waiting for approval…",    tone: "warn",   Icon: ShieldAlert },
-  success:     { label: "Task completed.",          tone: "good",   Icon: CheckCircle2 },
-  error:       { label: "Something went wrong.",    tone: "bad",    Icon: XCircle },
+const OCTA_STATUS: Record<OctaState, { label: string; Icon: typeof Sparkles }> = {
+  idle:        { label: "Ready to help.",          Icon: Sparkles },
+  thinking:    { label: "Thinking…",               Icon: Activity },
+  researching: { label: "Searching sources…",      Icon: Search },
+  reading:     { label: "Reading your documents…", Icon: FileText },
+  executing:   { label: "Executing workflow…",     Icon: Workflow },
+  approval:    { label: "Waiting for approval…",    Icon: ShieldAlert },
+  success:     { label: "Task completed.",          Icon: CheckCircle2 },
+  error:       { label: "Something went wrong.",    Icon: XCircle },
 };
 
 /** Map a supervisor routing mode to an Octa working-state. */
@@ -263,15 +220,19 @@ function Octa() {
 }
 
 /**
- * Octa + a status bubble. Sits ABOVE the composer (never inside it). `size`
- * "lg" stacks vertically (home stage); "sm" is a compact inline row (in-chat).
+ * OctaStatus — the single assistant status system. Octa + a connected status
+ * bubble. Sits ABOVE the composer (never inside it). `size` "lg" stacks
+ * vertically (home stage); "sm" is a compact inline row (in-chat). `message`
+ * overrides the default per-state label. All assistant states flow through here.
  */
-function OctaCompanion({
+function OctaStatus({
   state,
+  message,
   size = "lg",
   className,
 }: {
   state: OctaState;
+  message?: string;
   size?: "lg" | "sm";
   className?: string;
 }) {
@@ -286,63 +247,11 @@ function OctaCompanion({
       <div className="octa-figure" aria-hidden="true">
         <Octa />
       </div>
-      <div className={cn("octa-bubble", `octa-bubble--${status.tone}`)} role="status">
+      <div className="octa-bubble" role="status">
+        <span className="octa-bubble-dot" aria-hidden="true" />
         <Icon className="octa-bubble-icon" aria-hidden="true" />
-        <span className="octa-bubble-label">{status.label}</span>
+        <span className="octa-bubble-label">{message ?? status.label}</span>
       </div>
-    </div>
-  );
-}
-
-function ThinkingIndicator({ mode = "thinking" }: { mode?: "thinking" | "executing" }) {
-  const [phaseIndex, setPhaseIndex] = useState(0);
-  const [visible, setVisible] = useState(true);
-
-  useEffect(() => {
-    setPhaseIndex(0);
-    setVisible(true);
-  }, [mode]);
-
-  useEffect(() => {
-    const phase = THINKING_PHASES[phaseIndex];
-    if (!phase || phase.duration === 99999) return;
-
-    const t = setTimeout(() => {
-      setVisible(false);
-      setTimeout(() => {
-        setPhaseIndex((p) => Math.min(p + 1, THINKING_PHASES.length - 1));
-        setVisible(true);
-      }, 200);
-    }, phase.duration);
-
-    return () => clearTimeout(t);
-  }, [phaseIndex]);
-
-  const label = mode === "executing"
-    ? "Executing workflow"
-    : THINKING_PHASES[phaseIndex]?.label ?? "Thinking";
-
-  return (
-    <div className="aira-thinking-pill fade-up">
-      {/* Animated pixel mascot */}
-      <span className="aira-thinking-icon">
-        <PixelMascot />
-      </span>
-
-      {/* Animated dots */}
-      <span className="aira-thinking-dots" aria-hidden>
-        <span /><span /><span />
-      </span>
-
-      {/* Phase label */}
-      <span
-        className={cn(
-          "aira-thinking-label",
-          visible ? "aira-thinking-label--in" : "aira-thinking-label--out"
-        )}
-      >
-        {label}
-      </span>
     </div>
   );
 }
@@ -696,7 +605,7 @@ function AiraHomeStage({
         </p>
 
         {/* Octa — companion above the composer */}
-        <OctaCompanion state={octaState} size="lg" className="mt-8" />
+        <OctaStatus state={octaState} size="lg" className="mt-8" />
 
         {/* Composer */}
         <form onSubmit={onSubmit} className="aira-home-composer mt-4 text-left">
@@ -1049,55 +958,13 @@ const AIRA_STYLES = `
   70%       { filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 70%, transparent)); }
 }
 
-/* ── Thinking Pill ── */
-.aira-thinking-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-soft);
-  padding: 0.5rem 1rem 0.5rem 0.75rem;
-  backdrop-filter: blur(12px);
-  box-shadow: var(--shadow-soft);
-  max-width: fit-content;
-}
-.aira-thinking-icon {
-  display: flex;
-  align-items: center;
-  color: var(--accent);
-}
-
-/* ── Pixel mascot ── */
-.aira-mascot {
-  width: 22px;
-  height: 22px;
-  display: block;
-  image-rendering: pixelated;
-  animation: mascot-bob 0.8s steps(2, end) infinite;
-}
-.aira-mascot .m-body { fill: var(--accent); }
-.aira-mascot .m-eye { fill: #ffffff; }
-.aira-mascot .m-pupil { fill: #16181d; }
-.aira-mascot .m-tip { fill: color-mix(in srgb, var(--accent) 60%, #ffffff); animation: mascot-tip 1.2s ease-in-out infinite; }
-.aira-mascot .m-blink { transform-box: fill-box; transform-origin: center; animation: mascot-blink 3.4s infinite; }
-.aira-mascot .m-foot-a,
-.aira-mascot .m-foot-b { transform-box: fill-box; transform-origin: center; animation: mascot-step 0.8s steps(2, end) infinite; }
-.aira-mascot .m-foot-b { animation-delay: 0.4s; }
-@keyframes mascot-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
-@keyframes mascot-tip { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
-@keyframes mascot-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.12); } }
-@keyframes mascot-step { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1px); } }
-@media (prefers-reduced-motion: reduce) {
-  .aira-mascot, .aira-mascot * { animation: none !important; }
-}
-
 /* ── Octa — supervisor mascot (companion above the composer) ── */
 .octa-companion {
   display: flex;
   gap: 0.55rem;
   --octa-eye: #3fa9ff;
   --octa-glow: rgba(110, 193, 255, 0.55);
+  --octa-accent: #6ec1ff;
 }
 .octa-companion--lg { flex-direction: column; align-items: center; text-align: center; }
 .octa-companion--sm { flex-direction: row; align-items: center; }
@@ -1106,10 +973,10 @@ html[data-theme="dark"] .octa-companion {
   --octa-glow: rgba(0, 212, 255, 0.7);
 }
 
-.octa-figure { line-height: 0; animation: octa-float 4.6s ease-in-out infinite; }
+.octa-figure { line-height: 0; animation: octa-float 4s ease-in-out infinite; }
 .octa-svg { display: block; overflow: visible; image-rendering: pixelated; animation: octa-breathe 5s ease-in-out infinite; }
-.octa-companion--lg .octa-svg { width: 66px; height: 66px; }
-.octa-companion--sm .octa-svg { width: 36px; height: 36px; }
+.octa-companion--lg .octa-svg { width: 76px; height: 76px; }
+.octa-companion--sm .octa-svg { width: 44px; height: 44px; }
 
 /* Octa palette (brand) */
 .octa-svg .o-head { fill: #6ec1ff; }
@@ -1132,7 +999,7 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
 .octa-svg .o-arm-4 { animation-delay: 0.9s; }
 .octa-svg .o-arm-5 { animation-delay: 1.2s; }
 
-@keyframes octa-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+@keyframes octa-float { 0%, 100% { transform: translateY(-2px); } 50% { transform: translateY(2px); } }
 @keyframes octa-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02); } }
 @keyframes octa-blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(0.15); } }
 @keyframes octa-glow { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
@@ -1140,10 +1007,20 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
 @keyframes octa-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045); } }
 @keyframes octa-scan { 0% { transform: translateX(0); } 100% { transform: translateX(18px); } }
 
-/* thinking / researching / reading: subtle pulse, faster blink, scan line */
+/* per-state accent (subtle — drives bubble + a light eye/glow tint) */
+.octa-companion[data-octa-state="thinking"]    { --octa-accent: #6ec1ff; }
+.octa-companion[data-octa-state="researching"] { --octa-accent: #00d4ff; --octa-eye: #00d4ff; --octa-glow: rgba(0, 212, 255, 0.6); }
+.octa-companion[data-octa-state="reading"]     { --octa-accent: #a78bfa; --octa-eye: #a78bfa; --octa-glow: rgba(167, 139, 250, 0.55); }
+.octa-companion[data-octa-state="executing"]   { --octa-accent: #f5963f; --octa-eye: #f5963f; --octa-glow: rgba(245, 150, 63, 0.55); }
+.octa-companion[data-octa-state="approval"]    { --octa-accent: #f4c04a; --octa-eye: #f4c04a; --octa-glow: rgba(244, 192, 74, 0.5); }
+.octa-companion[data-octa-state="success"]     { --octa-accent: #3fe0a4; --octa-eye: #3fe0a4; --octa-glow: rgba(63, 224, 164, 0.6); }
+.octa-companion[data-octa-state="error"]       { --octa-accent: #f26d6d; --octa-eye: #f26d6d; --octa-glow: rgba(242, 109, 109, 0.5); }
+
+/* working states: subtle pulse + faster blink + scan line */
 .octa-companion[data-octa-state="thinking"] .octa-svg,
 .octa-companion[data-octa-state="researching"] .octa-svg,
-.octa-companion[data-octa-state="reading"] .octa-svg { animation: octa-pulse 3s ease-in-out infinite; }
+.octa-companion[data-octa-state="reading"] .octa-svg,
+.octa-companion[data-octa-state="executing"] .octa-svg { animation: octa-pulse 3s ease-in-out infinite; }
 .octa-companion[data-octa-state="thinking"] .o-blink,
 .octa-companion[data-octa-state="researching"] .o-blink,
 .octa-companion[data-octa-state="reading"] .o-blink { animation-duration: 2.4s; }
@@ -1159,88 +1036,58 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
 
 /* executing: energetic tentacles + glow */
 .octa-companion[data-octa-state="executing"] .octa-svg { filter: drop-shadow(0 0 6px var(--octa-glow)); }
-.octa-companion[data-octa-state="executing"] .octa-figure { animation-duration: 2.6s; }
 .octa-companion[data-octa-state="executing"] .o-arm-grp { animation-duration: 1.5s; }
 
-/* approval: paused, warm eyes */
-.octa-companion[data-octa-state="approval"] { --octa-eye: #f4b14a; --octa-glow: rgba(244, 177, 74, 0.5); }
-.octa-companion[data-octa-state="approval"] .octa-figure,
-.octa-companion[data-octa-state="approval"] .octa-svg,
+/* approval: calm, paused tentacles */
 .octa-companion[data-octa-state="approval"] .o-arm-grp { animation: none; }
 .octa-companion[data-octa-state="approval"] .o-blink { animation: octa-blink 2.8s infinite; }
 
-/* success: green glow */
-.octa-companion[data-octa-state="success"] { --octa-eye: #3fe0a4; --octa-glow: rgba(63, 224, 164, 0.6); }
+/* success: soft glow */
 .octa-companion[data-octa-state="success"] .octa-svg { filter: drop-shadow(0 0 7px var(--octa-glow)); }
 
-/* error: dim amber, not alarming */
-.octa-companion[data-octa-state="error"] { --octa-eye: #f0a24a; --octa-glow: rgba(240, 162, 74, 0.45); }
+/* error: dim, not alarming */
 .octa-companion[data-octa-state="error"] .o-arm-grp { animation: none; }
 
-/* status bubble */
+/* status bubble — connected to Octa, accent per state */
 .octa-bubble {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--octa-accent) 40%, var(--border));
   border-radius: 999px;
   background: var(--surface-soft);
-  padding: 0.3rem 0.72rem;
-  font-size: 0.72rem;
+  padding: 0.32rem 0.74rem;
+  font-size: 0.74rem;
   font-weight: 700;
-  color: var(--text-muted);
-  white-space: nowrap;
-  box-shadow: var(--shadow-card);
-  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
-}
-.octa-bubble-icon { width: 0.85rem; height: 0.85rem; flex-shrink: 0; }
-.octa-bubble--active {
   color: var(--text-strong);
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-  background: var(--accent-soft);
+  max-width: min(78vw, 22rem);
+  box-shadow: var(--shadow-card), 0 0 0 3px color-mix(in srgb, var(--octa-accent) 8%, transparent);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
-.octa-bubble--active .octa-bubble-icon { animation: octa-glow 1.4s ease-in-out infinite; }
-.octa-bubble--warn {
-  color: var(--warning, #d9822b);
-  border-color: color-mix(in srgb, var(--warning, #d9822b) 45%, transparent);
+.octa-bubble-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: var(--octa-accent);
+  box-shadow: 0 0 6px var(--octa-accent);
+  animation: octa-glow 1.6s ease-in-out infinite;
 }
-.octa-bubble--good {
-  color: var(--success, #15a06a);
-  border-color: color-mix(in srgb, var(--success, #15a06a) 45%, transparent);
-}
+.octa-bubble-icon { width: 0.85rem; height: 0.85rem; flex-shrink: 0; color: var(--octa-accent); }
+.octa-bubble-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* idle is calm — mute the accent */
+.octa-companion[data-octa-state="idle"] .octa-bubble { color: var(--text-muted); }
+.octa-companion[data-octa-state="idle"] .octa-bubble-dot { animation: none; box-shadow: none; opacity: 0.65; }
 
 @media (max-width: 640px) {
-  .octa-companion--sm .octa-bubble-label { display: none; }
+  .octa-companion--sm { gap: 0.4rem; }
+  .octa-companion--sm .octa-svg { width: 38px; height: 38px; }
+  .octa-bubble { max-width: 62vw; }
+  .octa-bubble-label { white-space: normal; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .octa-figure, .octa-svg, .octa-svg *, .octa-bubble-icon { animation: none !important; }
+  .octa-figure, .octa-svg, .octa-svg *, .octa-bubble-dot { animation: none !important; }
 }
-.aira-thinking-dots {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-.aira-thinking-dots span {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: airaThinkDot 1.4s ease-in-out infinite;
-}
-.aira-thinking-dots span:nth-child(2) { animation-delay: 0.18s; }
-.aira-thinking-dots span:nth-child(3) { animation-delay: 0.36s; }
-@keyframes airaThinkDot {
-  0%, 80%, 100% { transform: scale(0.7); opacity: 0.4; }
-  40%           { transform: scale(1.2); opacity: 1; }
-}
-.aira-thinking-label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  transition: opacity 0.18s ease, transform 0.18s ease;
-}
-.aira-thinking-label--in  { opacity: 1; transform: translateY(0); }
-.aira-thinking-label--out { opacity: 0; transform: translateY(4px); }
 
 /* ── Cards ── */
 .aira-card {
@@ -2094,10 +1941,6 @@ export default function ChatPage() {
                 <ResearchTurnCard key={`${turn.question}-${index}`} turn={turn} />
               ))}
 
-              {/* Thinking indicator */}
-              {loading && <ThinkingIndicator mode="thinking" />}
-              {airaXLoading && <ThinkingIndicator mode="executing" />}
-
               {/* Workflow result */}
               {airaXResponse && (
                 <>
@@ -2119,7 +1962,7 @@ export default function ChatPage() {
           {/* Sticky composer */}
           {!threadIsEmpty && (
             <div className="sticky bottom-4 flex flex-col gap-2">
-              <OctaCompanion state={octaState} size="sm" className="px-1" />
+              <OctaStatus state={octaState} size="sm" className="px-1" />
               <form
                 onSubmit={handleSubmit}
                 className="aira-home-composer"
