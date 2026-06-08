@@ -149,8 +149,8 @@ const OCTA_STATUS: Record<OctaState, { label: string; Icon: typeof Sparkles }> =
   error:       { label: "Something went wrong.",    Icon: XCircle },
 };
 
-// Playful one-shot reactions Octa cycles through when tapped (just for delight).
-const OCTA_REACTIONS = ["spin", "jump", "dance", "wave"] as const;
+// Tiny idle gestures Octa plays at random while it's just sitting there.
+const OCTA_MICROS = ["blink", "curl", "look"] as const;
 
 /** Map a supervisor routing mode to an Octa working-state. */
 function octaStateForMode(mode: string): OctaState {
@@ -161,7 +161,7 @@ function octaStateForMode(mode: string): OctaState {
 }
 
 /** The pixel cyber-octopus itself. State drives CSS via the wrapper attribute. */
-function Octa() {
+function Octa({ micro }: { micro?: string | null }) {
   return (
     <svg
       className="octa-svg"
@@ -169,6 +169,7 @@ function Octa() {
       role="img"
       aria-label="Octa, the AIRA-X assistant"
       shapeRendering="crispEdges"
+      data-micro={micro || undefined}
     >
       {/* antenna */}
       <rect className="o-head" x="23" y="3" width="2" height="5" />
@@ -192,8 +193,10 @@ function Octa() {
 
       {/* visor eye-strip */}
       <rect className="o-visor" x="14" y="15" width="20" height="5" />
-      <rect className="o-eye o-blink" x="18" y="16" width="4" height="3" />
-      <rect className="o-eye o-blink" x="26" y="16" width="4" height="3" />
+      <g className="o-eyes">
+        <rect className="o-eye o-blink" x="18" y="16" width="4" height="3" />
+        <rect className="o-eye o-blink" x="26" y="16" width="4" height="3" />
+      </g>
       {/* scan line (active states) */}
       <rect className="o-scan" x="14" y="15" width="1" height="5" />
 
@@ -241,26 +244,61 @@ function OctaStatus({
 }) {
   const status = OCTA_STATUS[state];
   const Icon = status.Icon;
-  const [reaction, setReaction] = useState<(typeof OCTA_REACTIONS)[number] | null>(null);
-  const reactIndexRef = useRef(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [puffKey, setPuffKey] = useState(0);
+  const [reacting, setReacting] = useState(false);
+  const [micro, setMicro] = useState<(typeof OCTA_MICROS)[number] | null>(null);
+  const reactTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
+    if (reactTimerRef.current) clearTimeout(reactTimerRef.current);
   }, []);
 
-  // Tap Octa → it performs a playful one-shot move, cycling through the set.
+  // Tap Octa → a subtle squish + a small cyan ink puff behind it.
   const handlePoke = () => {
-    const kind = OCTA_REACTIONS[reactIndexRef.current % OCTA_REACTIONS.length];
-    reactIndexRef.current += 1;
-    if (timerRef.current) clearTimeout(timerRef.current);
-    // Clear then re-apply on the next frame so the animation restarts every tap.
-    setReaction(null);
+    setPuffKey((k) => k + 1);
+    if (reactTimerRef.current) clearTimeout(reactTimerRef.current);
+    setReacting(false);
     requestAnimationFrame(() => {
-      setReaction(kind);
-      timerRef.current = setTimeout(() => setReaction(null), 950);
+      setReacting(true);
+      reactTimerRef.current = setTimeout(() => setReacting(false), 520);
     });
   };
+
+  // Idle micro-moments: only while idle, every 12–18s, play one tiny gesture.
+  useEffect(() => {
+    if (state !== "idle") return;
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
+
+    let alive = true;
+    let waitTimer: ReturnType<typeof setTimeout>;
+    let clearTimer: ReturnType<typeof setTimeout>;
+
+    const schedule = () => {
+      waitTimer = setTimeout(() => {
+        if (!alive) return;
+        const pick = OCTA_MICROS[Math.floor(Math.random() * OCTA_MICROS.length)];
+        setMicro(pick);
+        clearTimer = setTimeout(() => {
+          if (!alive) return;
+          setMicro(null);
+          schedule();
+        }, 1400);
+      }, 12000 + Math.random() * 6000);
+    };
+    schedule();
+
+    return () => {
+      alive = false;
+      clearTimeout(waitTimer);
+      clearTimeout(clearTimer);
+      setMicro(null);
+    };
+  }, [state]);
 
   return (
     <div
@@ -270,13 +308,15 @@ function OctaStatus({
     >
       <button
         type="button"
-        className={cn("octa-figure", reaction && `octa-figure--${reaction}`)}
+        className={cn("octa-figure", reacting && "octa-figure--poke")}
         onClick={handlePoke}
         aria-label="Octa — tap me"
       >
-        <Octa />
+        {puffKey > 0 && <span key={puffKey} className="octa-ink" aria-hidden="true" />}
+        <Octa micro={micro} />
       </button>
-      <div className="octa-bubble" role="status">
+      {/* keyed by state so the entrance pulse replays on every state change */}
+      <div key={state} className="octa-bubble" role="status">
         <span className="octa-bubble-dot" aria-hidden="true" />
         <Icon className="octa-bubble-icon" aria-hidden="true" />
         <span className="octa-bubble-label">{message ?? status.label}</span>
@@ -1003,6 +1043,7 @@ html[data-theme="dark"] .octa-companion {
 }
 
 .octa-figure {
+  position: relative;
   line-height: 0;
   display: inline-flex;
   padding: 0;
@@ -1017,37 +1058,50 @@ html[data-theme="dark"] .octa-companion {
 .octa-figure:hover { filter: drop-shadow(0 0 9px var(--octa-glow)); }
 .octa-figure:active { filter: drop-shadow(0 0 12px var(--octa-glow)); }
 .octa-figure:focus-visible { outline: 2px solid var(--octa-accent); outline-offset: 4px; }
-/* one-shot tap reactions (cycled on each click) */
-.octa-figure--spin  { animation: octa-spin 0.85s ease; }
-.octa-figure--jump  { animation: octa-jump 0.7s ease; }
-.octa-figure--dance { animation: octa-dance 0.85s ease; }
-.octa-figure--wave  { animation: octa-wave 0.8s ease; }
-@keyframes octa-spin {
-  0%   { transform: translateY(0) rotate(0deg) scale(1, 1); }
-  15%  { transform: translateY(2px) scale(1.12, 0.86); }
-  45%  { transform: translateY(-7px) rotate(190deg) scale(0.9, 1.1); }
-  100% { transform: translateY(0) rotate(360deg) scale(1, 1); }
-}
-@keyframes octa-jump {
+/* subtle click squish */
+.octa-figure--poke { animation: octa-poke 0.5s ease; }
+@keyframes octa-poke {
   0%   { transform: translateY(0) scale(1, 1); }
-  18%  { transform: translateY(2px) scale(1.14, 0.88); }
-  50%  { transform: translateY(-10px) scale(0.9, 1.12); }
-  76%  { transform: translateY(0) scale(1.1, 0.92); }
+  30%  { transform: translateY(1px) scale(1.08, 0.92); }
+  60%  { transform: translateY(-3px) scale(0.97, 1.04); }
   100% { transform: translateY(0) scale(1, 1); }
 }
-@keyframes octa-dance {
-  0%, 100% { transform: rotate(0deg) translateX(0); }
-  18%  { transform: rotate(-13deg) translateX(-2px); }
-  42%  { transform: rotate(11deg) translateX(2px); }
-  66%  { transform: rotate(-8deg) translateX(-1px); }
-  86%  { transform: rotate(5deg); }
+
+/* ink puff — a soft cyan cloud that blooms behind Octa and fades */
+.octa-ink {
+  position: absolute;
+  left: 50%;
+  top: 56%;
+  width: 70%;
+  height: 70%;
+  transform: translate(-50%, -50%) scale(0.35);
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--octa-glow) 0%, color-mix(in srgb, var(--octa-glow) 35%, transparent) 45%, transparent 70%);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+  animation: octa-ink 0.7s ease-out forwards;
 }
-@keyframes octa-wave {
-  0%, 100% { transform: translateY(0) scale(1, 1); }
-  30%  { transform: translateY(-8px) scale(0.96, 1.06); }
-  60%  { transform: translateY(-1px) scale(1.03, 0.98); }
+@keyframes octa-ink {
+  0%   { opacity: 0.55; transform: translate(-50%, -50%) scale(0.35); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.5); }
 }
-.octa-svg { display: block; overflow: visible; image-rendering: pixelated; animation: octa-breathe 5s ease-in-out infinite; }
+
+/* idle micro-moments (random, idle only) */
+.octa-svg[data-micro="blink"] .o-blink { animation: octa-microblink 0.5s ease; }
+.octa-svg[data-micro="curl"] .o-arm-3 { animation: octa-microcurl 1.1s ease; }
+.octa-svg[data-micro="look"] .o-eyes { transform-box: fill-box; transform-origin: center; animation: octa-microlook 1.3s ease-in-out; }
+@keyframes octa-microblink { 0%, 100% { transform: scaleY(1); } 45% { transform: scaleY(0.12); } }
+@keyframes octa-microcurl {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  45%      { transform: translateY(-1px) scaleY(0.72); }
+}
+@keyframes octa-microlook {
+  0%, 100% { transform: translateX(0); }
+  30%      { transform: translateX(-1.2px); }
+  65%      { transform: translateX(1.2px); }
+}
+.octa-svg { position: relative; z-index: 1; display: block; overflow: visible; image-rendering: pixelated; animation: octa-breathe 5s ease-in-out infinite; }
 .octa-companion--lg .octa-svg { width: 76px; height: 76px; }
 .octa-companion--sm .octa-svg { width: 44px; height: 44px; }
 
@@ -1123,6 +1177,7 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
 
 /* status bubble — connected to Octa, accent per state */
 .octa-bubble {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -1136,6 +1191,28 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
   max-width: min(78vw, 22rem);
   box-shadow: var(--shadow-card), 0 0 0 3px color-mix(in srgb, var(--octa-accent) 8%, transparent);
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  /* entrance pulse — replays on each state change (bubble is keyed by state) */
+  animation: octa-bubble-pop 0.55s ease;
+}
+/* expanding accent ring on state entrance */
+.octa-bubble::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 999px;
+  border: 1px solid var(--octa-accent);
+  opacity: 0;
+  pointer-events: none;
+  animation: octa-bubble-ring 0.6s ease-out;
+}
+@keyframes octa-bubble-pop {
+  0%   { transform: scale(0.95); }
+  55%  { transform: scale(1.035); }
+  100% { transform: scale(1); }
+}
+@keyframes octa-bubble-ring {
+  0%   { opacity: 0.5; transform: scale(0.96); }
+  100% { opacity: 0; transform: scale(1.14); }
 }
 .octa-bubble-dot {
   width: 0.5rem;
@@ -1159,7 +1236,9 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
   .octa-bubble-label { white-space: normal; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .octa-figure, .octa-svg, .octa-svg *, .octa-bubble-dot { animation: none !important; }
+  .octa-figure, .octa-svg, .octa-svg *, .octa-bubble-dot,
+  .octa-ink, .octa-bubble, .octa-bubble::after { animation: none !important; }
+  .octa-ink, .octa-bubble::after { display: none; }
 }
 
 /* ── Cards ── */
