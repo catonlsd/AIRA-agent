@@ -172,52 +172,47 @@ function WorkingMascot({ className }: { className?: string }) {
   return (
     <svg
       className={cn("aira-worker", className)}
-      viewBox="0 0 30 22"
+      viewBox="0 0 40 28"
       role="img"
       aria-label="AIRA-X working"
       shapeRendering="crispEdges"
     >
-      {/* persistent creature (right) */}
+      {/* laptop — rises up, lid swings open, hands type, lid shuts, lowers away */}
+      <g className="w-laptop-grp">
+        {/* arm bridging creature → keyboard */}
+        <rect className="w-body w-arm" x="19" y="14" width="7" height="1" />
+        {/* keyboard deck */}
+        <rect className="w-lid" x="5" y="16" width="15" height="1" />
+        <rect className="w-deck" x="5" y="17" width="15" height="2" />
+        {/* hinged screen (scales open from the deck) */}
+        <g className="w-screen-grp">
+          <rect className="w-laptop" x="6" y="7" width="12" height="10" />
+          <rect className="w-screen" x="7" y="8" width="10" height="8" />
+        </g>
+        {/* typing hands */}
+        <rect className="w-body w-hand-a" x="10" y="15" width="2" height="2" />
+        <rect className="w-body w-hand-b" x="15" y="15" width="2" height="2" />
+      </g>
+
+      {/* creature (persistent) */}
       <g className="w-creature">
         {/* antennae */}
-        <rect className="w-tip" x="21" y="2" width="1" height="1" />
-        <rect className="w-tip" x="26" y="2" width="1" height="1" />
-        <rect className="w-body" x="21" y="3" width="1" height="1" />
-        <rect className="w-body" x="26" y="3" width="1" height="1" />
-        {/* body */}
-        <rect className="w-body" x="20" y="4" width="8" height="10" />
+        <rect className="w-tip" x="27" y="2" width="2" height="2" />
+        <rect className="w-tip" x="34" y="2" width="2" height="2" />
+        <rect className="w-body" x="28" y="4" width="1" height="3" />
+        <rect className="w-body" x="34" y="4" width="1" height="3" />
+        {/* body (rounded) */}
+        <rect className="w-body" x="26" y="7" width="11" height="1" />
+        <rect className="w-body" x="25" y="8" width="13" height="11" />
+        <rect className="w-body" x="26" y="19" width="11" height="1" />
         {/* eyes + pupils */}
-        <rect className="w-eye" x="21" y="7" width="2" height="2" />
-        <rect className="w-eye" x="25" y="7" width="2" height="2" />
-        <rect className="w-pupil" x="22" y="8" width="1" height="1" />
-        <rect className="w-pupil" x="26" y="8" width="1" height="1" />
+        <rect className="w-eye w-blink" x="27" y="11" width="3" height="4" />
+        <rect className="w-eye w-blink" x="32" y="11" width="3" height="4" />
+        <rect className="w-pupil w-blink" x="28" y="12" width="1" height="2" />
+        <rect className="w-pupil w-blink" x="33" y="12" width="1" height="2" />
         {/* feet */}
-        <rect className="w-body w-foot-a" x="21" y="14" width="2" height="2" />
-        <rect className="w-body w-foot-b" x="25" y="14" width="2" height="2" />
-      </g>
-
-      {/* idle frame: arm resting at side */}
-      <g className="w-frame w-idle">
-        <rect className="w-body" x="19" y="8" width="1" height="4" />
-      </g>
-
-      {/* closed laptop: taking out / putting back */}
-      <g className="w-frame w-closed">
-        <rect className="w-lid" x="9" y="11" width="9" height="1" />
-        <rect className="w-laptop" x="9" y="12" width="9" height="2" />
-        <rect className="w-body" x="18" y="10" width="2" height="2" />
-      </g>
-
-      {/* open laptop + typing */}
-      <g className="w-frame w-open">
-        {/* screen */}
-        <rect className="w-laptop" x="8" y="4" width="8" height="9" />
-        <rect className="w-screen" x="9" y="5" width="6" height="6" />
-        {/* keyboard base */}
-        <rect className="w-laptop" x="7" y="13" width="11" height="2" />
-        {/* arm reaching from creature + typing hand */}
-        <rect className="w-body" x="17" y="10" width="3" height="1" />
-        <rect className="w-body w-hand" x="15" y="11" width="2" height="1" />
+        <rect className="w-body w-foot-a" x="27" y="20" width="3" height="2" />
+        <rect className="w-body w-foot-b" x="32" y="20" width="3" height="2" />
       </g>
     </svg>
   );
@@ -1022,12 +1017,12 @@ const AIRA_STYLES = `
   display: inline-flex;
   align-items: center;
   padding: 0 2px;
-  opacity: 0.9;
 }
 .aira-worker {
-  width: 30px;
-  height: 22px;
+  width: 46px;
+  height: 32px;
   display: block;
+  overflow: visible;
   image-rendering: pixelated;
 }
 .aira-worker .w-body { fill: var(--accent); }
@@ -1035,38 +1030,46 @@ const AIRA_STYLES = `
 .aira-worker .w-pupil { fill: #16181d; }
 .aira-worker .w-tip { fill: color-mix(in srgb, var(--accent) 55%, #ffffff); animation: worker-tip 1.4s ease-in-out infinite; }
 .aira-worker .w-laptop { fill: color-mix(in srgb, var(--accent) 30%, #14161b); }
-.aira-worker .w-lid { fill: color-mix(in srgb, var(--accent) 45%, #2a2f38); }
-.aira-worker .w-screen { fill: color-mix(in srgb, var(--accent) 45%, #bfe9ff); animation: worker-screen 0.55s steps(2, end) infinite; }
-/* gentle continuous bob of the whole creature */
-.aira-worker .w-creature { transform-box: fill-box; transform-origin: center bottom; animation: worker-bob 2.4s ease-in-out infinite; }
+.aira-worker .w-deck { fill: color-mix(in srgb, var(--accent) 38%, #14161b); }
+.aira-worker .w-lid { fill: color-mix(in srgb, var(--accent) 50%, #2a2f38); }
+.aira-worker .w-screen { fill: color-mix(in srgb, var(--accent) 45%, #bfe9ff); animation: worker-screen 0.5s steps(2, end) infinite; }
+
+/* creature: gentle bob, blink, antennae pulse, foot wiggle */
+.aira-worker .w-creature { transform-box: fill-box; transform-origin: center bottom; animation: worker-bob 2.6s ease-in-out infinite; }
+.aira-worker .w-blink { transform-box: fill-box; transform-origin: center; animation: worker-blink 3.8s infinite; }
 .aira-worker .w-foot-a, .aira-worker .w-foot-b { transform-box: fill-box; transform-origin: center; animation: worker-step 0.9s steps(2, end) infinite; }
 .aira-worker .w-foot-b { animation-delay: 0.45s; }
-.aira-worker .w-hand { transform-box: fill-box; transform-origin: center; animation: worker-type 0.28s steps(2, end) infinite; }
-/* frame flipbook — opacity windows over a 9s loop */
-.aira-worker .w-idle { opacity: 1; animation: worker-idle 9s linear infinite; }
-.aira-worker .w-closed { opacity: 0; animation: worker-closed 9s linear infinite; }
-.aira-worker .w-open { opacity: 0; animation: worker-open 9s linear infinite; }
-@keyframes worker-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1px); } }
+
+/* laptop: lifts into place, lid swings open, hands type, lid shuts, lowers away */
+.aira-worker .w-laptop-grp { transform-box: fill-box; transform-origin: center bottom; opacity: 0; animation: laptop-cycle 9s ease-in-out infinite; }
+.aira-worker .w-screen-grp { transform-box: fill-box; transform-origin: center bottom; transform: scaleY(0); animation: screen-cycle 9s ease-in-out infinite; }
+.aira-worker .w-hand-a, .aira-worker .w-hand-b { transform-box: fill-box; transform-origin: center; opacity: 0; animation: hand-type 0.24s steps(2, end) infinite, hand-show 9s linear infinite; }
+.aira-worker .w-hand-b { animation-delay: 0.12s, 0s; }
+
+@keyframes worker-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.5px); } }
 @keyframes worker-tip { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
-@keyframes worker-screen { 0% { opacity: 0.65; } 100% { opacity: 1; } }
+@keyframes worker-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.12); } }
 @keyframes worker-step { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1px); } }
-@keyframes worker-type { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1px); } }
-@keyframes worker-idle {
-  0% { opacity: 1; } 17.9% { opacity: 1; } 18% { opacity: 0; }
-  85.9% { opacity: 0; } 86% { opacity: 1; } 100% { opacity: 1; }
+@keyframes worker-screen { 0% { opacity: 0.6; } 100% { opacity: 1; } }
+@keyframes laptop-cycle {
+  0%, 8% { opacity: 0; transform: translateY(9px); }
+  18%, 84% { opacity: 1; transform: translateY(0); }
+  92%, 100% { opacity: 0; transform: translateY(9px); }
 }
-@keyframes worker-closed {
-  0% { opacity: 0; } 17.9% { opacity: 0; } 18% { opacity: 1; } 27.9% { opacity: 1; } 28% { opacity: 0; }
-  77.9% { opacity: 0; } 78% { opacity: 1; } 85.9% { opacity: 1; } 86% { opacity: 0; } 100% { opacity: 0; }
+@keyframes screen-cycle {
+  0%, 20% { transform: scaleY(0); }
+  28%, 80% { transform: scaleY(1); }
+  86%, 100% { transform: scaleY(0); }
 }
-@keyframes worker-open {
-  0% { opacity: 0; } 27.9% { opacity: 0; } 28% { opacity: 1; }
-  77.9% { opacity: 1; } 78% { opacity: 0; } 100% { opacity: 0; }
+@keyframes hand-type { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1px); } }
+@keyframes hand-show {
+  0%, 29% { opacity: 0; }
+  31%, 79% { opacity: 1; }
+  81%, 100% { opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .aira-worker, .aira-worker * { animation: none !important; }
-  .aira-worker .w-closed, .aira-worker .w-open { opacity: 0; }
-  .aira-worker .w-idle { opacity: 1; }
+  .aira-worker .w-laptop-grp { opacity: 0; }
 }
 .aira-thinking-dots {
   display: flex;
