@@ -19,6 +19,7 @@ import {
   GitBranch,
   Library,
   Paperclip,
+  Search,
   Send,
   ShieldAlert,
   ShieldCheck,
@@ -163,78 +164,133 @@ function PixelMascot({ className }: { className?: string }) {
   );
 }
 
-// ─── Working mascot (ambient composer loop) ──────────────────────────────────
-// A second pixel sprite that lives on the composer bar and runs a recurring
-// flipbook: idle → takes out a laptop → opens it & types → closes it → puts it
-// back. Pure SVG + CSS (frame opacity windows + sub-animations). No deps.
-// Honors prefers-reduced-motion (settles on the idle frame).
-function WorkingMascot({ className }: { className?: string }) {
+// ─── Octa — the AIRA-X Supervisor mascot ─────────────────────────────────────
+// A premium pixel cyber-octopus: one intelligent core, many capabilities. Octa
+// is state-aware and mirrors the live supervisor state (idle → thinking →
+// researching/reading/executing → approval → success/error). Pure SVG + CSS;
+// brand colors (#6EC1FF / #AEE4FF / #00D4FF); gentle motion only. Theme-aware
+// (cyan glow in dark, soft blue in light) and honors prefers-reduced-motion.
+
+type OctaState =
+  | "idle"
+  | "thinking"
+  | "researching"
+  | "reading"
+  | "executing"
+  | "approval"
+  | "success"
+  | "error";
+
+const OCTA_STATUS: Record<OctaState, { label: string; tone: string; Icon: typeof Sparkles }> = {
+  idle:        { label: "Ready to help.",          tone: "calm",   Icon: Sparkles },
+  thinking:    { label: "Thinking…",               tone: "active", Icon: Activity },
+  researching: { label: "Searching sources…",      tone: "active", Icon: Search },
+  reading:     { label: "Reading your documents…", tone: "active", Icon: FileText },
+  executing:   { label: "Executing workflow…",     tone: "active", Icon: Workflow },
+  approval:    { label: "Waiting for approval…",    tone: "warn",   Icon: ShieldAlert },
+  success:     { label: "Task completed.",          tone: "good",   Icon: CheckCircle2 },
+  error:       { label: "Something went wrong.",    tone: "bad",    Icon: XCircle },
+};
+
+/** Map a supervisor routing mode to an Octa working-state. */
+function octaStateForMode(mode: string): OctaState {
+  if (mode === "web_research") return "researching";
+  if (mode === "document_qa") return "reading";
+  if (mode === "execution" || mode === "research_then_execution") return "executing";
+  return "thinking";
+}
+
+/** The pixel cyber-octopus itself. State drives CSS via the wrapper attribute. */
+function Octa() {
   return (
     <svg
-      className={cn("aira-worker", className)}
-      viewBox="0 0 40 28"
+      className="octa-svg"
+      viewBox="0 0 48 48"
       role="img"
-      aria-label="AIRA-X working"
+      aria-label="Octa, the AIRA-X assistant"
       shapeRendering="crispEdges"
     >
-      {/* laptop — rises up, lid swings open, paws type, lid shuts, lowers away */}
-      <g className="w-laptop-grp">
-        {/* paw/arm bridging cat → keyboard */}
-        <rect className="w-cat w-arm" x="19" y="14" width="7" height="1" />
-        {/* keyboard deck */}
-        <rect className="w-lid" x="5" y="16" width="15" height="1" />
-        <rect className="w-deck" x="5" y="17" width="15" height="2" />
-        {/* hinged screen (scales open from the deck) */}
-        <g className="w-screen-grp">
-          <rect className="w-laptop" x="6" y="7" width="12" height="10" />
-          <rect className="w-screen" x="7" y="8" width="10" height="8" />
-        </g>
-        {/* typing paws */}
-        <rect className="w-cat w-hand-a" x="10" y="15" width="2" height="2" />
-        <rect className="w-cat w-hand-b" x="15" y="15" width="2" height="2" />
-      </g>
+      {/* antenna */}
+      <rect className="o-head" x="23" y="3" width="2" height="5" />
+      <rect className="o-eye o-pulse" x="22" y="1" width="4" height="3" />
 
-      {/* cat (persistent) */}
-      <g className="w-creature">
-        {/* tail (sways) */}
-        <g className="w-tail">
-          <rect className="w-cat" x="35" y="15" width="2" height="1" />
-          <rect className="w-cat" x="36" y="13" width="1" height="2" />
-          <rect className="w-cat" x="36" y="12" width="2" height="1" />
-          <rect className="w-stripe" x="36" y="11" width="2" height="1" />
-        </g>
-        {/* ears */}
-        <rect className="w-cat" x="27" y="2" width="1" height="1" />
-        <rect className="w-cat" x="26" y="3" width="3" height="2" />
-        <rect className="w-cat" x="33" y="2" width="1" height="1" />
-        <rect className="w-cat" x="32" y="3" width="3" height="2" />
-        <rect className="w-pink" x="27" y="4" width="1" height="1" />
-        <rect className="w-pink" x="33" y="4" width="1" height="1" />
-        {/* head */}
-        <rect className="w-cat" x="25" y="5" width="11" height="8" />
-        {/* forehead stripes */}
-        <rect className="w-stripe" x="28" y="5" width="1" height="2" />
-        <rect className="w-stripe" x="30" y="5" width="1" height="2" />
-        <rect className="w-stripe" x="32" y="5" width="1" height="2" />
-        {/* eyes + slit pupils */}
-        <rect className="w-eye w-blink" x="27" y="8" width="2" height="2" />
-        <rect className="w-eye w-blink" x="32" y="8" width="2" height="2" />
-        <rect className="w-pupil w-blink" x="28" y="8" width="1" height="2" />
-        <rect className="w-pupil w-blink" x="32" y="8" width="1" height="2" />
-        {/* muzzle + nose */}
-        <rect className="w-white" x="28" y="10" width="5" height="3" />
-        <rect className="w-pink" x="30" y="10" width="1" height="1" />
-        {/* whiskers */}
-        <rect className="w-whisker" x="23" y="11" width="2" height="1" />
-        <rect className="w-whisker" x="34" y="11" width="2" height="1" />
-        {/* body + belly */}
-        <rect className="w-cat" x="26" y="13" width="9" height="6" />
-        <rect className="w-white" x="28" y="14" width="4" height="4" />
-        {/* paws */}
-        <rect className="w-cat w-foot-a" x="27" y="18" width="3" height="2" />
-        <rect className="w-cat w-foot-b" x="31" y="18" width="3" height="2" />
+      {/* mantle / dome */}
+      <rect className="o-head" x="18" y="7" width="12" height="2" />
+      <rect className="o-head" x="15" y="9" width="18" height="2" />
+      <rect className="o-head" x="13" y="11" width="22" height="2" />
+      <rect className="o-head" x="12" y="13" width="24" height="11" />
+      <rect className="o-head" x="13" y="24" width="22" height="2" />
+      {/* top-left sheen */}
+      <rect className="o-head-hi" x="16" y="9" width="5" height="2" />
+      <rect className="o-head-hi" x="14" y="11" width="5" height="2" />
+      <rect className="o-head-hi" x="13" y="13" width="3" height="3" />
+      {/* under-shade + circuit accents */}
+      <rect className="o-head-lo" x="12" y="22" width="24" height="2" />
+      <rect className="o-accent" x="30" y="12" width="1" height="1" />
+      <rect className="o-accent" x="32" y="15" width="1" height="1" />
+      <rect className="o-accent" x="29" y="20" width="1" height="1" />
+
+      {/* visor eye-strip */}
+      <rect className="o-visor" x="14" y="15" width="20" height="5" />
+      <rect className="o-eye o-blink" x="18" y="16" width="4" height="3" />
+      <rect className="o-eye o-blink" x="26" y="16" width="4" height="3" />
+      {/* scan line (active states) */}
+      <rect className="o-scan" x="14" y="15" width="1" height="5" />
+
+      {/* tentacles */}
+      <g className="o-arm-grp o-arm-1">
+        <rect className="o-arm-lo" x="13" y="25" width="3" height="4" />
+        <rect className="o-arm-lo" x="12" y="29" width="3" height="2" />
+      </g>
+      <g className="o-arm-grp o-arm-2">
+        <rect className="o-arm" x="17" y="26" width="3" height="5" />
+        <rect className="o-arm" x="16" y="31" width="3" height="2" />
+      </g>
+      <g className="o-arm-grp o-arm-3">
+        <rect className="o-arm" x="22" y="26" width="4" height="6" />
+        <rect className="o-arm" x="22" y="32" width="4" height="2" />
+      </g>
+      <g className="o-arm-grp o-arm-4">
+        <rect className="o-arm" x="28" y="26" width="3" height="5" />
+        <rect className="o-arm" x="29" y="31" width="3" height="2" />
+      </g>
+      <g className="o-arm-grp o-arm-5">
+        <rect className="o-arm-lo" x="32" y="25" width="3" height="4" />
+        <rect className="o-arm-lo" x="33" y="29" width="3" height="2" />
       </g>
     </svg>
+  );
+}
+
+/**
+ * Octa + a status bubble. Sits ABOVE the composer (never inside it). `size`
+ * "lg" stacks vertically (home stage); "sm" is a compact inline row (in-chat).
+ */
+function OctaCompanion({
+  state,
+  size = "lg",
+  className,
+}: {
+  state: OctaState;
+  size?: "lg" | "sm";
+  className?: string;
+}) {
+  const status = OCTA_STATUS[state];
+  const Icon = status.Icon;
+  return (
+    <div
+      className={cn("octa-companion", `octa-companion--${size}`, className)}
+      data-octa-state={state}
+      aria-live="polite"
+    >
+      <div className="octa-figure" aria-hidden="true">
+        <Octa />
+      </div>
+      <div className={cn("octa-bubble", `octa-bubble--${status.tone}`)} role="status">
+        <Icon className="octa-bubble-icon" aria-hidden="true" />
+        <span className="octa-bubble-label">{status.label}</span>
+      </div>
+    </div>
   );
 }
 
@@ -609,12 +665,13 @@ function SuggestionChip({ label, prompt, onSelect }: { label: string; prompt: st
 // ─── Home Stage ───────────────────────────────────────────────────────────────
 
 function AiraHomeStage({
-  question, setQuestion, busy, loading, onSubmit, onComposerFocus,
+  question, setQuestion, busy, loading, octaState, onSubmit, onComposerFocus,
 }: {
   question: string;
   setQuestion: (v: string) => void;
   busy: boolean;
   loading: boolean;
+  octaState: OctaState;
   onSubmit: (e: FormEvent) => Promise<void>;
   onComposerFocus: () => void;
 }) {
@@ -638,8 +695,11 @@ function AiraHomeStage({
           Routing is handled automatically.
         </p>
 
+        {/* Octa — companion above the composer */}
+        <OctaCompanion state={octaState} size="lg" className="mt-8" />
+
         {/* Composer */}
-        <form onSubmit={onSubmit} className="aira-home-composer mt-8 text-left">
+        <form onSubmit={onSubmit} className="aira-home-composer mt-4 text-left">
           <textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
@@ -653,15 +713,10 @@ function AiraHomeStage({
               }
             }}
           />
-          <div className="flex items-center justify-between gap-2 px-1 pt-3 pb-1 border-t border-[var(--border)]">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="aira-worker-wrap" aria-hidden="true">
-                <WorkingMascot />
-              </span>
-              <p className="hidden text-xs text-[var(--text-subtle)] sm:block">
-                <kbd className="aira-kbd">↵</kbd> to send · <kbd className="aira-kbd">⇧↵</kbd> new line
-              </p>
-            </div>
+          <div className="flex items-center justify-between px-1 pt-3 pb-1 border-t border-[var(--border)]">
+            <p className="text-xs text-[var(--text-subtle)]">
+              <kbd className="aira-kbd">↵</kbd> to send · <kbd className="aira-kbd">⇧↵</kbd> new line
+            </p>
             <button
               disabled={busy || !question.trim()}
               className="aira-send-btn"
@@ -1037,70 +1092,128 @@ const AIRA_STYLES = `
   .aira-mascot, .aira-mascot * { animation: none !important; }
 }
 
-/* ── Working mascot (composer bar, recurring laptop loop) ── */
-.aira-worker-wrap {
+/* ── Octa — supervisor mascot (companion above the composer) ── */
+.octa-companion {
+  display: flex;
+  gap: 0.55rem;
+  --octa-eye: #3fa9ff;
+  --octa-glow: rgba(110, 193, 255, 0.55);
+}
+.octa-companion--lg { flex-direction: column; align-items: center; text-align: center; }
+.octa-companion--sm { flex-direction: row; align-items: center; }
+html[data-theme="dark"] .octa-companion {
+  --octa-eye: #00d4ff;
+  --octa-glow: rgba(0, 212, 255, 0.7);
+}
+
+.octa-figure { line-height: 0; animation: octa-float 4.6s ease-in-out infinite; }
+.octa-svg { display: block; overflow: visible; image-rendering: pixelated; animation: octa-breathe 5s ease-in-out infinite; }
+.octa-companion--lg .octa-svg { width: 66px; height: 66px; }
+.octa-companion--sm .octa-svg { width: 36px; height: 36px; }
+
+/* Octa palette (brand) */
+.octa-svg .o-head { fill: #6ec1ff; }
+.octa-svg .o-head-hi { fill: #aee4ff; }
+.octa-svg .o-head-lo { fill: #4fa3ec; }
+.octa-svg .o-arm { fill: #5bb0f0; }
+.octa-svg .o-arm-lo { fill: #3f93d8; }
+.octa-svg .o-visor { fill: #14233b; }
+.octa-svg .o-accent { fill: #aee4ff; }
+.octa-svg .o-eye { fill: var(--octa-eye); filter: drop-shadow(0 0 1.5px var(--octa-glow)); }
+.octa-svg .o-scan { fill: var(--octa-eye); opacity: 0; }
+html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
+
+/* idle motion: gentle blink, antenna pulse, slow tentacle wave */
+.octa-svg .o-blink { transform-box: fill-box; transform-origin: center; animation: octa-blink 5s infinite; }
+.octa-svg .o-pulse { animation: octa-glow 3.4s ease-in-out infinite; }
+.octa-svg .o-arm-grp { transform-box: fill-box; transform-origin: center top; animation: octa-wave 4s ease-in-out infinite; }
+.octa-svg .o-arm-2 { animation-delay: 0.3s; }
+.octa-svg .o-arm-3 { animation-delay: 0.6s; }
+.octa-svg .o-arm-4 { animation-delay: 0.9s; }
+.octa-svg .o-arm-5 { animation-delay: 1.2s; }
+
+@keyframes octa-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+@keyframes octa-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02); } }
+@keyframes octa-blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(0.15); } }
+@keyframes octa-glow { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+@keyframes octa-wave { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+@keyframes octa-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+@keyframes octa-scan { 0% { transform: translateX(0); } 100% { transform: translateX(18px); } }
+
+/* thinking / researching / reading: subtle pulse, faster blink, scan line */
+.octa-companion[data-octa-state="thinking"] .octa-svg,
+.octa-companion[data-octa-state="researching"] .octa-svg,
+.octa-companion[data-octa-state="reading"] .octa-svg { animation: octa-pulse 3s ease-in-out infinite; }
+.octa-companion[data-octa-state="thinking"] .o-blink,
+.octa-companion[data-octa-state="researching"] .o-blink,
+.octa-companion[data-octa-state="reading"] .o-blink { animation-duration: 2.4s; }
+.octa-companion[data-octa-state="thinking"] .o-scan,
+.octa-companion[data-octa-state="researching"] .o-scan,
+.octa-companion[data-octa-state="reading"] .o-scan,
+.octa-companion[data-octa-state="executing"] .o-scan {
+  transform-box: fill-box;
+  opacity: 0.95;
+  animation: octa-scan 1.1s ease-in-out infinite alternate;
+}
+.octa-companion[data-octa-state="researching"] .o-scan { animation-duration: 0.75s; }
+
+/* executing: energetic tentacles + glow */
+.octa-companion[data-octa-state="executing"] .octa-svg { filter: drop-shadow(0 0 6px var(--octa-glow)); }
+.octa-companion[data-octa-state="executing"] .octa-figure { animation-duration: 2.6s; }
+.octa-companion[data-octa-state="executing"] .o-arm-grp { animation-duration: 1.5s; }
+
+/* approval: paused, warm eyes */
+.octa-companion[data-octa-state="approval"] { --octa-eye: #f4b14a; --octa-glow: rgba(244, 177, 74, 0.5); }
+.octa-companion[data-octa-state="approval"] .octa-figure,
+.octa-companion[data-octa-state="approval"] .octa-svg,
+.octa-companion[data-octa-state="approval"] .o-arm-grp { animation: none; }
+.octa-companion[data-octa-state="approval"] .o-blink { animation: octa-blink 2.8s infinite; }
+
+/* success: green glow */
+.octa-companion[data-octa-state="success"] { --octa-eye: #3fe0a4; --octa-glow: rgba(63, 224, 164, 0.6); }
+.octa-companion[data-octa-state="success"] .octa-svg { filter: drop-shadow(0 0 7px var(--octa-glow)); }
+
+/* error: dim amber, not alarming */
+.octa-companion[data-octa-state="error"] { --octa-eye: #f0a24a; --octa-glow: rgba(240, 162, 74, 0.45); }
+.octa-companion[data-octa-state="error"] .o-arm-grp { animation: none; }
+
+/* status bubble */
+.octa-bubble {
   display: inline-flex;
   align-items: center;
-  padding: 0 2px;
+  gap: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  padding: 0.3rem 0.72rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  white-space: nowrap;
+  box-shadow: var(--shadow-card);
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
-.aira-worker {
-  width: 50px;
-  height: 35px;
-  display: block;
-  overflow: visible;
-  image-rendering: pixelated;
+.octa-bubble-icon { width: 0.85rem; height: 0.85rem; flex-shrink: 0; }
+.octa-bubble--active {
+  color: var(--text-strong);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--accent-soft);
 }
-/* cat palette (fixed so it reads as a cat in both themes) */
-.aira-worker .w-cat { fill: #f0a35a; }
-.aira-worker .w-stripe { fill: #d97f3a; }
-.aira-worker .w-white { fill: #fdf6ef; }
-.aira-worker .w-pink { fill: #f3a6b1; }
-.aira-worker .w-whisker { fill: #e7d5c1; }
-.aira-worker .w-eye { fill: #9cd17a; }
-.aira-worker .w-pupil { fill: #23272e; }
-/* laptop tracks the UI accent */
-.aira-worker .w-laptop { fill: color-mix(in srgb, var(--accent) 30%, #14161b); }
-.aira-worker .w-deck { fill: color-mix(in srgb, var(--accent) 38%, #14161b); }
-.aira-worker .w-lid { fill: color-mix(in srgb, var(--accent) 50%, #2a2f38); }
-.aira-worker .w-screen { fill: color-mix(in srgb, var(--accent) 45%, #bfe9ff); animation: worker-screen 0.5s steps(2, end) infinite; }
+.octa-bubble--active .octa-bubble-icon { animation: octa-glow 1.4s ease-in-out infinite; }
+.octa-bubble--warn {
+  color: var(--warning, #d9822b);
+  border-color: color-mix(in srgb, var(--warning, #d9822b) 45%, transparent);
+}
+.octa-bubble--good {
+  color: var(--success, #15a06a);
+  border-color: color-mix(in srgb, var(--success, #15a06a) 45%, transparent);
+}
 
-/* cat: gentle bob, blink, tail sway, paw wiggle */
-.aira-worker .w-creature { transform-box: fill-box; transform-origin: center bottom; animation: worker-bob 2.6s ease-in-out infinite; }
-.aira-worker .w-blink { transform-box: fill-box; transform-origin: center; animation: worker-blink 3.8s infinite; }
-.aira-worker .w-tail { transform-box: fill-box; transform-origin: left bottom; animation: tail-sway 2.4s ease-in-out infinite; }
-.aira-worker .w-foot-a, .aira-worker .w-foot-b { transform-box: fill-box; transform-origin: center; animation: worker-step 0.9s steps(2, end) infinite; }
-.aira-worker .w-foot-b { animation-delay: 0.45s; }
-
-/* laptop: lifts into place, lid swings open, hands type, lid shuts, lowers away */
-.aira-worker .w-laptop-grp { transform-box: fill-box; transform-origin: center bottom; opacity: 0; animation: laptop-cycle 9s ease-in-out infinite; }
-.aira-worker .w-screen-grp { transform-box: fill-box; transform-origin: center bottom; transform: scaleY(0); animation: screen-cycle 9s ease-in-out infinite; }
-.aira-worker .w-hand-a, .aira-worker .w-hand-b { transform-box: fill-box; transform-origin: center; opacity: 0; animation: hand-type 0.24s steps(2, end) infinite, hand-show 9s linear infinite; }
-.aira-worker .w-hand-b { animation-delay: 0.12s, 0s; }
-
-@keyframes worker-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.5px); } }
-@keyframes tail-sway { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(9deg); } }
-@keyframes worker-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.12); } }
-@keyframes worker-step { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1px); } }
-@keyframes worker-screen { 0% { opacity: 0.6; } 100% { opacity: 1; } }
-@keyframes laptop-cycle {
-  0%, 8% { opacity: 0; transform: translateY(9px); }
-  18%, 84% { opacity: 1; transform: translateY(0); }
-  92%, 100% { opacity: 0; transform: translateY(9px); }
-}
-@keyframes screen-cycle {
-  0%, 20% { transform: scaleY(0); }
-  28%, 80% { transform: scaleY(1); }
-  86%, 100% { transform: scaleY(0); }
-}
-@keyframes hand-type { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1px); } }
-@keyframes hand-show {
-  0%, 29% { opacity: 0; }
-  31%, 79% { opacity: 1; }
-  81%, 100% { opacity: 0; }
+@media (max-width: 640px) {
+  .octa-companion--sm .octa-bubble-label { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .aira-worker, .aira-worker * { animation: none !important; }
-  .aira-worker .w-laptop-grp { opacity: 0; }
+  .octa-figure, .octa-svg, .octa-svg *, .octa-bubble-icon { animation: none !important; }
 }
 .aira-thinking-dots {
   display: flex;
@@ -1651,6 +1764,19 @@ export default function ChatPage() {
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const threadBottomRef = useRef<HTMLDivElement>(null);
 
+  // Octa companion state — mirrors the live supervisor state.
+  const [octaState, setOctaState] = useState<OctaState>("idle");
+  const octaResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Auto-settle the terminal states (success/error) back to idle.
+  useEffect(() => {
+    if (octaState !== "success" && octaState !== "error") return;
+    if (octaResetRef.current) clearTimeout(octaResetRef.current);
+    octaResetRef.current = setTimeout(() => setOctaState("idle"), octaState === "success" ? 2600 : 3600);
+    return () => {
+      if (octaResetRef.current) clearTimeout(octaResetRef.current);
+    };
+  }, [octaState]);
+
   const busy = loading || airaXLoading || approvalLoading || rejectionLoading || uploadLoading;
   const threadIsEmpty = useMemo(() => turns.length === 0 && !airaXResponse, [turns.length, airaXResponse]);
 
@@ -1713,6 +1839,7 @@ export default function ChatPage() {
     setQuestion("");
     setLoading(true);
     setAiraXLoading(false);
+    setOctaState("thinking");
 
     // Build recent conversation history (last few turns) so follow-ups have context.
     const history = turns
@@ -1736,6 +1863,12 @@ export default function ChatPage() {
       await streamAiraX(
         trimmed,
         {
+          onTrace: (data) => {
+            // The "classified" trace tells us which capability is running.
+            if (data?.event === "classified" && typeof data.mode === "string") {
+              setOctaState(octaStateForMode(data.mode));
+            }
+          },
           onToken: (text) =>
             setTurns((prev) =>
               prev.map((t) =>
@@ -1778,6 +1911,11 @@ export default function ChatPage() {
         const run = assistantWorkflowToAiraXRun(final as unknown as Parameters<typeof assistantWorkflowToAiraXRun>[0]);
         if (run) {
           setAiraXResponse(run);
+          if (run.requires_approval) {
+            setOctaState("approval");
+          } else {
+            setOctaState(run.status === "completed" || run.success ? "success" : "error");
+          }
           removeTurnById(turnId);
           return;
         }
@@ -1812,15 +1950,18 @@ export default function ChatPage() {
           };
         })
       );
+      setOctaState("success");
     } catch (streamError) {
       // Graceful fallback to the non-streaming endpoint.
       try {
         const response = await runAssistant(trimmed, true);
         applyNonStreamingResponse(turnId, trimmed, response);
+        setOctaState("success");
       } catch (fallbackError) {
         const message =
           fallbackError instanceof Error ? fallbackError.message : "AIRA-X assistant failed.";
         patchTurnById(turnId, { streaming: false, streamingText: undefined, error: message });
+        setOctaState("error");
       }
     } finally {
       setLoading(false);
@@ -1831,11 +1972,18 @@ export default function ChatPage() {
   async function handleApproveAiraX() {
     if (!airaXResponse?.run_id) return;
     setApprovalLoading(true);
+    setOctaState("executing");
     try {
       const result = await approveAiraX(airaXResponse.run_id);
       setAiraXResponse(result);
+      if (result.requires_approval) {
+        setOctaState("approval");
+      } else {
+        setOctaState(result.status === "completed" || result.success ? "success" : "error");
+      }
     } catch (error) {
       console.error("AIRA-X Approval Error:", error);
+      setOctaState("error");
     } finally {
       setApprovalLoading(false);
     }
@@ -1847,8 +1995,10 @@ export default function ChatPage() {
     try {
       const result = await rejectAiraX(airaXResponse.run_id);
       setAiraXResponse(result);
+      setOctaState("idle");
     } catch (error) {
       console.error("AIRA-X Rejection Error:", error);
+      setOctaState("error");
     } finally {
       setRejectionLoading(false);
     }
@@ -1931,6 +2081,7 @@ export default function ChatPage() {
                 setQuestion={setQuestion}
                 busy={busy}
                 loading={loading}
+                octaState={octaState}
                 onSubmit={handleSubmit}
                 onComposerFocus={() => setComposerFocused(true)}
               />
@@ -1967,11 +2118,13 @@ export default function ChatPage() {
 
           {/* Sticky composer */}
           {!threadIsEmpty && (
-            <form
-              onSubmit={handleSubmit}
-              className="aira-home-composer sticky bottom-4"
-            >
-              <DocChips docs={uploadedDocs} onRemove={removeUploadedDocChip} />
+            <div className="sticky bottom-4 flex flex-col gap-2">
+              <OctaCompanion state={octaState} size="sm" className="px-1" />
+              <form
+                onSubmit={handleSubmit}
+                className="aira-home-composer"
+              >
+                <DocChips docs={uploadedDocs} onRemove={removeUploadedDocChip} />
               <textarea
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
@@ -1993,9 +2146,6 @@ export default function ChatPage() {
                     uploading={uploadLoading}
                     disabled={busy && !uploadLoading}
                   />
-                  <span className="aira-worker-wrap" aria-hidden="true">
-                    <WorkingMascot />
-                  </span>
                   <span className="hidden items-center gap-1.5 text-xs text-[var(--text-subtle)] sm:inline-flex">
                     <ShieldAlert className="h-3.5 w-3.5 text-[var(--warning)]" />
                     Approval-gated when needed
@@ -2009,7 +2159,8 @@ export default function ChatPage() {
                   {loading || airaXLoading ? "Working…" : "Send"}
                 </button>
               </div>
-            </form>
+              </form>
+            </div>
           )}
         </div>
 
