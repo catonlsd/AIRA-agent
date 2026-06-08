@@ -149,15 +149,8 @@ const OCTA_STATUS: Record<OctaState, { label: string; Icon: typeof Sparkles }> =
   error:       { label: "Something went wrong.",    Icon: XCircle },
 };
 
-// Starter prompts Octa offers when tapped while idle. Each tap loads the next
-// one into the composer (if empty) and focuses it.
-const OCTA_STARTERS = [
-  "Summarize my uploaded document.",
-  "Research the latest updates about vector databases.",
-  "Create a step-by-step plan for my project.",
-  "Compare the uploaded documents.",
-  "List project files.",
-];
+// Playful one-shot reactions Octa cycles through when tapped (just for delight).
+const OCTA_REACTIONS = ["spin", "jump", "dance", "wave"] as const;
 
 /** Map a supervisor routing mode to an Octa working-state. */
 function octaStateForMode(mode: string): OctaState {
@@ -240,53 +233,34 @@ function OctaStatus({
   message,
   size = "lg",
   className,
-  composerEmpty = true,
-  onInsertPrompt,
 }: {
   state: OctaState;
   message?: string;
   size?: "lg" | "sm";
   className?: string;
-  composerEmpty?: boolean;
-  onInsertPrompt?: (text: string) => void;
 }) {
   const status = OCTA_STATUS[state];
   const Icon = status.Icon;
-  const [tip, setTip] = useState<string | null>(null);
-  const [reacting, setReacting] = useState(false);
-  const starterIndexRef = useRef(0);
-  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [reaction, setReaction] = useState<(typeof OCTA_REACTIONS)[number] | null>(null);
+  const reactIndexRef = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => () => timersRef.current.forEach(clearTimeout), []);
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+  }, []);
 
-  // Tap Octa → wiggle, then load the next starter prompt into the composer (when
-  // empty) and focus it. If the composer already has text, nudge instead.
+  // Tap Octa → it performs a playful one-shot move, cycling through the set.
   const handlePoke = () => {
-    // Live workflow status has priority — never act while Octa is working.
-    if (state !== "idle") return;
-
-    timersRef.current.forEach(clearTimeout);
-    timersRef.current = [];
-    setReacting(true);
-    timersRef.current.push(setTimeout(() => setReacting(false), 650));
-
-    let note: string;
-    if (!composerEmpty) {
-      note = "Finish or clear your current message first.";
-    } else if (onInsertPrompt) {
-      const prompt = OCTA_STARTERS[starterIndexRef.current % OCTA_STARTERS.length];
-      starterIndexRef.current += 1;
-      onInsertPrompt(prompt);
-      note = "Loaded a starter — tweak it and send.";
-    } else {
-      note = status.label;
-    }
-    setTip(note);
-    timersRef.current.push(setTimeout(() => setTip(null), 4200));
+    const kind = OCTA_REACTIONS[reactIndexRef.current % OCTA_REACTIONS.length];
+    reactIndexRef.current += 1;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    // Clear then re-apply on the next frame so the animation restarts every tap.
+    setReaction(null);
+    requestAnimationFrame(() => {
+      setReaction(kind);
+      timerRef.current = setTimeout(() => setReaction(null), 950);
+    });
   };
-
-  // While the assistant is actively working, the live status wins over a tip.
-  const label = state === "idle" ? (tip ?? message ?? status.label) : (message ?? status.label);
 
   return (
     <div
@@ -296,16 +270,16 @@ function OctaStatus({
     >
       <button
         type="button"
-        className={cn("octa-figure", reacting && "octa-figure--react")}
+        className={cn("octa-figure", reaction && `octa-figure--${reaction}`)}
         onClick={handlePoke}
-        aria-label="Octa — tap to load a starter prompt"
+        aria-label="Octa — tap me"
       >
         <Octa />
       </button>
       <div className="octa-bubble" role="status">
         <span className="octa-bubble-dot" aria-hidden="true" />
         <Icon className="octa-bubble-icon" aria-hidden="true" />
-        <span className="octa-bubble-label">{label}</span>
+        <span className="octa-bubble-label">{message ?? status.label}</span>
       </div>
     </div>
   );
@@ -660,16 +634,7 @@ function AiraHomeStage({
         </p>
 
         {/* Octa — companion above the composer */}
-        <OctaStatus
-          state={octaState}
-          size="lg"
-          className="mt-8"
-          composerEmpty={!question.trim()}
-          onInsertPrompt={(text) => {
-            setQuestion(text);
-            onComposerFocus();
-          }}
-        />
+        <OctaStatus state={octaState} size="lg" className="mt-8" />
 
         {/* Composer */}
         <form onSubmit={onSubmit} className="aira-home-composer mt-4 text-left">
@@ -1052,13 +1017,35 @@ html[data-theme="dark"] .octa-companion {
 .octa-figure:hover { filter: drop-shadow(0 0 9px var(--octa-glow)); }
 .octa-figure:active { filter: drop-shadow(0 0 12px var(--octa-glow)); }
 .octa-figure:focus-visible { outline: 2px solid var(--octa-accent); outline-offset: 4px; }
-.octa-figure--react { animation: octa-react 0.65s ease; }
-@keyframes octa-react {
-  0%   { transform: translateY(0) rotate(0deg); }
-  20%  { transform: translateY(-4px) rotate(-9deg); }
-  45%  { transform: translateY(0) rotate(8deg); }
-  70%  { transform: translateY(-2px) rotate(-4deg); }
-  100% { transform: translateY(0) rotate(0deg); }
+/* one-shot tap reactions (cycled on each click) */
+.octa-figure--spin  { animation: octa-spin 0.85s ease; }
+.octa-figure--jump  { animation: octa-jump 0.7s ease; }
+.octa-figure--dance { animation: octa-dance 0.85s ease; }
+.octa-figure--wave  { animation: octa-wave 0.8s ease; }
+@keyframes octa-spin {
+  0%   { transform: translateY(0) rotate(0deg) scale(1, 1); }
+  15%  { transform: translateY(2px) scale(1.12, 0.86); }
+  45%  { transform: translateY(-7px) rotate(190deg) scale(0.9, 1.1); }
+  100% { transform: translateY(0) rotate(360deg) scale(1, 1); }
+}
+@keyframes octa-jump {
+  0%   { transform: translateY(0) scale(1, 1); }
+  18%  { transform: translateY(2px) scale(1.14, 0.88); }
+  50%  { transform: translateY(-10px) scale(0.9, 1.12); }
+  76%  { transform: translateY(0) scale(1.1, 0.92); }
+  100% { transform: translateY(0) scale(1, 1); }
+}
+@keyframes octa-dance {
+  0%, 100% { transform: rotate(0deg) translateX(0); }
+  18%  { transform: rotate(-13deg) translateX(-2px); }
+  42%  { transform: rotate(11deg) translateX(2px); }
+  66%  { transform: rotate(-8deg) translateX(-1px); }
+  86%  { transform: rotate(5deg); }
+}
+@keyframes octa-wave {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  30%  { transform: translateY(-8px) scale(0.96, 1.06); }
+  60%  { transform: translateY(-1px) scale(1.03, 0.98); }
 }
 .octa-svg { display: block; overflow: visible; image-rendering: pixelated; animation: octa-breathe 5s ease-in-out infinite; }
 .octa-companion--lg .octa-svg { width: 76px; height: 76px; }
@@ -2048,16 +2035,7 @@ export default function ChatPage() {
           {/* Sticky composer */}
           {!threadIsEmpty && (
             <div className="sticky bottom-4 flex flex-col gap-2">
-              <OctaStatus
-                state={octaState}
-                size="sm"
-                className="px-1"
-                composerEmpty={!question.trim()}
-                onInsertPrompt={(text) => {
-                  setQuestion(text);
-                  setComposerFocused(true);
-                }}
-              />
+              <OctaStatus state={octaState} size="sm" className="px-1" />
               <form
                 onSubmit={handleSubmit}
                 className="aira-home-composer"
