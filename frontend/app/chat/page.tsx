@@ -1067,24 +1067,30 @@ html[data-theme="dark"] .octa-companion {
   100% { transform: translateY(0) scale(1, 1); }
 }
 
-/* ink puff — a soft cyan cloud that blooms behind Octa and fades */
+/* ink puff — a soft cyan cloud that blooms around Octa and fades */
 .octa-ink {
   position: absolute;
   left: 50%;
-  top: 56%;
-  width: 70%;
-  height: 70%;
-  transform: translate(-50%, -50%) scale(0.35);
+  top: 58%;
+  width: 140%;
+  height: 140%;
+  transform: translate(-50%, -50%) scale(0.4);
   border-radius: 50%;
-  background: radial-gradient(circle, var(--octa-glow) 0%, color-mix(in srgb, var(--octa-glow) 35%, transparent) 45%, transparent 70%);
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--octa-accent) 85%, transparent) 0%,
+    color-mix(in srgb, var(--octa-accent) 45%, transparent) 40%,
+    transparent 70%
+  );
+  filter: blur(1px);
   opacity: 0;
   pointer-events: none;
   z-index: 0;
-  animation: octa-ink 0.7s ease-out forwards;
+  animation: octa-ink 0.75s ease-out forwards;
 }
 @keyframes octa-ink {
-  0%   { opacity: 0.55; transform: translate(-50%, -50%) scale(0.35); }
-  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.5); }
+  0%   { opacity: 0.75; transform: translate(-50%, -50%) scale(0.4); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.9); }
 }
 
 /* idle micro-moments (random, idle only) */
