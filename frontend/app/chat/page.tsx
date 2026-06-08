@@ -177,10 +177,10 @@ function WorkingMascot({ className }: { className?: string }) {
       aria-label="AIRA-X working"
       shapeRendering="crispEdges"
     >
-      {/* laptop — rises up, lid swings open, hands type, lid shuts, lowers away */}
+      {/* laptop — rises up, lid swings open, paws type, lid shuts, lowers away */}
       <g className="w-laptop-grp">
-        {/* arm bridging creature → keyboard */}
-        <rect className="w-body w-arm" x="19" y="14" width="7" height="1" />
+        {/* paw/arm bridging cat → keyboard */}
+        <rect className="w-cat w-arm" x="19" y="14" width="7" height="1" />
         {/* keyboard deck */}
         <rect className="w-lid" x="5" y="16" width="15" height="1" />
         <rect className="w-deck" x="5" y="17" width="15" height="2" />
@@ -189,30 +189,50 @@ function WorkingMascot({ className }: { className?: string }) {
           <rect className="w-laptop" x="6" y="7" width="12" height="10" />
           <rect className="w-screen" x="7" y="8" width="10" height="8" />
         </g>
-        {/* typing hands */}
-        <rect className="w-body w-hand-a" x="10" y="15" width="2" height="2" />
-        <rect className="w-body w-hand-b" x="15" y="15" width="2" height="2" />
+        {/* typing paws */}
+        <rect className="w-cat w-hand-a" x="10" y="15" width="2" height="2" />
+        <rect className="w-cat w-hand-b" x="15" y="15" width="2" height="2" />
       </g>
 
-      {/* creature (persistent) */}
+      {/* cat (persistent) */}
       <g className="w-creature">
-        {/* antennae */}
-        <rect className="w-tip" x="27" y="2" width="2" height="2" />
-        <rect className="w-tip" x="34" y="2" width="2" height="2" />
-        <rect className="w-body" x="28" y="4" width="1" height="3" />
-        <rect className="w-body" x="34" y="4" width="1" height="3" />
-        {/* body (rounded) */}
-        <rect className="w-body" x="26" y="7" width="11" height="1" />
-        <rect className="w-body" x="25" y="8" width="13" height="11" />
-        <rect className="w-body" x="26" y="19" width="11" height="1" />
-        {/* eyes + pupils */}
-        <rect className="w-eye w-blink" x="27" y="11" width="3" height="4" />
-        <rect className="w-eye w-blink" x="32" y="11" width="3" height="4" />
-        <rect className="w-pupil w-blink" x="28" y="12" width="1" height="2" />
-        <rect className="w-pupil w-blink" x="33" y="12" width="1" height="2" />
-        {/* feet */}
-        <rect className="w-body w-foot-a" x="27" y="20" width="3" height="2" />
-        <rect className="w-body w-foot-b" x="32" y="20" width="3" height="2" />
+        {/* tail (sways) */}
+        <g className="w-tail">
+          <rect className="w-cat" x="35" y="15" width="2" height="1" />
+          <rect className="w-cat" x="36" y="13" width="1" height="2" />
+          <rect className="w-cat" x="36" y="12" width="2" height="1" />
+          <rect className="w-stripe" x="36" y="11" width="2" height="1" />
+        </g>
+        {/* ears */}
+        <rect className="w-cat" x="27" y="2" width="1" height="1" />
+        <rect className="w-cat" x="26" y="3" width="3" height="2" />
+        <rect className="w-cat" x="33" y="2" width="1" height="1" />
+        <rect className="w-cat" x="32" y="3" width="3" height="2" />
+        <rect className="w-pink" x="27" y="4" width="1" height="1" />
+        <rect className="w-pink" x="33" y="4" width="1" height="1" />
+        {/* head */}
+        <rect className="w-cat" x="25" y="5" width="11" height="8" />
+        {/* forehead stripes */}
+        <rect className="w-stripe" x="28" y="5" width="1" height="2" />
+        <rect className="w-stripe" x="30" y="5" width="1" height="2" />
+        <rect className="w-stripe" x="32" y="5" width="1" height="2" />
+        {/* eyes + slit pupils */}
+        <rect className="w-eye w-blink" x="27" y="8" width="2" height="2" />
+        <rect className="w-eye w-blink" x="32" y="8" width="2" height="2" />
+        <rect className="w-pupil w-blink" x="28" y="8" width="1" height="2" />
+        <rect className="w-pupil w-blink" x="32" y="8" width="1" height="2" />
+        {/* muzzle + nose */}
+        <rect className="w-white" x="28" y="10" width="5" height="3" />
+        <rect className="w-pink" x="30" y="10" width="1" height="1" />
+        {/* whiskers */}
+        <rect className="w-whisker" x="23" y="11" width="2" height="1" />
+        <rect className="w-whisker" x="34" y="11" width="2" height="1" />
+        {/* body + belly */}
+        <rect className="w-cat" x="26" y="13" width="9" height="6" />
+        <rect className="w-white" x="28" y="14" width="4" height="4" />
+        {/* paws */}
+        <rect className="w-cat w-foot-a" x="27" y="18" width="3" height="2" />
+        <rect className="w-cat w-foot-b" x="31" y="18" width="3" height="2" />
       </g>
     </svg>
   );
@@ -633,10 +653,15 @@ function AiraHomeStage({
               }
             }}
           />
-          <div className="flex items-center justify-between px-1 pt-3 pb-1 border-t border-[var(--border)]">
-            <p className="text-xs text-[var(--text-subtle)]">
-              <kbd className="aira-kbd">↵</kbd> to send · <kbd className="aira-kbd">⇧↵</kbd> new line
-            </p>
+          <div className="flex items-center justify-between gap-2 px-1 pt-3 pb-1 border-t border-[var(--border)]">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="aira-worker-wrap" aria-hidden="true">
+                <WorkingMascot />
+              </span>
+              <p className="hidden text-xs text-[var(--text-subtle)] sm:block">
+                <kbd className="aira-kbd">↵</kbd> to send · <kbd className="aira-kbd">⇧↵</kbd> new line
+              </p>
+            </div>
             <button
               disabled={busy || !question.trim()}
               className="aira-send-btn"
@@ -1019,24 +1044,30 @@ const AIRA_STYLES = `
   padding: 0 2px;
 }
 .aira-worker {
-  width: 46px;
-  height: 32px;
+  width: 50px;
+  height: 35px;
   display: block;
   overflow: visible;
   image-rendering: pixelated;
 }
-.aira-worker .w-body { fill: var(--accent); }
-.aira-worker .w-eye { fill: #ffffff; }
-.aira-worker .w-pupil { fill: #16181d; }
-.aira-worker .w-tip { fill: color-mix(in srgb, var(--accent) 55%, #ffffff); animation: worker-tip 1.4s ease-in-out infinite; }
+/* cat palette (fixed so it reads as a cat in both themes) */
+.aira-worker .w-cat { fill: #f0a35a; }
+.aira-worker .w-stripe { fill: #d97f3a; }
+.aira-worker .w-white { fill: #fdf6ef; }
+.aira-worker .w-pink { fill: #f3a6b1; }
+.aira-worker .w-whisker { fill: #e7d5c1; }
+.aira-worker .w-eye { fill: #9cd17a; }
+.aira-worker .w-pupil { fill: #23272e; }
+/* laptop tracks the UI accent */
 .aira-worker .w-laptop { fill: color-mix(in srgb, var(--accent) 30%, #14161b); }
 .aira-worker .w-deck { fill: color-mix(in srgb, var(--accent) 38%, #14161b); }
 .aira-worker .w-lid { fill: color-mix(in srgb, var(--accent) 50%, #2a2f38); }
 .aira-worker .w-screen { fill: color-mix(in srgb, var(--accent) 45%, #bfe9ff); animation: worker-screen 0.5s steps(2, end) infinite; }
 
-/* creature: gentle bob, blink, antennae pulse, foot wiggle */
+/* cat: gentle bob, blink, tail sway, paw wiggle */
 .aira-worker .w-creature { transform-box: fill-box; transform-origin: center bottom; animation: worker-bob 2.6s ease-in-out infinite; }
 .aira-worker .w-blink { transform-box: fill-box; transform-origin: center; animation: worker-blink 3.8s infinite; }
+.aira-worker .w-tail { transform-box: fill-box; transform-origin: left bottom; animation: tail-sway 2.4s ease-in-out infinite; }
 .aira-worker .w-foot-a, .aira-worker .w-foot-b { transform-box: fill-box; transform-origin: center; animation: worker-step 0.9s steps(2, end) infinite; }
 .aira-worker .w-foot-b { animation-delay: 0.45s; }
 
@@ -1047,7 +1078,7 @@ const AIRA_STYLES = `
 .aira-worker .w-hand-b { animation-delay: 0.12s, 0s; }
 
 @keyframes worker-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.5px); } }
-@keyframes worker-tip { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+@keyframes tail-sway { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(9deg); } }
 @keyframes worker-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.12); } }
 @keyframes worker-step { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1px); } }
 @keyframes worker-screen { 0% { opacity: 0.6; } 100% { opacity: 1; } }
