@@ -9,6 +9,7 @@ replies instead of encyclopedic, headed, essay-style output.
 
 from __future__ import annotations
 
+import re
 from typing import Sequence
 
 from app.core.llm import LLMClient
@@ -52,6 +53,14 @@ AIRA_X_PERSONA_SYSTEM_PROMPT = (
     "- If the user asks you to reformat, restructure, or shorten your previous "
     "answer, rewrite that same content in the requested format. Keep every item — "
     "do not silently drop entries or start an unrelated answer.\n\n"
+    "Memory — use it silently:\n"
+    "- Use the recent conversation only to understand the current question. Do NOT "
+    "mention, restate, or refer back to earlier topics unless the user explicitly "
+    "asks about them or that context is genuinely needed to answer correctly.\n"
+    "- If the user switches to a new subject, just answer the new question "
+    "directly. Never narrate the switch — avoid phrases like 'since we were "
+    "discussing ...', 'going back to ...', 'as we talked about', or 'as mentioned "
+    "earlier'. Memory should improve the answer, never become part of it.\n\n"
     "When asked who you are or what you can do, introduce yourself as AIRA-X and "
     "briefly mention you can chat, research topics, analyze uploaded documents, run "
     "safe tasks, and create artifacts like slides, documents, and spreadsheets.\n"
@@ -79,9 +88,82 @@ def offline_general_chat_message(goal: str) -> str:
     )
 
 
+# ── Turn classification (continuation / follow-up / explicit recall / new topic)
+# Used to decide whether prior conversation should inform the reply. A genuinely
+# new topic gets NO prior context, so the model cannot leak or narrate it.
+
+# The user is explicitly asking about the prior conversation.
+_EXPLICIT_RECALL_PATTERNS = (
+    r"\bwhat did (you|we|i)\b",
+    r"\b(you|we) (just )?(said|mentioned|told|asked|wrote|discussed|talked)\b",
+    r"\b(earlier|previously|before|a moment ago|just now)\b",
+    r"\b(last|previous) (answer|message|reply|response|question|point|thing)\b",
+    r"\b(repeat|rephrase that|say that again|recap|remind me)\b",
+    r"\bwhat (have|were) we (been )?(discuss|talk)",
+    r"\bour (conversation|chat|discussion)\b",
+    r"\bwhat emoji\b",
+)
+
+# The user wants the previous answer continued / reformatted / expanded.
+_CONTINUATION_PATTERNS = (
+    r"^\s*(continue|go on|keep going|proceed|next|more|and)\s*[.?!]*\s*$",
+    r"\b(tell me more|go deeper|elaborate|expand on (that|this|it)|more detail)\b",
+    r"\b(in|as) (bullet|numbered)\b",
+    r"\bas a (list|table|summary)\b",
+    r"\b(make|keep) (it|that|this) (short|brief|long|simpl|detail|concise)",
+    r"\b(reformat|restructure|rewrite|reword|rephrase|shorten|summari[sz]e) "
+    r"(it|that|this|the (previous|last|above))\b",
+    r"\b(explain|break down) (that|this|it)\b",
+)
+
+# Anaphoric / connector-led follow-ups that lean on the previous turn.
+_FOLLOWUP_LEAD = re.compile(r"^\s*(and|but|so|also|then|or|what about|how about)\b")
+_ANAPHORA = re.compile(r"\b(it|its|that|this|they|them|those|these|their|he|she)\b")
+_SHORT_QUESTION_LEAD = re.compile(r"^\s*(why|how|really|seriously|when|where|who)\b")
+
+
+def classify_memory_use(goal: str, history: Sequence[dict] | None = None) -> str:
+    """Classify the current turn relative to the conversation so far.
+
+    Returns one of: ``"explicit_recall"``, ``"continuation"``, ``"follow_up"``,
+    or ``"new_topic"``. With no prior history every turn is a new topic.
+    """
+    text = (goal or "").strip().lower()
+    if not text or not history:
+        return "new_topic"
+
+    for pattern in _EXPLICIT_RECALL_PATTERNS:
+        if re.search(pattern, text):
+            return "explicit_recall"
+    for pattern in _CONTINUATION_PATTERNS:
+        if re.search(pattern, text):
+            return "continuation"
+
+    if _FOLLOWUP_LEAD.match(text):
+        return "follow_up"
+
+    words = re.findall(r"\w+", text)
+    # A short question that leans on an unstated subject (anaphora) is a follow-up;
+    # a self-contained question with its own subject is a new topic.
+    if len(words) <= 6 and _ANAPHORA.search(text):
+        return "follow_up"
+    if len(words) <= 3 and _SHORT_QUESTION_LEAD.match(text):
+        return "follow_up"
+
+    return "new_topic"
+
+
 def _build_history_prompt(goal: str, history: Sequence[dict] | None) -> str:
-    """Prepend recent conversation turns so replies are context-aware."""
+    """Prepend recent conversation turns so replies are context-aware.
+
+    A genuinely new topic is answered fresh with no prior context attached, so the
+    model cannot reference or narrate earlier topics. Continuations, follow-ups,
+    and explicit recall keep the transcript (used silently, per the persona).
+    """
     if not history:
+        return goal
+
+    if classify_memory_use(goal, history) == "new_topic":
         return goal
 
     lines: list[str] = []
@@ -99,10 +181,12 @@ def _build_history_prompt(goal: str, history: Sequence[dict] | None) -> str:
 
     transcript = "\n".join(lines)
     return (
-        "Here is our recent conversation for context:\n"
+        "Here is our recent conversation, for context only. Use it silently to "
+        "understand the question — do not mention or refer back to earlier topics "
+        "unless the user explicitly asks.\n"
         f"{transcript}\n\n"
         f"User: {goal}\n\n"
-        "Reply as AIRA-X, taking the conversation above into account."
+        "Reply as AIRA-X."
     )
 
 

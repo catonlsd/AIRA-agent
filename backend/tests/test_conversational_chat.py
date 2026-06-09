@@ -4,7 +4,11 @@ import pytest
 
 import app.conversation as conversation
 import app.routes.aira_x as aira_x_routes
-from app.conversation import AIRA_X_PERSONA_SYSTEM_PROMPT
+from app.conversation import (
+    AIRA_X_PERSONA_SYSTEM_PROMPT,
+    _build_history_prompt,
+    classify_memory_use,
+)
 from app.routes.aira_x import AiraXRunRequest, run_aira_x
 
 
@@ -87,3 +91,58 @@ def test_persona_prompt_forbids_robotic_formatting():
     assert "match the user's tone and length" in prompt
     assert "never answer a one-word greeting with an essay" in prompt
     assert "any language" in prompt
+
+
+# ── Conversational memory behaviour ──────────────────────────────────────────
+
+# A prior conversation about an unrelated topic (Zoom).
+_ZOOM_HISTORY = [
+    {"role": "user", "content": "How do I start a Zoom meeting?"},
+    {"role": "assistant", "content": "Open Zoom, sign in, and click New Meeting to start."},
+]
+
+
+def test_persona_forbids_narrating_memory():
+    prompt = AIRA_X_PERSONA_SYSTEM_PROMPT.lower()
+    # Must explicitly discourage narrating prior topics on a new question.
+    assert "since we were discussing" in prompt
+    assert "use it silently" in prompt or "do not mention" in prompt
+
+
+def test_unrelated_topic_switch_is_new_topic():
+    # The reported bug: a fresh, self-contained question after an unrelated topic.
+    assert classify_memory_use("What are the types of soil?", _ZOOM_HISTORY) == "new_topic"
+
+    # New-topic turns must NOT carry the prior context into the prompt, so the
+    # model cannot leak or narrate "since we were discussing Zoom...".
+    prompt = _build_history_prompt("What are the types of soil?", _ZOOM_HISTORY)
+    assert "Zoom" not in prompt
+    assert prompt.strip().endswith("What are the types of soil?")
+
+
+def test_continuation_request_keeps_memory():
+    assert classify_memory_use("tell me more", _ZOOM_HISTORY) == "continuation"
+    assert classify_memory_use("continue", _ZOOM_HISTORY) == "continuation"
+
+    prompt = _build_history_prompt("put that in bullet points", _ZOOM_HISTORY)
+    assert "Zoom" in prompt
+
+
+def test_explicit_memory_recall_keeps_memory():
+    assert classify_memory_use("what did you just say?", _ZOOM_HISTORY) == "explicit_recall"
+
+    prompt = _build_history_prompt("what did we talk about earlier?", _ZOOM_HISTORY)
+    assert "Zoom" in prompt
+
+
+def test_followup_question_keeps_memory():
+    assert classify_memory_use("what about the mobile app?", _ZOOM_HISTORY) == "follow_up"
+    assert classify_memory_use("why is that?", _ZOOM_HISTORY) == "follow_up"
+
+    prompt = _build_history_prompt("what about the mobile app?", _ZOOM_HISTORY)
+    assert "Zoom" in prompt
+
+
+def test_no_history_is_always_new_topic():
+    assert classify_memory_use("tell me more", []) == "new_topic"
+    assert classify_memory_use("what did you just say?", None) == "new_topic"
