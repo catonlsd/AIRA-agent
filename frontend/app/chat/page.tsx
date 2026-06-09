@@ -128,34 +128,58 @@ type AiraXResponse = {
 // brand colors (#6EC1FF / #AEE4FF / #00D4FF); gentle motion only. Theme-aware
 // (cyan glow in dark, soft blue in light) and honors prefers-reduced-motion.
 
+// Octa is the visible state of the AssistantSupervisor — not a second assistant.
+// Every value here is a SUPERVISOR STATE, never an identity or capability claim.
 type OctaState =
   | "idle"
+  | "routing"
   | "thinking"
   | "researching"
   | "reading"
+  | "memory"
   | "executing"
   | "approval"
   | "success"
   | "error";
 
 const OCTA_STATUS: Record<OctaState, { label: string; Icon: typeof Sparkles }> = {
-  idle:        { label: "Ready to help.",          Icon: Sparkles },
-  thinking:    { label: "Thinking…",               Icon: Activity },
-  researching: { label: "Searching sources…",      Icon: Search },
-  reading:     { label: "Reading your documents…", Icon: FileText },
-  executing:   { label: "Executing workflow…",     Icon: Workflow },
-  approval:    { label: "Waiting for approval…",    Icon: ShieldAlert },
-  success:     { label: "Task completed.",          Icon: CheckCircle2 },
-  error:       { label: "Something went wrong.",    Icon: XCircle },
+  idle:        { label: "Ready",                       Icon: Sparkles },
+  routing:     { label: "Routing your request…",       Icon: GitBranch },
+  thinking:    { label: "Thinking…",                   Icon: Activity },
+  researching: { label: "Researching sources…",        Icon: Search },
+  reading:     { label: "Reading uploaded documents…", Icon: FileText },
+  memory:      { label: "Retrieving memory…",          Icon: Database },
+  executing:   { label: "Executing workflow…",         Icon: Workflow },
+  approval:    { label: "Waiting for approval…",        Icon: ShieldAlert },
+  success:     { label: "Task completed.",              Icon: CheckCircle2 },
+  error:       { label: "Something went wrong.",        Icon: XCircle },
 };
 
 // Tiny idle gestures Octa plays at random while it's just sitting there.
 const OCTA_MICROS = ["blink", "curl", "look"] as const;
 
+// Starter prompts Octa loads into the composer on tap (these are AIRA-X actions,
+// phrased as user intents — never "I can…" capability claims by Octa).
+const OCTA_STARTERS = [
+  "Summarize my uploaded document.",
+  "Research the latest developments in vector databases.",
+  "Compare the uploaded documents.",
+  "Create a step-by-step plan.",
+];
+
+// Contextual UI affordances (never identity/capability statements).
+const OCTA_TIPS = [
+  "Tip: Shift + Enter adds a new line.",
+  "Tip: Upload a document to enable document Q&A.",
+  "Tip: Attach a PDF, DOCX, or TXT to analyze it.",
+  "Tip: Press Esc to exit focus mode.",
+];
+
 /** Map a supervisor routing mode to an Octa working-state. */
 function octaStateForMode(mode: string): OctaState {
   if (mode === "web_research") return "researching";
   if (mode === "document_qa") return "reading";
+  if (mode === "self_memory") return "memory";
   if (mode === "execution" || mode === "research_then_execution") return "executing";
   return "thinking";
 }
@@ -226,35 +250,50 @@ function Octa({ micro }: { micro?: string | null }) {
 }
 
 /**
- * OctaStatus — the single assistant status system. Octa + a connected status
- * bubble. Sits ABOVE the composer (never inside it). `size` "lg" stacks
- * vertically (home stage); "sm" is a compact inline row (in-chat). `message`
- * overrides the default per-state label. All assistant states flow through here.
+ * OctaStatus — the single visual status system for the AssistantSupervisor.
+ * Octa + a connected status bubble; it SIGNALS supervisor state, it is not a
+ * second assistant. Sits ABOVE the composer (never inside it). `size` "lg"
+ * stacks vertically (home stage); "sm" is a compact inline row (in-chat).
+ * `message` shows a transient, event-driven supervisor message. Optional
+ * `onInsertPrompt` + `composerEmpty` enable the idle starter-prompt tap.
  */
 function OctaStatus({
   state,
   message,
   size = "lg",
   className,
+  composerEmpty = true,
+  onInsertPrompt,
 }: {
   state: OctaState;
   message?: string;
   size?: "lg" | "sm";
   className?: string;
+  composerEmpty?: boolean;
+  onInsertPrompt?: (text: string) => void;
 }) {
   const status = OCTA_STATUS[state];
   const Icon = status.Icon;
   const [puffKey, setPuffKey] = useState(0);
   const [reacting, setReacting] = useState(false);
   const [micro, setMicro] = useState<(typeof OCTA_MICROS)[number] | null>(null);
+  const [tip, setTip] = useState<string | null>(null);
+  const starterRef = useRef(0);
+  const tipRef = useRef(0);
   const reactTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => {
     if (reactTimerRef.current) clearTimeout(reactTimerRef.current);
+    if (tipTimerRef.current) clearTimeout(tipTimerRef.current);
   }, []);
 
-  // Tap Octa → a subtle squish + a small cyan ink puff behind it.
+  // Tap Octa (idle only) → squish + ink puff, then load a starter prompt into
+  // the composer (when empty) and surface a contextual tip. Never overwrites
+  // existing text; live supervisor work always takes priority over taps.
   const handlePoke = () => {
+    if (state !== "idle") return;
+
     setPuffKey((k) => k + 1);
     if (reactTimerRef.current) clearTimeout(reactTimerRef.current);
     setReacting(false);
@@ -262,6 +301,22 @@ function OctaStatus({
       setReacting(true);
       reactTimerRef.current = setTimeout(() => setReacting(false), 520);
     });
+
+    let note: string;
+    if (!composerEmpty) {
+      note = "Finish or clear your current message first.";
+    } else if (onInsertPrompt) {
+      onInsertPrompt(OCTA_STARTERS[starterRef.current % OCTA_STARTERS.length]);
+      starterRef.current += 1;
+      note = OCTA_TIPS[tipRef.current % OCTA_TIPS.length];
+      tipRef.current += 1;
+    } else {
+      note = OCTA_TIPS[tipRef.current % OCTA_TIPS.length];
+      tipRef.current += 1;
+    }
+    setTip(note);
+    if (tipTimerRef.current) clearTimeout(tipTimerRef.current);
+    tipTimerRef.current = setTimeout(() => setTip(null), 4200);
   };
 
   // Idle micro-moments: only while idle, every 12–18s, play one tiny gesture.
@@ -310,16 +365,19 @@ function OctaStatus({
         type="button"
         className={cn("octa-figure", reacting && "octa-figure--poke")}
         onClick={handlePoke}
-        aria-label="Octa — tap me"
+        aria-label="Octa — AIRA-X supervisor status. Tap for a starter prompt."
       >
         {puffKey > 0 && <span key={puffKey} className="octa-ink" aria-hidden="true" />}
         <Octa micro={micro} />
       </button>
-      {/* keyed by state so the entrance pulse replays on every state change */}
-      <div key={state} className="octa-bubble" role="status">
+      {/* keyed by state + event message so the entrance pulse replays on each
+          supervisor transition (but not on transient click tips). */}
+      <div key={`${state}|${message ?? ""}`} className="octa-bubble" role="status">
         <span className="octa-bubble-dot" aria-hidden="true" />
         <Icon className="octa-bubble-icon" aria-hidden="true" />
-        <span className="octa-bubble-label">{message ?? status.label}</span>
+        <span className="octa-bubble-label">
+          {state === "idle" ? (tip ?? message ?? status.label) : (message ?? status.label)}
+        </span>
       </div>
     </div>
   );
@@ -643,13 +701,14 @@ function SuggestionChip({ label, prompt, onSelect }: { label: string; prompt: st
 // ─── Home Stage ───────────────────────────────────────────────────────────────
 
 function AiraHomeStage({
-  question, setQuestion, busy, loading, octaState, onSubmit, onComposerFocus,
+  question, setQuestion, busy, loading, octaState, octaMessage, onSubmit, onComposerFocus,
 }: {
   question: string;
   setQuestion: (v: string) => void;
   busy: boolean;
   loading: boolean;
   octaState: OctaState;
+  octaMessage?: string | null;
   onSubmit: (e: FormEvent) => Promise<void>;
   onComposerFocus: () => void;
 }) {
@@ -674,7 +733,17 @@ function AiraHomeStage({
         </p>
 
         {/* Octa — companion above the composer */}
-        <OctaStatus state={octaState} size="lg" className="mt-8" />
+        <OctaStatus
+          state={octaState}
+          message={octaMessage ?? undefined}
+          size="lg"
+          className="mt-8"
+          composerEmpty={!question.trim()}
+          onInsertPrompt={(text) => {
+            setQuestion(text);
+            onComposerFocus();
+          }}
+        />
 
         {/* Composer */}
         <form onSubmit={onSubmit} className="aira-home-composer mt-4 text-left">
@@ -1108,8 +1177,8 @@ html[data-theme="dark"] .octa-companion {
   65%      { transform: translateX(1.2px); }
 }
 .octa-svg { position: relative; z-index: 1; display: block; overflow: visible; image-rendering: pixelated; animation: octa-breathe 5s ease-in-out infinite; }
-.octa-companion--lg .octa-svg { width: 76px; height: 76px; }
-.octa-companion--sm .octa-svg { width: 44px; height: 44px; }
+.octa-companion--lg .octa-svg { width: 72px; height: 72px; }
+.octa-companion--sm .octa-svg { width: 40px; height: 40px; }
 
 /* Octa palette (brand) */
 .octa-svg .o-head { fill: #6ec1ff; }
@@ -1141,25 +1210,33 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
 @keyframes octa-scan { 0% { transform: translateX(0); } 100% { transform: translateX(18px); } }
 
 /* per-state accent (subtle — drives bubble + a light eye/glow tint) */
+.octa-companion[data-octa-state="routing"]     { --octa-accent: #7cc4ff; }
 .octa-companion[data-octa-state="thinking"]    { --octa-accent: #6ec1ff; }
 .octa-companion[data-octa-state="researching"] { --octa-accent: #00d4ff; --octa-eye: #00d4ff; --octa-glow: rgba(0, 212, 255, 0.6); }
 .octa-companion[data-octa-state="reading"]     { --octa-accent: #a78bfa; --octa-eye: #a78bfa; --octa-glow: rgba(167, 139, 250, 0.55); }
+.octa-companion[data-octa-state="memory"]      { --octa-accent: #3fd0c8; --octa-eye: #3fd0c8; --octa-glow: rgba(63, 208, 200, 0.55); }
 .octa-companion[data-octa-state="executing"]   { --octa-accent: #f5963f; --octa-eye: #f5963f; --octa-glow: rgba(245, 150, 63, 0.55); }
 .octa-companion[data-octa-state="approval"]    { --octa-accent: #f4c04a; --octa-eye: #f4c04a; --octa-glow: rgba(244, 192, 74, 0.5); }
 .octa-companion[data-octa-state="success"]     { --octa-accent: #3fe0a4; --octa-eye: #3fe0a4; --octa-glow: rgba(63, 224, 164, 0.6); }
 .octa-companion[data-octa-state="error"]       { --octa-accent: #f26d6d; --octa-eye: #f26d6d; --octa-glow: rgba(242, 109, 109, 0.5); }
 
 /* working states: subtle pulse + faster blink + scan line */
+.octa-companion[data-octa-state="routing"] .octa-svg,
 .octa-companion[data-octa-state="thinking"] .octa-svg,
 .octa-companion[data-octa-state="researching"] .octa-svg,
 .octa-companion[data-octa-state="reading"] .octa-svg,
+.octa-companion[data-octa-state="memory"] .octa-svg,
 .octa-companion[data-octa-state="executing"] .octa-svg { animation: octa-pulse 3s ease-in-out infinite; }
+.octa-companion[data-octa-state="routing"] .o-blink,
 .octa-companion[data-octa-state="thinking"] .o-blink,
 .octa-companion[data-octa-state="researching"] .o-blink,
-.octa-companion[data-octa-state="reading"] .o-blink { animation-duration: 2.4s; }
+.octa-companion[data-octa-state="reading"] .o-blink,
+.octa-companion[data-octa-state="memory"] .o-blink { animation-duration: 2.4s; }
+.octa-companion[data-octa-state="routing"] .o-scan,
 .octa-companion[data-octa-state="thinking"] .o-scan,
 .octa-companion[data-octa-state="researching"] .o-scan,
 .octa-companion[data-octa-state="reading"] .o-scan,
+.octa-companion[data-octa-state="memory"] .o-scan,
 .octa-companion[data-octa-state="executing"] .o-scan {
   transform-box: fill-box;
   opacity: 0.95;
@@ -1771,7 +1848,10 @@ export default function ChatPage() {
 
   // Octa companion state — mirrors the live supervisor state.
   const [octaState, setOctaState] = useState<OctaState>("idle");
+  // Transient, event-driven supervisor message (e.g. "Document indexed…").
+  const [octaFlash, setOctaFlash] = useState<string | null>(null);
   const octaResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const octaFlashRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Auto-settle the terminal states (success/error) back to idle.
   useEffect(() => {
     if (octaState !== "success" && octaState !== "error") return;
@@ -1781,6 +1861,13 @@ export default function ChatPage() {
       if (octaResetRef.current) clearTimeout(octaResetRef.current);
     };
   }, [octaState]);
+
+  // Flash a brief Supervisor event message through Octa, then clear it.
+  const flashOcta = (msg: string) => {
+    setOctaFlash(msg);
+    if (octaFlashRef.current) clearTimeout(octaFlashRef.current);
+    octaFlashRef.current = setTimeout(() => setOctaFlash(null), 3600);
+  };
 
   const busy = loading || airaXLoading || approvalLoading || rejectionLoading || uploadLoading;
   const threadIsEmpty = useMemo(() => turns.length === 0 && !airaXResponse, [turns.length, airaXResponse]);
@@ -1844,7 +1931,8 @@ export default function ChatPage() {
     setQuestion("");
     setLoading(true);
     setAiraXLoading(false);
-    setOctaState("thinking");
+    setOctaFlash(null);
+    setOctaState("routing");
 
     // Build recent conversation history (last few turns) so follow-ups have context.
     const history = turns
@@ -1956,6 +2044,10 @@ export default function ChatPage() {
         })
       );
       setOctaState("success");
+      // Context-aware: surface a source count for research turns.
+      if (mode === "web_research" && citations.length > 0) {
+        flashOcta(`Found ${citations.length} relevant source${citations.length === 1 ? "" : "s"}.`);
+      }
     } catch (streamError) {
       // Graceful fallback to the non-streaming endpoint.
       try {
@@ -2019,6 +2111,7 @@ export default function ChatPage() {
     try {
       const result = await uploadDocuments(files);
       const count = result.documents?.length || files.length;
+      const firstEver = sessionDocNames.length === 0;
       setUploadedDocs((prev) => [...prev, ...names]);
       // Persisted for the whole conversation so document Q&A keeps working even
       // after the visual chip is dismissed.
@@ -2026,6 +2119,8 @@ export default function ChatPage() {
       setUploadMessage(
         `${count} document${count === 1 ? "" : "s"} uploaded and indexed. You can now ask about ${count === 1 ? "it" : "them"}.`
       );
+      // Context-aware Octa signal from a real supervisor event.
+      flashOcta(firstEver ? "Document Q&A is now available." : "Document indexed successfully.");
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : "Document upload failed.");
     } finally {
@@ -2087,6 +2182,7 @@ export default function ChatPage() {
                 busy={busy}
                 loading={loading}
                 octaState={octaState}
+                octaMessage={octaFlash}
                 onSubmit={handleSubmit}
                 onComposerFocus={() => setComposerFocused(true)}
               />
@@ -2120,7 +2216,17 @@ export default function ChatPage() {
           {/* Sticky composer */}
           {!threadIsEmpty && (
             <div className="sticky bottom-4 flex flex-col gap-2">
-              <OctaStatus state={octaState} size="sm" className="px-1" />
+              <OctaStatus
+                state={octaState}
+                message={octaFlash ?? undefined}
+                size="sm"
+                className="px-1"
+                composerEmpty={!question.trim()}
+                onInsertPrompt={(text) => {
+                  setQuestion(text);
+                  setComposerFocused(true);
+                }}
+              />
               <form
                 onSubmit={handleSubmit}
                 className="aira-home-composer"
