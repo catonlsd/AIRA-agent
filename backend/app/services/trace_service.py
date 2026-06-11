@@ -63,8 +63,14 @@ class TraceService:
         trace_events: Optional[list[dict]] = None,
         tokens: Optional[int] = None,
         source_type: Optional[str] = None,
+        conversation_type: Optional[str] = None,
+        selected_route: Optional[str] = None,
+        candidate_routes: Optional[dict[str, float]] = None,
+        confidence: Optional[float] = None,
+        clarification_needed: Optional[bool] = None,
+        capabilities_used: Optional[list[str]] = None,
     ) -> dict[str, Any]:
-        return {
+        record = {
             "created_at": _utc_now_iso(),
             "session_id": session_id,
             "run_id": run_id,
@@ -76,6 +82,21 @@ class TraceService:
             "final_status": final_status,
             "trace_events": trace_events or [],
         }
+        # Supervisor-reasoning fields (Phase 2A). Additive and optional so older
+        # records and readers keep working unchanged.
+        if conversation_type is not None:
+            record["conversation_type"] = conversation_type
+        if selected_route is not None:
+            record["selected_route"] = selected_route
+        if candidate_routes is not None:
+            record["candidate_routes"] = candidate_routes
+        if confidence is not None:
+            record["confidence"] = confidence
+        if clarification_needed is not None:
+            record["clarification_needed"] = clarification_needed
+        if capabilities_used is not None:
+            record["capabilities_used"] = capabilities_used
+        return record
 
     def persist(self, record: dict[str, Any]) -> bool:
         """Append one trace record. Best-effort: never raises."""

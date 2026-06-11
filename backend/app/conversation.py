@@ -147,7 +147,9 @@ def classify_memory_use(goal: str, history: Sequence[dict] | None = None) -> str
     # a self-contained question with its own subject is a new topic.
     if len(words) <= 6 and _ANAPHORA.search(text):
         return "follow_up"
-    if len(words) <= 3 and _SHORT_QUESTION_LEAD.match(text):
+    # Only a bare interjection-question ("why?", "really?") leans on the prior
+    # turn; a short question with its own subject ("Who invented Linux?") is new.
+    if len(words) <= 2 and _SHORT_QUESTION_LEAD.match(text):
         return "follow_up"
 
     return "new_topic"
