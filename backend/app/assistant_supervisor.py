@@ -23,6 +23,16 @@ from uuid import uuid4
 
 from app.capabilities.execution.execution_service import ExecutionService
 from app.capabilities.research.research_service import ResearchService
+from app.clarification import (
+    ClarificationSelection,
+    PendingClarification,
+    acknowledgment_for,
+    build_continuation_goal,
+    clarification_store,
+    option_groups_for,
+    parse_selection,
+    render_clarification_message,
+)
 from app.context_builder import TurnContext
 from app.conversation import (
     AIRA_X_PERSONA_SYSTEM_PROMPT,
@@ -126,6 +136,27 @@ class AssistantSupervisor:
                 yield {"type": "final", "data": response.model_dump()}
                 return
 
+            # Answering a pending clarification resumes the original task.
+            pending = clarification_store.get(ctx.session_id)
+            if pending is not None:
+                selection = parse_selection(ctx.message, pending)
+                if selection is not None:
+                    result = await self._resume_after_clarification(
+                        ctx.message, pending, selection, ctx
+                    )
+                    for source in result.get("sources", []):
+                        yield {"type": "source", "data": source}
+                    answer = result.get("message") or result.get("final_answer") or ""
+                    if answer:
+                        yield {"type": "token", "data": {"text": answer}}
+                    from app.routes.aira_x import _normalize_run_response
+
+                    normalized = _normalize_run_response(result)
+                    response = compose(normalized, session_id=ctx.session_id, trace=ctx.trace)
+                    self._persist_trace(ctx, response)
+                    yield {"type": "final", "data": response.model_dump()}
+                    return
+
             reasoning = reason_about_turn(
                 ctx.message,
                 history=ctx.history,
@@ -198,14 +229,15 @@ class AssistantSupervisor:
             return self._clarification_result(classification)
 
         # Clarification intelligence: the request is routed to an action but is
-        # genuinely under-specified — ask targeted questions instead of guessing.
+        # genuinely under-specified — present guided options (or targeted
+        # questions) and remember the request so the next reply continues it.
         if reasoning is not None and reasoning.needs_clarification:
             ctx.trace.event(
                 "clarification_requested",
                 questions=reasoning.clarification_questions,
             )
-            return self._targeted_clarification_result(
-                classification, reasoning.clarification_questions
+            return self._present_clarification(
+                goal, classification, reasoning.clarification_questions, ctx
             )
 
         # Capability composition: the question spans documents AND the web.
@@ -334,18 +366,95 @@ class AssistantSupervisor:
             f"From recent research:\n{research_answer}"
         )
 
-    def _targeted_clarification_result(
-        self, classification, questions: list[str]
+    def _present_clarification(
+        self,
+        goal: str,
+        classification,
+        questions: list[str],
+        ctx: TurnContext,
     ) -> dict[str, Any]:
-        bullets = "\n".join(f"- {question}" for question in questions)
-        message = (
-            "Happy to help — a couple of quick details first so I get it right:\n"
-            f"{bullets}"
+        """Show guided options (or targeted questions) and remember the request."""
+        pending = PendingClarification(
+            original_request=goal,
+            questions=questions,
+            option_groups=option_groups_for(goal),
         )
+        clarification_store.set(ctx.session_id, pending)
+        message = render_clarification_message(pending)
+        ctx.trace.event(
+            "clarification_options_presented",
+            original_request=goal,
+            option_count=len(pending.option_map),
+        )
+
         result = self._clarification_result(classification)
         result["message"] = message
         result["final_answer"] = message
         result["meta"]["clarification_questions"] = questions
+        result["meta"]["clarification_options"] = pending.option_map
+        result["meta"]["awaiting_clarification"] = True
+        return result
+
+    async def _resume_after_clarification(
+        self,
+        reply: str,
+        pending: PendingClarification,
+        selection: ClarificationSelection,
+        ctx: TurnContext,
+    ) -> dict[str, Any]:
+        """Continue the original task using the user's selected choices."""
+        clarification_store.clear(ctx.session_id)
+        ctx.trace.event("clarification_received", reply=reply)
+        ctx.trace.event(
+            "clarification_resolved",
+            original_request=pending.original_request,
+            selected_options=selection.selected_options,
+            custom_notes=selection.custom_notes,
+        )
+
+        goal = build_continuation_goal(pending, selection)
+        reasoning = reason_about_turn(
+            goal,
+            history=ctx.history,
+            has_uploaded_files=ctx.has_uploaded_files,
+            uploaded_file_names=ctx.uploaded_file_names,
+        )
+        # Never ask again: the user already answered.
+        reasoning.needs_clarification = False
+        reasoning.clarification_questions = []
+        classification = reasoning.classification
+
+        ctx.trace.event(
+            "classified",
+            mode=classification.mode,
+            confidence=classification.confidence,
+        )
+        ctx.trace.event("reasoned", **reasoning.trace_fields())
+        ctx.trace.event(
+            "workflow_resumed_after_clarification",
+            original_request=pending.original_request,
+            selected_options=selection.selected_options,
+        )
+
+        if classification.mode in CONVERSATIONAL_MODES:
+            message = generate_conversational_answer(goal, ctx.history)
+            result = self._chat_result(classification, message)
+        else:
+            result = await self._dispatch_non_chat(goal, classification, ctx, reasoning=reasoning)
+
+        ack = acknowledgment_for(selection)
+        if ack:
+            body = result.get("message") or result.get("final_answer") or ""
+            combined = f"{ack}\n\n{body}".strip()
+            result["message"] = combined
+            result["final_answer"] = combined
+
+        result.setdefault("meta", {})
+        result["meta"]["resumed_from_clarification"] = True
+        result["meta"]["original_request"] = pending.original_request
+        result["meta"]["selected_options"] = selection.selected_options
+        if selection.custom_notes:
+            result["meta"]["custom_notes"] = selection.custom_notes
         return result
 
     def _persist_trace(self, ctx: TurnContext, response: AssistantResponse) -> None:
@@ -378,6 +487,14 @@ class AssistantSupervisor:
             pass
 
     async def _dispatch(self, goal: str, ctx: TurnContext) -> dict[str, Any]:
+        # A pending clarification for this session: if this message answers it,
+        # resume the original task with the selected choices.
+        pending = clarification_store.get(ctx.session_id)
+        if pending is not None:
+            selection = parse_selection(goal, pending)
+            if selection is not None:
+                return await self._resume_after_clarification(goal, pending, selection, ctx)
+
         reasoning = reason_about_turn(
             goal,
             history=ctx.history,

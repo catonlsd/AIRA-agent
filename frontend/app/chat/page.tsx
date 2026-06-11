@@ -17,6 +17,7 @@ import {
   FileText,
   FileUp,
   GitBranch,
+  HelpCircle,
   Library,
   Paperclip,
   Search,
@@ -140,6 +141,7 @@ type OctaState =
   | "memory"
   | "executing"
   | "approval"
+  | "clarify"
   | "success"
   | "error";
 
@@ -152,6 +154,7 @@ const OCTA_STATUS: Record<OctaState, { label: string; Icon: typeof Sparkles }> =
   memory:      { label: "Retrieving memory…",          Icon: Database },
   executing:   { label: "Executing workflow…",         Icon: Workflow },
   approval:    { label: "Waiting for approval…",        Icon: ShieldAlert },
+  clarify:     { label: "Waiting for details…",          Icon: HelpCircle },
   success:     { label: "Task completed.",              Icon: CheckCircle2 },
   error:       { label: "Something went wrong.",        Icon: XCircle },
 };
@@ -1281,6 +1284,7 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
 .octa-companion[data-octa-state="memory"]      { --octa-accent: #3fd0c8; --octa-eye: #3fd0c8; --octa-glow: rgba(63, 208, 200, 0.55); }
 .octa-companion[data-octa-state="executing"]   { --octa-accent: #f5963f; --octa-eye: #f5963f; --octa-glow: rgba(245, 150, 63, 0.55); }
 .octa-companion[data-octa-state="approval"]    { --octa-accent: #f4c04a; --octa-eye: #f4c04a; --octa-glow: rgba(244, 192, 74, 0.5); }
+.octa-companion[data-octa-state="clarify"]     { --octa-accent: #6ec1ff; --octa-eye: #8fd0ff; --octa-glow: rgba(110, 193, 255, 0.5); }
 .octa-companion[data-octa-state="success"]     { --octa-accent: #3fe0a4; --octa-eye: #3fe0a4; --octa-glow: rgba(63, 224, 164, 0.6); }
 .octa-companion[data-octa-state="error"]       { --octa-accent: #f26d6d; --octa-eye: #f26d6d; --octa-glow: rgba(242, 109, 109, 0.5); }
 
@@ -1312,9 +1316,11 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
 .octa-companion[data-octa-state="executing"] .octa-svg { filter: drop-shadow(0 0 6px var(--octa-glow)); }
 .octa-companion[data-octa-state="executing"] .o-arm-grp { animation-duration: 1.5s; }
 
-/* approval: calm, paused tentacles */
-.octa-companion[data-octa-state="approval"] .o-arm-grp { animation: none; }
-.octa-companion[data-octa-state="approval"] .o-blink { animation: octa-blink 2.8s infinite; }
+/* approval / clarify: calm, paused tentacles — waiting on the user */
+.octa-companion[data-octa-state="approval"] .o-arm-grp,
+.octa-companion[data-octa-state="clarify"] .o-arm-grp { animation: none; }
+.octa-companion[data-octa-state="approval"] .o-blink,
+.octa-companion[data-octa-state="clarify"] .o-blink { animation: octa-blink 2.8s infinite; }
 
 /* success: soft glow */
 .octa-companion[data-octa-state="success"] .octa-svg { filter: drop-shadow(0 0 7px var(--octa-glow)); }
@@ -2268,7 +2274,9 @@ export default function ChatPage() {
           };
         })
       );
-      setOctaState("success");
+      // A clarification reply means the supervisor is waiting on the user —
+      // that is not a completed task.
+      setOctaState(mode === "clarification" ? "clarify" : "success");
       setLastRunId(runId);
       if (turnStartRef.current) setLastLatencyMs(Date.now() - turnStartRef.current);
       // Context-aware: surface a source count for research turns.

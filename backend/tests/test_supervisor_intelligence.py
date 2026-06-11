@@ -5,7 +5,15 @@ capability composition, route confidence, and trace enrichment."""
 import pytest
 
 from app.assistant_supervisor import AssistantSupervisor
+from app.clarification import clarification_store
 from app.context_builder import build_turn_context
+
+
+@pytest.fixture(autouse=True)
+def _clean_clarification_store():
+    clarification_store.clear(None)
+    yield
+    clarification_store.clear(None)
 from app.services.trace_service import TraceService
 from app.supervisor_reasoning import (
     CAP_DOCUMENT_QA,
@@ -92,12 +100,14 @@ def test_clear_requests_do_not_ask_clarification(clear_request):
 
 @pytest.mark.asyncio
 async def test_clarification_path_returns_targeted_questions():
+    # A vague non-RAG build keeps the plain targeted-question format.
     supervisor = AssistantSupervisor()
-    ctx = build_turn_context("Build me a RAG system", session_id=None, run_id="t1")
-    reasoning = reason_about_turn("Build me a RAG system")
+    ctx = build_turn_context("Build me a website", session_id=None, run_id="t1")
+    reasoning = reason_about_turn("Build me a website")
+    assert reasoning.needs_clarification is True
 
     result = await supervisor._dispatch_non_chat(
-        "Build me a RAG system", reasoning.classification, ctx, reasoning=reasoning
+        "Build me a website", reasoning.classification, ctx, reasoning=reasoning
     )
 
     assert result["mode"] == "clarification"
