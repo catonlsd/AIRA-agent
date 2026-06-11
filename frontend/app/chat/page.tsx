@@ -376,9 +376,9 @@ function OctaStatus({
           </span>
         )}
         {inspector && showInspector && (
-          <div className="octa-inspector" role="dialog" aria-label="Supervisor inspector">
+          <div className="octa-inspector" role="dialog" aria-label="Supervisor status">
             <div className="octa-inspector-head">
-              <span>AssistantSupervisor</span>
+              <span>Supervisor Status</span>
               <button
                 type="button"
                 className="octa-inspector-close"
@@ -390,13 +390,9 @@ function OctaStatus({
             </div>
             <dl className="octa-inspector-grid">
               <dt>Status</dt><dd>{label}</dd>
-              <dt>Route</dt><dd>{inspector.lastRoute ? (OCTA_PATHS[inspector.lastRoute] ?? inspector.lastRoute) : "—"}</dd>
+              <dt>Mode</dt><dd>{inspector.lastRoute ? (OCTA_PATHS[inspector.lastRoute] ?? inspector.lastRoute).replace(/ Path$/, "") : "—"}</dd>
               <dt>Memory</dt><dd>{inspector.memoryActive ? "Active" : "Empty"}</dd>
               <dt>Documents</dt><dd>{inspector.documentsIndexed} indexed</dd>
-              <dt>Tracing</dt><dd>Enabled</dd>
-              <dt>Latency</dt><dd>{inspector.lastLatencyMs != null ? `${(inspector.lastLatencyMs / 1000).toFixed(1)}s` : "—"}</dd>
-              <dt>Run</dt><dd>{inspector.runId ? inspector.runId.slice(0, 8) : "—"}</dd>
-              <dt>Session</dt><dd>{inspector.sessionId.slice(0, 8)} · Connected</dd>
             </dl>
           </div>
         )}
@@ -1408,12 +1404,12 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
   left: 50%;
   transform: translateX(-50%);
   z-index: 60;
-  width: min(260px, 86vw);
+  width: min(210px, 86vw);
   border: 1px solid var(--border-strong);
   border-radius: 0.8rem;
   background: var(--surface);
   box-shadow: var(--shadow-card), 0 12px 40px rgba(0, 0, 0, 0.35);
-  padding: 0.6rem 0.7rem;
+  padding: 0.45rem 0.6rem 0.5rem;
   text-align: left;
   cursor: default;
 }
@@ -1426,7 +1422,7 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-subtle);
-  margin-bottom: 0.45rem;
+  margin-bottom: 0.3rem;
 }
 .octa-inspector-close {
   display: inline-flex;
@@ -1438,7 +1434,7 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
 .octa-inspector-grid {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.22rem 0.7rem;
+  gap: 0.16rem 0.65rem;
   margin: 0;
 }
 .octa-inspector-grid dt {
