@@ -150,7 +150,10 @@ class PendingPlan:
     goal: str  # the reconstructed task (original request + exact selections)
     resolved_task: dict = field(default_factory=dict)
     steps: list[str] = field(default_factory=list)
-    status: str = "awaiting_approval"
+    # Serialized ExecutablePlan (app.plan_executor) — the machine-readable plan
+    # that approval actually runs with tools.
+    executable: dict | None = None
+    status: str = "awaiting_plan_approval"
 
 
 # Same session-store mechanics, separate slot: a session can be waiting on a

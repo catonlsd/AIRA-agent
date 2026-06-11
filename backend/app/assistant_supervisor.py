@@ -48,6 +48,12 @@ from app.conversation import (
 )
 from app.core.llm import LLMClient
 from app.multi_question_handler import handle_multi_question_prompt
+from app.plan_executor import (
+    ExecutablePlan,
+    build_executable_plan,
+    execute_plan,
+    render_execution_report,
+)
 from app.supervisor_reasoning import (
     CAP_DOCUMENT_QA,
     CAP_WEB_RESEARCH,
@@ -448,14 +454,30 @@ class AssistantSupervisor:
         resolved_task = resolved_task_from(pending, selection)
         steps = generate_plan_steps(pending.original_request, selection)
 
+        # Build the machine-readable plan now so approval can execute it with
+        # real tools immediately (manifest design falls back deterministically
+        # when no LLM is available).
+        executable = build_executable_plan(
+            pending.original_request,
+            goal,
+            resolved_task,
+            generate=lambda **kwargs: LLMClient().generate(**kwargs),
+        )
+
         plan = PendingPlan(
             original_request=pending.original_request,
             goal=goal,
             resolved_task=resolved_task,
             steps=steps,
+            executable=executable.to_dict(),
         )
         plan_store.set(ctx.session_id, plan)
-        ctx.trace.event("stage", stage="plan_ready", steps=len(steps))
+        ctx.trace.event(
+            "stage",
+            stage="plan_ready",
+            steps=len(steps),
+            executable_steps=len(executable.steps),
+        )
 
         message = render_plan_message(selection, steps)
         return {
@@ -478,6 +500,7 @@ class AssistantSupervisor:
                 "resumed_from_clarification": True,
                 "resolved_task": resolved_task,
                 "plan_steps": steps,
+                "execution_plan": executable.to_dict(),
                 "original_request": pending.original_request,
                 "selected_options": selection.selected_options,
                 **({"custom_notes": selection.custom_notes} if selection.custom_notes else {}),
@@ -522,50 +545,48 @@ class AssistantSupervisor:
     async def _execute_approved_plan(
         self, plan: PendingPlan, ctx: TurnContext
     ) -> dict[str, Any]:
-        """Execute the approved plan: generate the implementation deliverable.
+        """Execute the approved plan with REAL tools, step by step.
 
-        Only after this step may the turn report completion. The generation is
-        constrained to the exact selected technologies (FAISS stays FAISS,
-        ChromaDB stays ChromaDB, backend-only stays backend-only).
+        prepare -> safety check -> tool call -> validate -> repair/retry ->
+        continue. Completion is only reported with evidence: files written to
+        disk, read back, and validated. Prose is never accepted as execution.
         """
         plan_store.clear(ctx.session_id)
         ctx.trace.event("plan_approved", original_request=plan.original_request)
         ctx.trace.event("stage", stage="executing_workflow")
 
-        numbered = "\n".join(
-            f"{i}. {step}" for i, step in enumerate(plan.steps, start=1)
+        if plan.executable:
+            executable = ExecutablePlan.from_dict(plan.executable)
+        else:
+            executable = build_executable_plan(
+                plan.original_request,
+                plan.goal,
+                plan.resolved_task,
+                generate=lambda **kwargs: LLMClient().generate(**kwargs),
+            )
+
+        def _on_event(event: str, data: dict[str, Any]) -> None:
+            ctx.trace.event("stage", stage=event, **data)
+
+        report = execute_plan(
+            executable,
+            generate=lambda **kwargs: LLMClient().generate(**kwargs),
+            on_event=_on_event,
         )
-        try:
-            implementation = LLMClient().generate(
-                system=(
-                    "You are AIRA-X executing an approved implementation plan. "
-                    "Produce the implementation now — complete, runnable code "
-                    "with file paths, plus brief setup notes. STRICT RULES: use "
-                    "EXACTLY the technologies the user selected (never "
-                    "substitute a different vector store, framework, or LLM "
-                    "provider). If the output format is backend-only, do not "
-                    "produce frontend code beyond what is needed to explain "
-                    "integration. Follow the plan steps in order."
-                ),
-                prompt=f"{plan.goal}\n\nApproved plan:\n{numbered}",
-                temperature=0.2,
-            ).strip()
-        except Exception:
-            implementation = ""
 
         ctx.trace.event("stage", stage="validation")
-        if not implementation:
-            message = (
-                "I couldn't generate the implementation because no LLM provider "
-                "is available right now. The approved plan is preserved above — "
-                "try again once the model connection is restored."
-            )
-            status, decision = "failed", "plan_execution_failed"
-        else:
-            message = implementation
+        message = render_execution_report(executable, report)
+        if report.status == "completed":
             status, decision = "completed", "plan_executed"
+        else:
+            status, decision = "failed", "plan_execution_failed"
 
-        ctx.trace.event("execution_completed", status=status)
+        ctx.trace.event(
+            "execution_completed",
+            status=status,
+            files_written=len(report.files_written),
+            repairs=len(report.repairs),
+        )
         return {
             "run_id": uuid4().hex,
             "status": status,
@@ -574,15 +595,19 @@ class AssistantSupervisor:
             "message": message,
             "final_answer": message,
             "sources": [],
-            "artifacts": [],
+            "artifacts": [entry["path"] for entry in report.files_written],
             "approval_summary": None,
             "meta": {
                 "is_multi_question": False,
                 "question_count": 1,
                 "has_sources": False,
-                "has_artifacts": False,
+                "has_artifacts": bool(report.files_written),
                 "requires_approval": False,
                 "executed_plan_steps": plan.steps,
+                "execution_plan": executable.to_dict(),
+                "files_written": report.files_written,
+                "validation": report.validation,
+                "repairs": report.repairs,
                 "resolved_task": plan.resolved_task,
                 "original_request": plan.original_request,
             },

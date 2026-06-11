@@ -737,6 +737,48 @@ function ClarificationCard({
   );
 }
 
+// ─── Plan approval actions ───────────────────────────────────────────────────
+// Rendered under a plan-ready reply: approving immediately resumes the run into
+// real tool execution on the backend (no typing "approve plan" needed).
+
+function PlanApprovalActions({
+  busy,
+  onDecide,
+}: {
+  busy: boolean;
+  onDecide: (text: string) => void;
+}) {
+  const [choice, setChoice] = useState<"approve" | "reject" | null>(null);
+  const disabled = busy || choice !== null;
+
+  return (
+    <div className="plan-approval-row">
+      <button
+        type="button"
+        className="clarify-continue"
+        disabled={disabled}
+        onClick={() => {
+          setChoice("approve");
+          onDecide("approve plan");
+        }}
+      >
+        {choice === "approve" ? "Executing…" : "Approve plan & execute"}
+      </button>
+      <button
+        type="button"
+        className="plan-reject-btn"
+        disabled={disabled}
+        onClick={() => {
+          setChoice("reject");
+          onDecide("reject");
+        }}
+      >
+        Reject
+      </button>
+    </div>
+  );
+}
+
 /**
  * OctaInline — minimal, localized supervisor indicator shown inside the active
  * assistant response (so feedback stays visible when Octa near the composer is
@@ -764,6 +806,10 @@ function ResearchTurnCard({ turn, liveState, liveLabel, busy = false, onClarify 
   const clarification = isClarificationData(assistantResponse?.metadata?.clarification)
     ? (assistantResponse!.metadata.clarification as ClarificationData)
     : null;
+  // A plan awaiting the user's go-ahead before real execution starts.
+  const awaitingPlanApproval =
+    Boolean(assistantResponse?.metadata?.approval_required) &&
+    Array.isArray(assistantResponse?.metadata?.plan_steps);
   const taskCount = multiTask?.metadata?.task_count ?? 0;
   const failedTasks = multiTask?.metadata?.failed_tasks ?? [];
   const completedTasks = taskCount > 0 ? Math.max(taskCount - failedTasks.length, 0) : 0;
@@ -840,6 +886,9 @@ function ResearchTurnCard({ turn, liveState, liveLabel, busy = false, onClarify 
               <ClarificationCard data={clarification} busy={busy} onSubmit={onClarify} />
             ) : (
               <AssistantAnswerContent answer={turn.response.answer} />
+            )}
+            {awaitingPlanApproval && onClarify && (
+              <PlanApprovalActions busy={busy} onDecide={onClarify} />
             )}
           </div>
 
@@ -1701,6 +1750,22 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
 }
 .clarify-continue:hover:not(:disabled) { transform: translateY(-1px); }
 .clarify-continue:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* plan approval actions */
+.plan-approval-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+.plan-reject-btn {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-radius: 0.85rem;
+  background: var(--danger-soft);
+  color: var(--danger);
+  padding: 0.6rem 1.1rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.plan-reject-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* localized in-message indicator (inside the streaming answer card) */
 .octa-inline {

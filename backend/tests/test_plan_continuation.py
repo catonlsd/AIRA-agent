@@ -170,63 +170,91 @@ async def test_plan_requires_approval_before_file_changes():
     # The plan is parked, waiting for the user's go-ahead.
     plan = plan_store.get(_SESSION)
     assert plan is not None
-    assert plan.status == "awaiting_approval"
+    assert plan.status == "awaiting_plan_approval"
+    # The machine-readable plan is already prepared for execution.
+    assert plan.executable is not None
+    assert plan.executable["steps"]
 
 
 # ── 10. No generic tool fallback after a valid selection ─────────────────────
 
 
+def _sandbox_workspace(monkeypatch, tmp_path):
+    """Point the file tool's sandboxed workspace at a temp directory."""
+    from tools.filesystem.file_tool import FileTool
+
+    monkeypatch.setattr(FileTool, "_workspace_root", staticmethod(lambda: tmp_path))
+
+
+def _stub_codegen(monkeypatch, captured=None):
+    """LLM stub: a small JSON manifest for planning, valid code for files."""
+
+    def _fake_generate(self, system, prompt, temperature=0.2):
+        if captured is not None:
+            captured["system"] = system
+            captured["prompt"] = prompt
+        if "JSON array" in system or "JSON array" in prompt:
+            return (
+                '[{"path": "app/main.py", "purpose": "FastAPI entrypoint"},'
+                ' {"path": "README.md", "purpose": "Setup instructions"}]'
+            )
+        return "# FastAPI + FAISS implementation\nprint('service ready')\n"
+
+    monkeypatch.setattr(sup_module.LLMClient, "generate", _fake_generate)
+
+
 @pytest.mark.asyncio
-async def test_no_executable_action_fallback_after_selection(monkeypatch):
+async def test_no_executable_action_fallback_after_selection(monkeypatch, tmp_path):
+    _sandbox_workspace(monkeypatch, tmp_path)
     supervisor = AssistantSupervisor()
     result, _ = await _resolve_rag(supervisor)
     assert _FALLBACK not in result["message"]
 
     # Even after approval, the supervisor executes the plan directly and never
     # routes into the keyword tool planner's fallback.
-    monkeypatch.setattr(
-        sup_module.LLMClient,
-        "generate",
-        lambda self, system, prompt, temperature=0.2: "# main.py\nFastAPI app using FAISS",
-    )
+    _stub_codegen(monkeypatch)
     approve_ctx = build_turn_context("approve plan", session_id=_SESSION, run_id="p-approve")
     executed = await supervisor._dispatch("approve plan", approve_ctx)
     assert _FALLBACK not in executed["message"]
 
 
-# ── 11. Completed only after actual execution ────────────────────────────────
+# ── 11. Completed only after actual execution (with real evidence) ──────────
 
 
 @pytest.mark.asyncio
-async def test_completed_only_after_actual_execution(monkeypatch):
+async def test_completed_only_after_actual_execution(monkeypatch, tmp_path):
+    _sandbox_workspace(monkeypatch, tmp_path)
     supervisor = AssistantSupervisor()
     captured = {}
-
-    def _fake_generate(self, system, prompt, temperature=0.2):
-        captured["system"] = system
-        captured["prompt"] = prompt
-        return "# Implementation\nFastAPI + FAISS backend code here."
-
-    monkeypatch.setattr(sup_module.LLMClient, "generate", _fake_generate)
+    _stub_codegen(monkeypatch, captured)
 
     result, _ = await _resolve_rag(supervisor)
     assert result["status"] == "plan_ready"  # not completed yet
+    # The machine-readable plan rides along for the UI.
+    assert result["meta"]["execution_plan"]["steps"]
 
     approve_ctx = build_turn_context("approve plan", session_id=_SESSION, run_id="p-exec")
     executed = await supervisor._dispatch("approve plan", approve_ctx)
 
     assert executed["status"] == "completed"
     assert executed["decision"] == "plan_executed"
-    # The execution prompt carried the exact goal + plan.
-    assert _RAG_GOAL in captured["prompt"]
-    assert "Next.js + FastAPI + FAISS" in captured["prompt"]
-    # Stack fidelity is enforced in the instructions.
+    # REAL evidence: the files exist on disk and are listed in the reply.
+    files = executed["meta"]["files_written"]
+    assert files, "completion requires written files"
+    for entry in files:
+        assert (tmp_path / entry["path"]).exists()
+        assert entry["path"] in executed["message"]
+    assert executed["meta"]["validation"]["missing_or_invalid"] == []
+    # Stack fidelity is enforced in the codegen instructions.
     assert "never" in captured["system"].lower()
+    assert _RAG_GOAL in captured["prompt"]
     # Plan is consumed; a second "approve plan" routes normally.
     assert plan_store.get(_SESSION) is None
-    # Trace shows the executing/validation stages.
+    # Trace shows the executing/validating stages.
     stages = [e.get("stage") for e in approve_ctx.trace.events if e.get("name") == "stage"]
     assert "executing_workflow" in stages
+    assert "executing_step" in stages
+    assert "validating" in stages
     assert "validation" in stages
 
 
