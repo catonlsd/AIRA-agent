@@ -112,6 +112,7 @@ type AiraXResponse = {
   status: string;
   decision: string;
   final_answer: string | null;
+  current_step?: number | null;
   requires_approval?: boolean;
   pending_action?: string;
   approval_context?: ApprovalContext | null;
@@ -158,22 +159,26 @@ const OCTA_STATUS: Record<OctaState, { label: string; Icon: typeof Sparkles }> =
 // Tiny idle gestures Octa plays at random while it's just sitting there.
 const OCTA_MICROS = ["blink", "curl", "look"] as const;
 
-// Starter prompts Octa loads into the composer on tap (these are AIRA-X actions,
-// phrased as user intents — never "I can…" capability claims by Octa).
-const OCTA_STARTERS = [
-  "Summarize my uploaded document.",
-  "Research the latest developments in vector databases.",
-  "Compare the uploaded documents.",
-  "Create a step-by-step plan.",
-];
+// Human-readable supervisor path names for the inspector (trace awareness).
+const OCTA_PATHS: Record<string, string> = {
+  general_chat: "Chat Path",
+  self_memory: "Memory Path",
+  web_research: "Research Path",
+  document_qa: "Document Path",
+  execution: "Execution Path",
+  research_then_execution: "Execution Path",
+};
 
-// Contextual UI affordances (never identity/capability statements).
-const OCTA_TIPS = [
-  "Tip: Shift + Enter adds a new line.",
-  "Tip: Upload a document to enable document Q&A.",
-  "Tip: Attach a PDF, DOCX, or TXT to analyze it.",
-  "Tip: Press Esc to exit focus mode.",
-];
+// Live supervisor facts surfaced in the inspector. All values are real system
+// state — nothing simulated.
+type OctaInspectorData = {
+  lastRoute: string | null;
+  runId: string | null;
+  documentsIndexed: number;
+  memoryActive: boolean;
+  sessionId: string;
+  lastLatencyMs: number | null;
+};
 
 /** Map a supervisor routing mode to an Octa working-state. */
 function octaStateForMode(mode: string): OctaState {
@@ -254,46 +259,51 @@ function Octa({ micro }: { micro?: string | null }) {
  * Octa + a connected status bubble; it SIGNALS supervisor state, it is not a
  * second assistant. Sits ABOVE the composer (never inside it). `size` "lg"
  * stacks vertically (home stage); "sm" is a compact inline row (in-chat).
- * `message` shows a transient, event-driven supervisor message. Optional
- * `onInsertPrompt` + `composerEmpty` enable the idle starter-prompt tap.
+ * `message` shows a transient, event-driven supervisor message; `progress`
+ * appends real workflow progress (never simulated). Single click → visual
+ * reaction only (it never writes into the composer). Double-click or the info
+ * button opens the Supervisor Inspector (read-only system facts).
  */
 function OctaStatus({
   state,
   message,
+  progress,
   size = "lg",
   className,
-  composerEmpty = true,
-  onInsertPrompt,
+  inspector,
 }: {
   state: OctaState;
   message?: string;
+  progress?: string | null;
   size?: "lg" | "sm";
   className?: string;
-  composerEmpty?: boolean;
-  onInsertPrompt?: (text: string) => void;
+  inspector?: OctaInspectorData;
 }) {
   const status = OCTA_STATUS[state];
   const Icon = status.Icon;
   const [puffKey, setPuffKey] = useState(0);
   const [reacting, setReacting] = useState(false);
   const [micro, setMicro] = useState<(typeof OCTA_MICROS)[number] | null>(null);
-  const [tip, setTip] = useState<string | null>(null);
-  const starterRef = useRef(0);
-  const tipRef = useRef(0);
+  const [showInspector, setShowInspector] = useState(false);
   const reactTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const tipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => {
     if (reactTimerRef.current) clearTimeout(reactTimerRef.current);
-    if (tipTimerRef.current) clearTimeout(tipTimerRef.current);
   }, []);
 
-  // Tap Octa (idle only) → squish + ink puff, then load a starter prompt into
-  // the composer (when empty) and surface a contextual tip. Never overwrites
-  // existing text; live supervisor work always takes priority over taps.
-  const handlePoke = () => {
-    if (state !== "idle") return;
+  // Esc dismisses the inspector.
+  useEffect(() => {
+    if (!showInspector) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowInspector(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showInspector]);
 
+  // Single click → visual feedback only (squish + ink puff). Octa never writes
+  // into the composer and never suggests tasks.
+  const handlePoke = () => {
     setPuffKey((k) => k + 1);
     if (reactTimerRef.current) clearTimeout(reactTimerRef.current);
     setReacting(false);
@@ -301,22 +311,6 @@ function OctaStatus({
       setReacting(true);
       reactTimerRef.current = setTimeout(() => setReacting(false), 520);
     });
-
-    let note: string;
-    if (!composerEmpty) {
-      note = "Finish or clear your current message first.";
-    } else if (onInsertPrompt) {
-      onInsertPrompt(OCTA_STARTERS[starterRef.current % OCTA_STARTERS.length]);
-      starterRef.current += 1;
-      note = OCTA_TIPS[tipRef.current % OCTA_TIPS.length];
-      tipRef.current += 1;
-    } else {
-      note = OCTA_TIPS[tipRef.current % OCTA_TIPS.length];
-      tipRef.current += 1;
-    }
-    setTip(note);
-    if (tipTimerRef.current) clearTimeout(tipTimerRef.current);
-    tipTimerRef.current = setTimeout(() => setTip(null), 4200);
   };
 
   // Idle micro-moments: only while idle, every 12–18s, play one tiny gesture.
@@ -355,30 +349,81 @@ function OctaStatus({
     };
   }, [state]);
 
+  const label = message ?? status.label;
+  const activeRoute = state !== "idle" && state !== "success" && state !== "error";
+
   return (
     <div
       className={cn("octa-companion", `octa-companion--${size}`, className)}
       data-octa-state={state}
       aria-live="polite"
     >
-      <button
-        type="button"
-        className={cn("octa-figure", reacting && "octa-figure--poke")}
-        onClick={handlePoke}
-        aria-label="Octa — AIRA-X supervisor status. Tap for a starter prompt."
-      >
-        {puffKey > 0 && <span key={puffKey} className="octa-ink" aria-hidden="true" />}
-        <Octa micro={micro} />
-      </button>
-      {/* keyed by state + event message so the entrance pulse replays on each
-          supervisor transition (but not on transient click tips). */}
-      <div key={`${state}|${message ?? ""}`} className="octa-bubble" role="status">
-        <span className="octa-bubble-dot" aria-hidden="true" />
-        <Icon className="octa-bubble-icon" aria-hidden="true" />
-        <span className="octa-bubble-label">
-          {state === "idle" ? (tip ?? message ?? status.label) : (message ?? status.label)}
-        </span>
-      </div>
+      <span className="octa-figure-wrap">
+        <button
+          type="button"
+          className={cn("octa-figure", reacting && "octa-figure--poke")}
+          onClick={handlePoke}
+          onDoubleClick={() => inspector && setShowInspector((v) => !v)}
+          aria-label="AIRA-X supervisor status"
+        >
+          {puffKey > 0 && <span key={puffKey} className="octa-ink" aria-hidden="true" />}
+          <Octa micro={micro} />
+        </button>
+        {/* route badge — which path the supervisor is on right now */}
+        {activeRoute && (
+          <span className="octa-route-badge" aria-hidden="true">
+            <Icon className="octa-route-badge-icon" />
+          </span>
+        )}
+        {inspector && showInspector && (
+          <div className="octa-inspector" role="dialog" aria-label="Supervisor inspector">
+            <div className="octa-inspector-head">
+              <span>AssistantSupervisor</span>
+              <button
+                type="button"
+                className="octa-inspector-close"
+                onClick={() => setShowInspector(false)}
+                aria-label="Close inspector"
+              >
+                <XCircle className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <dl className="octa-inspector-grid">
+              <dt>Status</dt><dd>{label}</dd>
+              <dt>Route</dt><dd>{inspector.lastRoute ? (OCTA_PATHS[inspector.lastRoute] ?? inspector.lastRoute) : "—"}</dd>
+              <dt>Memory</dt><dd>{inspector.memoryActive ? "Active" : "Empty"}</dd>
+              <dt>Documents</dt><dd>{inspector.documentsIndexed} indexed</dd>
+              <dt>Tracing</dt><dd>Enabled</dd>
+              <dt>Latency</dt><dd>{inspector.lastLatencyMs != null ? `${(inspector.lastLatencyMs / 1000).toFixed(1)}s` : "—"}</dd>
+              <dt>Run</dt><dd>{inspector.runId ? inspector.runId.slice(0, 8) : "—"}</dd>
+              <dt>Session</dt><dd>{inspector.sessionId.slice(0, 8)} · Connected</dd>
+            </dl>
+          </div>
+        )}
+      </span>
+      <span className="octa-bubble-row">
+        {/* keyed by state + event message so the entrance pulse replays on each
+            supervisor transition. */}
+        <div key={`${state}|${message ?? ""}`} className="octa-bubble" role="status">
+          <span className="octa-bubble-dot" aria-hidden="true" />
+          <Icon className="octa-bubble-icon" aria-hidden="true" />
+          <span className="octa-bubble-label">
+            {label}
+            {progress ? <span className="octa-bubble-progress"> {progress}</span> : null}
+          </span>
+        </div>
+        {inspector && (
+          <button
+            type="button"
+            className="octa-info-btn"
+            onClick={() => setShowInspector((v) => !v)}
+            aria-label="Toggle supervisor inspector"
+            aria-expanded={showInspector}
+          >
+            i
+          </button>
+        )}
+      </span>
     </div>
   );
 }
@@ -570,7 +615,26 @@ function collectWorkflowTechnicalRows(response: AiraXResponse) {
 
 // ─── Turn Card ────────────────────────────────────────────────────────────────
 
-function ResearchTurnCard({ turn }: { turn: Turn }) {
+/**
+ * OctaInline — minimal, localized supervisor indicator shown inside the active
+ * assistant response (so feedback stays visible when Octa near the composer is
+ * scrolled out of view). Not a second status system: it renders the same live
+ * supervisor label.
+ */
+function OctaInline({ state, label }: { state: OctaState; label: string }) {
+  return (
+    <span className="octa-inline" data-octa-state={state}>
+      <Octa />
+      <span className="octa-inline-label">{label}</span>
+    </span>
+  );
+}
+
+function ResearchTurnCard({ turn, liveState, liveLabel }: {
+  turn: Turn;
+  liveState?: OctaState;
+  liveLabel?: string;
+}) {
   const assistantResponse = getAssistantResponse(turn.response);
   const multiTask = assistantResponse && isMultiTaskResponse(assistantResponse) ? assistantResponse : null;
   const taskCount = multiTask?.metadata?.task_count ?? 0;
@@ -609,7 +673,7 @@ function ResearchTurnCard({ turn }: { turn: Turn }) {
             {turn.streamingText ? (
               <AssistantAnswerContent answer={turn.streamingText} />
             ) : (
-              <span className="text-sm text-[var(--text-muted)]">Thinking…</span>
+              <OctaInline state={liveState ?? "thinking"} label={liveLabel ?? "Thinking…"} />
             )}
             <span className="ml-0.5 inline-block animate-pulse text-[var(--accent)]">▌</span>
           </div>
@@ -701,7 +765,8 @@ function SuggestionChip({ label, prompt, onSelect }: { label: string; prompt: st
 // ─── Home Stage ───────────────────────────────────────────────────────────────
 
 function AiraHomeStage({
-  question, setQuestion, busy, loading, octaState, octaMessage, onSubmit, onComposerFocus,
+  question, setQuestion, busy, loading, octaState, octaMessage, octaProgress, octaInspector,
+  onSubmit, onComposerFocus,
 }: {
   question: string;
   setQuestion: (v: string) => void;
@@ -709,6 +774,8 @@ function AiraHomeStage({
   loading: boolean;
   octaState: OctaState;
   octaMessage?: string | null;
+  octaProgress?: string | null;
+  octaInspector?: OctaInspectorData;
   onSubmit: (e: FormEvent) => Promise<void>;
   onComposerFocus: () => void;
 }) {
@@ -736,13 +803,10 @@ function AiraHomeStage({
         <OctaStatus
           state={octaState}
           message={octaMessage ?? undefined}
+          progress={octaProgress}
+          inspector={octaInspector}
           size="lg"
           className="mt-8"
-          composerEmpty={!question.trim()}
-          onInsertPrompt={(text) => {
-            setQuestion(text);
-            onComposerFocus();
-          }}
         />
 
         {/* Composer */}
@@ -1312,6 +1376,119 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
 .octa-companion[data-octa-state="idle"] .octa-bubble { color: var(--text-muted); }
 .octa-companion[data-octa-state="idle"] .octa-bubble-dot { animation: none; box-shadow: none; opacity: 0.65; }
 
+/* figure wrapper anchors the route badge + inspector popover */
+.octa-figure-wrap { position: relative; display: inline-flex; }
+.octa-bubble-row { display: inline-flex; align-items: center; gap: 0.35rem; min-width: 0; }
+.octa-bubble-progress { font-weight: 600; color: var(--text-muted); }
+
+/* route badge — tiny glyph showing the active supervisor path */
+.octa-route-badge {
+  position: absolute;
+  right: -4px;
+  top: -2px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--octa-accent) 55%, var(--border));
+  background: var(--surface);
+  color: var(--octa-accent);
+  box-shadow: 0 0 5px color-mix(in srgb, var(--octa-accent) 35%, transparent);
+  pointer-events: none;
+}
+.octa-route-badge-icon { width: 9px; height: 9px; }
+
+/* supervisor inspector — read-only system facts, console-like */
+.octa-inspector {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  width: min(260px, 86vw);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.8rem;
+  background: var(--surface);
+  box-shadow: var(--shadow-card), 0 12px 40px rgba(0, 0, 0, 0.35);
+  padding: 0.6rem 0.7rem;
+  text-align: left;
+  cursor: default;
+}
+.octa-inspector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  margin-bottom: 0.45rem;
+}
+.octa-inspector-close {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 6px;
+  color: var(--text-subtle);
+}
+.octa-inspector-close:hover { color: var(--text-strong); }
+.octa-inspector-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.22rem 0.7rem;
+  margin: 0;
+}
+.octa-inspector-grid dt {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-subtle);
+}
+.octa-inspector-grid dd {
+  margin: 0;
+  font-size: 0.68rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* info button — small, attached to the bubble */
+.octa-info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  font-size: 0.62rem;
+  font-weight: 800;
+  font-style: italic;
+  color: var(--text-subtle);
+  cursor: pointer;
+}
+.octa-info-btn:hover { color: var(--text-strong); border-color: var(--border-strong); }
+.octa-info-btn:focus-visible { outline: 2px solid var(--octa-accent); outline-offset: 2px; }
+
+/* localized in-message indicator (inside the streaming answer card) */
+.octa-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  --octa-eye: #3fa9ff;
+  --octa-glow: rgba(110, 193, 255, 0.55);
+  --octa-accent: #6ec1ff;
+}
+html[data-theme="dark"] .octa-inline { --octa-eye: #00d4ff; --octa-glow: rgba(0, 212, 255, 0.7); }
+.octa-inline .octa-svg { width: 18px; height: 18px; animation: octa-breathe 5s ease-in-out infinite; }
+.octa-inline-label { font-size: 0.8rem; color: var(--text-muted); }
+
 @media (max-width: 640px) {
   .octa-companion--sm { gap: 0.4rem; }
   .octa-companion--sm .octa-svg { width: 38px; height: 38px; }
@@ -1850,17 +2027,15 @@ export default function ChatPage() {
   const [octaState, setOctaState] = useState<OctaState>("idle");
   // Transient, event-driven supervisor message (e.g. "Document indexed…").
   const [octaFlash, setOctaFlash] = useState<string | null>(null);
-  const octaResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const octaFlashRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Auto-settle the terminal states (success/error) back to idle.
-  useEffect(() => {
-    if (octaState !== "success" && octaState !== "error") return;
-    if (octaResetRef.current) clearTimeout(octaResetRef.current);
-    octaResetRef.current = setTimeout(() => setOctaState("idle"), octaState === "success" ? 2600 : 3600);
-    return () => {
-      if (octaResetRef.current) clearTimeout(octaResetRef.current);
-    };
-  }, [octaState]);
+  // NOTE: success/error deliberately persist until the next message is sent —
+  // terminal supervisor state should not auto-dismiss.
+
+  // Trace awareness — real values from supervisor events, shown in the inspector.
+  const [lastRoute, setLastRoute] = useState<string | null>(null);
+  const [lastRunId, setLastRunId] = useState<string | null>(null);
+  const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
+  const turnStartRef = useRef<number | null>(null);
 
   // Flash a brief Supervisor event message through Octa, then clear it.
   const flashOcta = (msg: string) => {
@@ -1871,6 +2046,35 @@ export default function ChatPage() {
 
   const busy = loading || airaXLoading || approvalLoading || rejectionLoading || uploadLoading;
   const threadIsEmpty = useMemo(() => turns.length === 0 && !airaXResponse, [turns.length, airaXResponse]);
+
+  // Workflow/research progress — only from real backend data, never simulated.
+  const octaProgress = useMemo(() => {
+    if (octaState === "researching") {
+      const live = turns.find((t) => t.streaming)?.streamSources?.length ?? 0;
+      return live > 0 ? `(${live} source${live === 1 ? "" : "s"} found)` : null;
+    }
+    if ((octaState === "executing" || octaState === "approval") && airaXResponse) {
+      const step = airaXResponse.current_step;
+      const total = airaXResponse.plan?.length ?? 0;
+      if (typeof step === "number" && step > 0 && total > 0) {
+        return `(step ${Math.min(step, total)} of ${total})`;
+      }
+    }
+    return null;
+  }, [octaState, turns, airaXResponse]);
+
+  // Session awareness: before the first turn the supervisor reports a fresh
+  // session; afterwards plain "Ready". Event flashes take precedence.
+  const octaMessage = octaFlash ?? (octaState === "idle" && turns.length === 0 ? "New session" : undefined) ?? undefined;
+
+  const octaInspector: OctaInspectorData = {
+    lastRoute,
+    runId: lastRunId,
+    documentsIndexed: sessionDocNames.length,
+    memoryActive: turns.length > 0,
+    sessionId,
+    lastLatencyMs,
+  };
 
   // Escape to close focus overlay
   useEffect(() => {
@@ -1933,6 +2137,7 @@ export default function ChatPage() {
     setAiraXLoading(false);
     setOctaFlash(null);
     setOctaState("routing");
+    turnStartRef.current = Date.now();
 
     // Build recent conversation history (last few turns) so follow-ups have context.
     const history = turns
@@ -1960,6 +2165,7 @@ export default function ChatPage() {
             // The "classified" trace tells us which capability is running.
             if (data?.event === "classified" && typeof data.mode === "string") {
               setOctaState(octaStateForMode(data.mode));
+              setLastRoute(data.mode);
             }
           },
           onToken: (text) =>
@@ -2004,6 +2210,8 @@ export default function ChatPage() {
         const run = assistantWorkflowToAiraXRun(final as unknown as Parameters<typeof assistantWorkflowToAiraXRun>[0]);
         if (run) {
           setAiraXResponse(run);
+          setLastRunId(run.run_id ?? null);
+          if (turnStartRef.current) setLastLatencyMs(Date.now() - turnStartRef.current);
           if (run.requires_approval) {
             setOctaState("approval");
           } else {
@@ -2044,6 +2252,8 @@ export default function ChatPage() {
         })
       );
       setOctaState("success");
+      setLastRunId(runId);
+      if (turnStartRef.current) setLastLatencyMs(Date.now() - turnStartRef.current);
       // Context-aware: surface a source count for research turns.
       if (mode === "web_research" && citations.length > 0) {
         flashOcta(`Found ${citations.length} relevant source${citations.length === 1 ? "" : "s"}.`);
@@ -2182,7 +2392,9 @@ export default function ChatPage() {
                 busy={busy}
                 loading={loading}
                 octaState={octaState}
-                octaMessage={octaFlash}
+                octaMessage={octaMessage}
+                octaProgress={octaProgress}
+                octaInspector={octaInspector}
                 onSubmit={handleSubmit}
                 onComposerFocus={() => setComposerFocused(true)}
               />
@@ -2192,7 +2404,12 @@ export default function ChatPage() {
             <div className="flex flex-1 flex-col gap-4 pt-2">
               {/* Thread */}
               {turns.map((turn, index) => (
-                <ResearchTurnCard key={`${turn.question}-${index}`} turn={turn} />
+                <ResearchTurnCard
+                  key={`${turn.question}-${index}`}
+                  turn={turn}
+                  liveState={turn.streaming ? octaState : undefined}
+                  liveLabel={turn.streaming ? (octaFlash ?? OCTA_STATUS[octaState].label) : undefined}
+                />
               ))}
 
               {/* Workflow result */}
@@ -2218,14 +2435,11 @@ export default function ChatPage() {
             <div className="sticky bottom-4 flex flex-col gap-2">
               <OctaStatus
                 state={octaState}
-                message={octaFlash ?? undefined}
+                message={octaMessage}
+                progress={octaProgress}
+                inspector={octaInspector}
                 size="sm"
                 className="px-1"
-                composerEmpty={!question.trim()}
-                onInsertPrompt={(text) => {
-                  setQuestion(text);
-                  setComposerFocused(true);
-                }}
               />
               <form
                 onSubmit={handleSubmit}
