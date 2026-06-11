@@ -388,10 +388,14 @@ function OctaStatus({
                 <XCircle className="h-3.5 w-3.5" />
               </button>
             </div>
+            {/* current supervisor state — visually dominant, from real state only */}
+            <p className="octa-inspector-status">
+              <span className="octa-inspector-status-dot" aria-hidden="true" />
+              {status.label}
+            </p>
             <dl className="octa-inspector-grid">
-              <dt>Status</dt><dd>{label}</dd>
-              <dt>Mode</dt><dd>{inspector.lastRoute ? (OCTA_PATHS[inspector.lastRoute] ?? inspector.lastRoute).replace(/ Path$/, "") : "—"}</dd>
-              <dt>Memory</dt><dd>{inspector.memoryActive ? "Active" : "Empty"}</dd>
+              <dt>Mode</dt><dd>{inspector.lastRoute ? (OCTA_PATHS[inspector.lastRoute] ?? inspector.lastRoute).replace(/ Path$/, "") : "Idle"}</dd>
+              <dt>Memory</dt><dd>{inspector.memoryActive ? "Active" : "No stored context"}</dd>
               <dt>Documents</dt><dd>{inspector.documentsIndexed} indexed</dd>
             </dl>
           </div>
@@ -1431,22 +1435,39 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
   color: var(--text-subtle);
 }
 .octa-inspector-close:hover { color: var(--text-strong); }
+.octa-inspector-status {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  margin: 0 0 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--text-strong);
+}
+.octa-inspector-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--octa-accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--octa-accent) 60%, transparent);
+}
 .octa-inspector-grid {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.16rem 0.65rem;
+  gap: 0.14rem 0.65rem;
   margin: 0;
 }
 .octa-inspector-grid dt {
-  font-size: 0.68rem;
-  font-weight: 700;
+  font-size: 0.64rem;
+  font-weight: 600;
   color: var(--text-subtle);
 }
 .octa-inspector-grid dd {
   margin: 0;
   font-size: 0.68rem;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  color: var(--text-strong);
+  font-weight: 600;
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
