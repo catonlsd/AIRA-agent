@@ -32,6 +32,7 @@ from app.clarification import (
     option_groups_for,
     parse_selection,
     render_clarification_message,
+    structured_clarification,
 )
 from app.context_builder import TurnContext
 from app.conversation import (
@@ -393,6 +394,11 @@ class AssistantSupervisor:
         result["meta"]["clarification_questions"] = questions
         result["meta"]["clarification_options"] = pending.option_map
         result["meta"]["awaiting_clarification"] = True
+        # Machine-readable payload for interactive option cards (the readable
+        # text above remains the fallback for older clients).
+        structured = structured_clarification(pending)
+        if structured is not None:
+            result["meta"]["clarification"] = structured
         return result
 
     async def _resume_after_clarification(

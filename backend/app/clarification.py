@@ -24,6 +24,15 @@ from typing import Optional
 
 # Group key -> human label (used for continuation prompts and parsing hints).
 _GROUP_LABELS = {1: "Stack", 2: "Tools", 3: "Output format"}
+# Group key -> stable id used by the structured clarification payload / UI.
+_GROUP_IDS = {1: "stack", 2: "tools", 3: "output_format"}
+# Reverse lookup for parsing structured "Label: value" replies.
+_LABEL_TO_GROUP = {
+    "stack": 1,
+    "tools": 2,
+    "output format": 3,
+    "output_format": 3,
+}
 
 # The guided template for RAG / retrieval build requests.
 _RAG_OPTION_GROUPS: dict[int, dict[str, str]] = {
@@ -166,7 +175,70 @@ def render_clarification_message(pending: PendingClarification) -> str:
     )
 
 
+def structured_clarification(pending: PendingClarification) -> Optional[dict]:
+    """The machine-readable clarification payload for interactive UIs.
+
+    Returned alongside the readable text so older clients keep working; the
+    frontend prefers this shape and renders clickable option cards.
+    """
+    if not pending.option_groups:
+        return None
+
+    questions = []
+    for group in sorted(pending.option_groups):
+        group_id = _GROUP_IDS.get(group, f"group_{group}")
+        options = []
+        for letter in sorted(pending.option_groups[group]):
+            label = pending.option_groups[group][letter]
+            is_custom = "custom" in label.lower()
+            options.append(
+                {
+                    "id": f"{group_id}_{'custom' if is_custom else letter.lower()}",
+                    "label": label,
+                    "value": "custom" if is_custom else label,
+                }
+            )
+        questions.append(
+            {
+                "id": group_id,
+                "title": _GROUP_LABELS.get(group, f"Choice {group}"),
+                "required": True,
+                "options": options,
+            }
+        )
+
+    return {
+        "required": True,
+        "original_request": pending.original_request,
+        "questions": questions,
+    }
+
+
 # ── Selection parsing ────────────────────────────────────────────────────────
+
+
+def _parse_structured_reply(text: str) -> Optional[ClarificationSelection]:
+    """Parse the structured "Clarification response:" payload sent by the UI.
+
+    Values are used verbatim, so custom answers flow through unchanged.
+    """
+    selection = ClarificationSelection()
+    for line in text.splitlines()[1:]:
+        if ":" not in line:
+            continue
+        label, _, value = line.partition(":")
+        key = label.strip().lower()
+        value = value.strip()
+        if not value or key == "original request":
+            continue
+        group = _LABEL_TO_GROUP.get(key)
+        if group is not None:
+            selection.choices[group] = value
+        elif key in ("custom", "notes", "custom notes", "additional preferences"):
+            selection.custom_notes = value
+    if selection.choices or selection.custom_notes:
+        return selection
+    return None
 
 
 def parse_selection(
@@ -182,6 +254,11 @@ def parse_selection(
         return None
 
     lowered = text.lower()
+
+    # The interactive option-card UI sends a structured reply — parse it first.
+    if lowered.startswith("clarification response"):
+        return _parse_structured_reply(text)
+
     selection = ClarificationSelection()
 
     # 1. Explicit codes: "1B", "1b, 2c", "option 1B and 2C".

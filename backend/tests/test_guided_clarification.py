@@ -261,6 +261,84 @@ def test_unrelated_command_does_not_resolve_pending():
     assert parse_selection("git push", pending) is None
 
 
+# ── Structured clarification payload + interactive UI replies ────────────────
+
+
+@pytest.mark.asyncio
+async def test_backend_returns_structured_clarification_object():
+    supervisor = AssistantSupervisor()
+    result, _ = await _present_rag_clarification(supervisor)
+
+    data = result["meta"]["clarification"]
+    assert data["required"] is True
+    assert data["original_request"] == _RAG_GOAL
+    assert [q["id"] for q in data["questions"]] == ["stack", "tools", "output_format"]
+    for question in data["questions"]:
+        assert question["required"] is True
+        assert len(question["options"]) == 4
+        # Custom options carry the sentinel value; concrete ones carry the label.
+        custom = [o for o in question["options"] if o["value"] == "custom"]
+        assert len(custom) == 1
+        assert custom[0]["id"].endswith("_custom")
+    stack_values = [o["value"] for o in data["questions"][0]["options"]]
+    assert "Next.js + FastAPI + FAISS" in stack_values
+
+
+@pytest.mark.asyncio
+async def test_structured_reply_resumes_with_selected_stack(monkeypatch):
+    supervisor = AssistantSupervisor()
+    supervisor.execution = _ExecutionCapture()
+    await _present_rag_clarification(supervisor)
+
+    reply = (
+        "Clarification response:\n"
+        f"Original request: {_RAG_GOAL}\n"
+        "Stack: Next.js + FastAPI + FAISS\n"
+        "Tools: Hybrid search + citations\n"
+        "Output format: Backend implementation"
+    )
+    ctx = build_turn_context(reply, session_id=_SESSION, run_id="t-structured")
+    result = await supervisor._dispatch(reply, ctx)
+
+    assert result["meta"]["resumed_from_clarification"] is True
+    dispatched = supervisor.execution.goals[0]
+    assert _RAG_GOAL in dispatched
+    assert "Next.js + FastAPI + FAISS" in dispatched
+    assert "Hybrid search + citations" in dispatched
+    assert "Backend implementation" in dispatched
+    # FAISS selection must not drift to ChromaDB.
+    assert "ChromaDB" not in dispatched
+    assert clarification_store.get(_SESSION) is None
+
+
+@pytest.mark.asyncio
+async def test_structured_reply_carries_custom_values():
+    supervisor = AssistantSupervisor()
+    supervisor.execution = _ExecutionCapture()
+    await _present_rag_clarification(supervisor)
+
+    reply = (
+        "Clarification response:\n"
+        f"Original request: {_RAG_GOAL}\n"
+        "Stack: FastAPI + Qdrant + Claude\n"
+        "Tools: Hybrid search + citations\n"
+        "Output format: Backend implementation"
+    )
+    ctx = build_turn_context(reply, session_id=_SESSION, run_id="t-structured-custom")
+    await supervisor._dispatch(reply, ctx)
+
+    dispatched = supervisor.execution.goals[0]
+    # Custom value flows through verbatim.
+    assert "Qdrant" in dispatched
+
+
+def test_plain_text_codes_still_work_as_fallback():
+    pending = _rag_pending()
+    selection = parse_selection("1B, 2B, 3B", pending)
+    assert selection is not None
+    assert selection.choices[1] == "Next.js + FastAPI + FAISS"
+
+
 def test_non_rag_clarification_uses_plain_questions():
     pending = PendingClarification(
         original_request="Deploy my application",

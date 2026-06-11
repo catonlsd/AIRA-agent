@@ -618,6 +618,125 @@ function collectWorkflowTechnicalRows(response: AiraXResponse) {
 
 // ─── Turn Card ────────────────────────────────────────────────────────────────
 
+// ─── Clarification option cards ──────────────────────────────────────────────
+// When the supervisor needs details it returns a structured clarification
+// payload (plus a readable text fallback). These cards make the options
+// clickable: one selection per question, custom values via a small input, and
+// a Continue button that submits the structured reply back to the supervisor.
+
+type ClarificationOption = { id: string; label: string; value: string };
+type ClarificationQuestion = {
+  id: string;
+  title: string;
+  required: boolean;
+  options: ClarificationOption[];
+};
+type ClarificationData = {
+  required: boolean;
+  original_request: string;
+  questions: ClarificationQuestion[];
+};
+
+function isClarificationData(value: unknown): value is ClarificationData {
+  if (!value || typeof value !== "object") return false;
+  const data = value as ClarificationData;
+  return Array.isArray(data.questions) && data.questions.length > 0;
+}
+
+function ClarificationCard({
+  data,
+  busy,
+  onSubmit,
+}: {
+  data: ClarificationData;
+  busy: boolean;
+  onSubmit: (text: string) => void;
+}) {
+  const [selections, setSelections] = useState<Record<string, string>>({});
+  const [customValues, setCustomValues] = useState<Record<string, string>>({});
+  const [submitted, setSubmitted] = useState(false);
+
+  const disabled = busy || submitted;
+
+  const answeredValue = (q: ClarificationQuestion): string | null => {
+    const picked = selections[q.id];
+    if (!picked) return null;
+    if (picked === "custom") {
+      const custom = (customValues[q.id] || "").trim();
+      return custom ? custom : null;
+    }
+    return picked;
+  };
+
+  const allAnswered = data.questions.every((q) => !q.required || answeredValue(q) !== null);
+
+  const handleContinue = () => {
+    if (!allAnswered || disabled) return;
+    const lines = [
+      "Clarification response:",
+      `Original request: ${data.original_request}`,
+    ];
+    for (const q of data.questions) {
+      const value = answeredValue(q);
+      if (value) lines.push(`${q.title}: ${value}`);
+    }
+    setSubmitted(true);
+    onSubmit(lines.join("\n"));
+  };
+
+  return (
+    <div className="clarify-card">
+      <p className="clarify-intro">Choose the setup so I build the right thing:</p>
+
+      {data.questions.map((q) => (
+        <div key={q.id} className="clarify-section">
+          <p className="clarify-section-title">{q.title}</p>
+          <div className="clarify-options">
+            {q.options.map((option) => {
+              const selected = selections[q.id] === option.value;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  disabled={disabled}
+                  className={cn("clarify-option", selected && "clarify-option--selected")}
+                  aria-pressed={selected}
+                  onClick={() =>
+                    setSelections((prev) => ({ ...prev, [q.id]: option.value }))
+                  }
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+          {selections[q.id] === "custom" && (
+            <input
+              type="text"
+              value={customValues[q.id] || ""}
+              disabled={disabled}
+              onChange={(e) =>
+                setCustomValues((prev) => ({ ...prev, [q.id]: e.target.value }))
+              }
+              placeholder={`Describe your custom ${q.title.toLowerCase()}…`}
+              className="clarify-custom-input"
+            />
+          )}
+        </div>
+      ))}
+
+      <button
+        type="button"
+        className="clarify-continue"
+        disabled={!allAnswered || disabled}
+        onClick={handleContinue}
+      >
+        {submitted ? "Continuing…" : "Continue with selected setup"}
+      </button>
+    </div>
+  );
+}
+
 /**
  * OctaInline — minimal, localized supervisor indicator shown inside the active
  * assistant response (so feedback stays visible when Octa near the composer is
@@ -633,13 +752,18 @@ function OctaInline({ state, label }: { state: OctaState; label: string }) {
   );
 }
 
-function ResearchTurnCard({ turn, liveState, liveLabel }: {
+function ResearchTurnCard({ turn, liveState, liveLabel, busy = false, onClarify }: {
   turn: Turn;
   liveState?: OctaState;
   liveLabel?: string;
+  busy?: boolean;
+  onClarify?: (text: string) => void;
 }) {
   const assistantResponse = getAssistantResponse(turn.response);
   const multiTask = assistantResponse && isMultiTaskResponse(assistantResponse) ? assistantResponse : null;
+  const clarification = isClarificationData(assistantResponse?.metadata?.clarification)
+    ? (assistantResponse!.metadata.clarification as ClarificationData)
+    : null;
   const taskCount = multiTask?.metadata?.task_count ?? 0;
   const failedTasks = multiTask?.metadata?.failed_tasks ?? [];
   const completedTasks = taskCount > 0 ? Math.max(taskCount - failedTasks.length, 0) : 0;
@@ -709,9 +833,14 @@ function ResearchTurnCard({ turn, liveState, liveLabel }: {
             </div>
           </div>
 
-          {/* Answer body */}
+          {/* Answer body — structured clarifications render as option cards
+              instead of the markdown fallback text. */}
           <div className="aira-answer-body">
-            <AssistantAnswerContent answer={turn.response.answer} />
+            {clarification && onClarify ? (
+              <ClarificationCard data={clarification} busy={busy} onSubmit={onClarify} />
+            ) : (
+              <AssistantAnswerContent answer={turn.response.answer} />
+            )}
           </div>
 
           {/* Citations */}
@@ -1499,6 +1628,80 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
 .octa-info-btn:hover { color: var(--text-strong); border-color: var(--border-strong); }
 .octa-info-btn:focus-visible { outline: 2px solid var(--octa-accent); outline-offset: 2px; }
 
+/* ── Clarification option cards ── */
+.clarify-card { display: flex; flex-direction: column; gap: 1rem; }
+.clarify-intro {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.clarify-section { display: flex; flex-direction: column; gap: 0.5rem; }
+.clarify-section-title {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+.clarify-options { display: flex; flex-direction: column; gap: 0.4rem; }
+.clarify-option {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  background: var(--surface-soft);
+  padding: 0.6rem 0.9rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.clarify-option:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+  color: var(--text-strong);
+}
+.clarify-option--selected,
+.clarify-option--selected:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: var(--accent-soft);
+  color: var(--text-strong);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.clarify-option:disabled { opacity: 0.55; cursor: not-allowed; }
+.clarify-custom-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  background: var(--surface-strong);
+  padding: 0.55rem 0.8rem;
+  font-size: 0.82rem;
+  color: var(--text-strong);
+  outline: none;
+}
+.clarify-custom-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.clarify-continue {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 0.85rem;
+  background: var(--accent);
+  color: var(--accent-foreground);
+  padding: 0.6rem 1.1rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: var(--shadow-soft);
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.clarify-continue:hover:not(:disabled) { transform: translateY(-1px); }
+.clarify-continue:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* localized in-message indicator (inside the streaming answer card) */
 .octa-inline {
   display: inline-flex;
@@ -2149,13 +2352,15 @@ export default function ChatPage() {
     patchTurnById(turnId, { streaming: false, streamingText: undefined, response });
   }
 
-  async function handleUnifiedAssistant(event?: FormEvent) {
+  async function handleUnifiedAssistant(event?: FormEvent, overrideText?: string) {
     event?.preventDefault();
-    const trimmed = question.trim();
+    // `overrideText` lets UI elements (e.g. clarification option cards) submit
+    // a message programmatically without touching the composer draft.
+    const trimmed = (overrideText ?? question).trim();
     if (!trimmed) return;
 
     setComposerFocused(false);
-    setQuestion("");
+    if (!overrideText) setQuestion("");
     setLoading(true);
     setAiraXLoading(false);
     setOctaFlash(null);
@@ -2434,6 +2639,8 @@ export default function ChatPage() {
                   turn={turn}
                   liveState={turn.streaming ? octaState : undefined}
                   liveLabel={turn.streaming ? (octaFlash ?? OCTA_STATUS[octaState].label) : undefined}
+                  busy={busy}
+                  onClarify={(text) => handleUnifiedAssistant(undefined, text)}
                 />
               ))}
 
