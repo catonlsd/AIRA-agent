@@ -2479,9 +2479,17 @@ export default function ChatPage() {
           };
         })
       );
-      // A clarification reply means the supervisor is waiting on the user —
-      // that is not a completed task.
-      setOctaState(mode === "clarification" ? "clarify" : "success");
+      // Waiting states are not completed tasks: a clarification reply waits on
+      // details, and a ready plan waits on approval before anything executes.
+      const finalStatus = String((final as Record<string, unknown>).status ?? "");
+      if (mode === "clarification") {
+        setOctaState("clarify");
+      } else if (finalStatus === "plan_ready") {
+        setOctaState("approval");
+        flashOcta("Plan ready — approval required.");
+      } else {
+        setOctaState("success");
+      }
       setLastRunId(runId);
       if (turnStartRef.current) setLastLatencyMs(Date.now() - turnStartRef.current);
       // Context-aware: surface a source count for research turns.

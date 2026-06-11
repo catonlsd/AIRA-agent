@@ -10,6 +10,7 @@ from app.clarification import (
     clarification_store,
     option_groups_for,
     parse_selection,
+    plan_store,
     render_clarification_message,
 )
 from app.context_builder import build_turn_context
@@ -21,11 +22,13 @@ _RAG_GOAL = "Build me a RAG system"
 
 @pytest.fixture(autouse=True)
 def _clean_store():
-    clarification_store.clear(_SESSION)
-    clarification_store.clear(None)
+    for store in (clarification_store, plan_store):
+        store.clear(_SESSION)
+        store.clear(None)
     yield
-    clarification_store.clear(_SESSION)
-    clarification_store.clear(None)
+    for store in (clarification_store, plan_store):
+        store.clear(_SESSION)
+        store.clear(None)
 
 
 def _rag_pending() -> PendingClarification:
@@ -119,14 +122,16 @@ def test_output_format_options_match_spec():
 @pytest.mark.asyncio
 async def test_code_reply_resumes_original_request_with_choices():
     supervisor = AssistantSupervisor()
-    supervisor.execution = _ExecutionCapture()
     await _present_rag_clarification(supervisor)
 
     ctx = build_turn_context("1B, 2B, 3B", session_id=_SESSION, run_id="t-resume")
     result = await supervisor._dispatch("1B, 2B, 3B", ctx)
 
-    # Resumed — not another clarification.
+    # Resumed into a plan awaiting approval — not another clarification, and
+    # not a claimed completion.
     assert result["mode"] != "clarification"
+    assert result["status"] == "plan_ready"
+    assert result["decision"] == "plan_ready"
     assert result["meta"]["resumed_from_clarification"] is True
     assert result["meta"]["original_request"] == _RAG_GOAL
     assert result["meta"]["selected_options"] == {
@@ -135,17 +140,19 @@ async def test_code_reply_resumes_original_request_with_choices():
         "Output format": "Backend implementation",
     }
 
-    # The dispatched goal carries the original request AND the exact choices.
-    dispatched = supervisor.execution.goals[0]
-    assert _RAG_GOAL in dispatched
-    assert "Next.js + FastAPI + FAISS" in dispatched
-    assert "Hybrid search + citations" in dispatched
-    assert "Backend implementation" in dispatched
+    # The stored plan goal carries the original request AND the exact choices.
+    plan = plan_store.get(_SESSION)
+    assert plan is not None
+    assert _RAG_GOAL in plan.goal
+    assert "Next.js + FastAPI + FAISS" in plan.goal
+    assert "Hybrid search + citations" in plan.goal
+    assert "Backend implementation" in plan.goal
 
-    # The acknowledgment confirms the selection in the reply.
+    # The acknowledgment + approval gate appear in the reply.
     assert "Next.js + FastAPI + FAISS" in result["message"]
+    assert "Approval required" in result["message"]
 
-    # Pending state is resolved — the same reply would not be re-interpreted.
+    # Pending clarification is resolved.
     assert clarification_store.get(_SESSION) is None
 
 
@@ -183,7 +190,6 @@ def test_ordinal_selection_parses():
 @pytest.mark.asyncio
 async def test_custom_answer_resumes_with_custom_notes():
     supervisor = AssistantSupervisor()
-    supervisor.execution = _ExecutionCapture()
     await _present_rag_clarification(supervisor)
 
     reply = "Custom: use FastAPI, Qdrant, and Claude"
@@ -191,9 +197,11 @@ async def test_custom_answer_resumes_with_custom_notes():
     result = await supervisor._dispatch(reply, ctx)
 
     assert result["meta"]["resumed_from_clarification"] is True
-    dispatched = supervisor.execution.goals[0]
-    assert _RAG_GOAL in dispatched
-    assert "Qdrant" in dispatched
+    assert result["status"] == "plan_ready"
+    plan = plan_store.get(_SESSION)
+    assert plan is not None
+    assert _RAG_GOAL in plan.goal
+    assert "Qdrant" in plan.goal
     assert clarification_store.get(_SESSION) is None
 
 
@@ -285,9 +293,8 @@ async def test_backend_returns_structured_clarification_object():
 
 
 @pytest.mark.asyncio
-async def test_structured_reply_resumes_with_selected_stack(monkeypatch):
+async def test_structured_reply_resumes_with_selected_stack():
     supervisor = AssistantSupervisor()
-    supervisor.execution = _ExecutionCapture()
     await _present_rag_clarification(supervisor)
 
     reply = (
@@ -301,20 +308,21 @@ async def test_structured_reply_resumes_with_selected_stack(monkeypatch):
     result = await supervisor._dispatch(reply, ctx)
 
     assert result["meta"]["resumed_from_clarification"] is True
-    dispatched = supervisor.execution.goals[0]
-    assert _RAG_GOAL in dispatched
-    assert "Next.js + FastAPI + FAISS" in dispatched
-    assert "Hybrid search + citations" in dispatched
-    assert "Backend implementation" in dispatched
+    assert result["status"] == "plan_ready"
+    plan = plan_store.get(_SESSION)
+    assert plan is not None
+    assert _RAG_GOAL in plan.goal
+    assert "Next.js + FastAPI + FAISS" in plan.goal
+    assert "Hybrid search + citations" in plan.goal
+    assert "Backend implementation" in plan.goal
     # FAISS selection must not drift to ChromaDB.
-    assert "ChromaDB" not in dispatched
+    assert "ChromaDB" not in plan.goal
     assert clarification_store.get(_SESSION) is None
 
 
 @pytest.mark.asyncio
 async def test_structured_reply_carries_custom_values():
     supervisor = AssistantSupervisor()
-    supervisor.execution = _ExecutionCapture()
     await _present_rag_clarification(supervisor)
 
     reply = (
@@ -327,9 +335,10 @@ async def test_structured_reply_carries_custom_values():
     ctx = build_turn_context(reply, session_id=_SESSION, run_id="t-structured-custom")
     await supervisor._dispatch(reply, ctx)
 
-    dispatched = supervisor.execution.goals[0]
+    plan = plan_store.get(_SESSION)
+    assert plan is not None
     # Custom value flows through verbatim.
-    assert "Qdrant" in dispatched
+    assert "Qdrant" in plan.goal
 
 
 def test_plain_text_codes_still_work_as_fallback():

@@ -139,6 +139,107 @@ class ClarificationStore:
 clarification_store = ClarificationStore()
 
 
+# ── Resolved-task planning (clarification → plan → approval → execution) ─────
+
+
+@dataclass
+class PendingPlan:
+    """A plan built from a resolved clarification, awaiting user approval."""
+
+    original_request: str
+    goal: str  # the reconstructed task (original request + exact selections)
+    resolved_task: dict = field(default_factory=dict)
+    steps: list[str] = field(default_factory=list)
+    status: str = "awaiting_approval"
+
+
+# Same session-store mechanics, separate slot: a session can be waiting on a
+# clarification answer OR a plan approval, never both.
+plan_store = ClarificationStore()
+
+_PLAN_APPROVE_PATTERN = re.compile(
+    r"^\s*(approve(\s+(the\s+)?plan)?|yes[,.!]?(\s+(please|proceed|go ahead|do it))?|"
+    r"proceed|go ahead|looks good|lgtm|start|run it|execute(\s+(the\s+)?plan)?|do it)\s*[.!]*\s*$",
+    re.IGNORECASE,
+)
+_PLAN_REJECT_PATTERN = re.compile(
+    r"^\s*(reject|cancel|no[,.!]?(\s+thanks)?|stop|discard|forget it|never\s?mind|don'?t)\s*[.!]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_plan_decision(reply: str) -> Optional[str]:
+    """Classify a reply against a pending plan: "approve", "reject", or None."""
+    text = (reply or "").strip()
+    if not text:
+        return None
+    if _PLAN_APPROVE_PATTERN.match(text):
+        return "approve"
+    if _PLAN_REJECT_PATTERN.match(text):
+        return "reject"
+    return None
+
+
+def resolved_task_from(
+    pending: PendingClarification, selection: ClarificationSelection
+) -> dict:
+    """The structured record of what was asked and what was chosen."""
+    return {
+        "original_request": pending.original_request,
+        "selected_stack": selection.choices.get(1),
+        "selected_tools": selection.choices.get(2),
+        "selected_output_format": selection.choices.get(3),
+        "custom_notes": selection.custom_notes,
+    }
+
+
+def generate_plan_steps(
+    original_request: str, selection: ClarificationSelection
+) -> list[str]:
+    """Concrete execution-plan steps derived from the exact selections.
+
+    Stack fidelity matters: the chosen components are named in the steps so the
+    later execution cannot silently substitute technologies.
+    """
+    stack = selection.choices.get(1)
+    tools = selection.choices.get(2)
+    output_format = (selection.choices.get(3) or "").lower()
+
+    steps = ["Inspect the project structure and confirm conventions"]
+    if stack:
+        steps.append(f"Scaffold the core services using {stack}")
+    if tools:
+        steps.append(f"Implement {tools}")
+
+    wants_backend = "backend" in output_format or "frontend" in output_format
+    if "backend" in output_format and "frontend" in output_format:
+        steps.append("Create/update backend service files")
+        steps.append("Create/update frontend pages and components")
+    elif wants_backend:
+        steps.append("Create/update backend implementation files")
+
+    if selection.custom_notes:
+        steps.append(f"Apply custom preferences: {selection.custom_notes}")
+
+    steps.append("Add required dependencies and configuration")
+    steps.append("Validate with tests or a build check")
+    return steps
+
+
+def render_plan_message(
+    selection: ClarificationSelection, steps: list[str]
+) -> str:
+    """The plan-ready reply: acknowledgment, numbered plan, approval gate."""
+    ack = acknowledgment_for(selection)
+    numbered = "\n".join(f"{i}. {step}" for i, step in enumerate(steps, start=1))
+    intro = f"{ack}\n\n" if ack else ""
+    return (
+        f"{intro}Plan:\n{numbered}\n\n"
+        "Approval required before modifying project files. "
+        'Reply "approve plan" to proceed, or tell me what to change.'
+    )
+
+
 # ── Option generation + rendering ────────────────────────────────────────────
 
 

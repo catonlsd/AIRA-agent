@@ -26,12 +26,17 @@ from app.capabilities.research.research_service import ResearchService
 from app.clarification import (
     ClarificationSelection,
     PendingClarification,
-    acknowledgment_for,
+    PendingPlan,
     build_continuation_goal,
     clarification_store,
+    generate_plan_steps,
     option_groups_for,
+    parse_plan_decision,
     parse_selection,
+    plan_store,
     render_clarification_message,
+    render_plan_message,
+    resolved_task_from,
     structured_clarification,
 )
 from app.context_builder import TurnContext
@@ -137,26 +142,33 @@ class AssistantSupervisor:
                 yield {"type": "final", "data": response.model_dump()}
                 return
 
-            # Answering a pending clarification resumes the original task.
-            pending = clarification_store.get(ctx.session_id)
-            if pending is not None:
-                selection = parse_selection(ctx.message, pending)
-                if selection is not None:
-                    result = await self._resume_after_clarification(
-                        ctx.message, pending, selection, ctx
-                    )
-                    for source in result.get("sources", []):
-                        yield {"type": "source", "data": source}
-                    answer = result.get("message") or result.get("final_answer") or ""
-                    if answer:
-                        yield {"type": "token", "data": {"text": answer}}
-                    from app.routes.aira_x import _normalize_run_response
+            # Pending guided flows: a plan awaiting approval, then a pending
+            # clarification whose answer resumes the original task.
+            guided_result: dict[str, Any] | None = None
+            plan = plan_store.get(ctx.session_id)
+            if plan is not None:
+                guided_result = await self._handle_plan_reply(ctx.message, plan, ctx)
+            if guided_result is None:
+                pending = clarification_store.get(ctx.session_id)
+                if pending is not None:
+                    selection = parse_selection(ctx.message, pending)
+                    if selection is not None:
+                        guided_result = await self._resume_after_clarification(
+                            ctx.message, pending, selection, ctx
+                        )
+            if guided_result is not None:
+                for source in guided_result.get("sources", []):
+                    yield {"type": "source", "data": source}
+                answer = guided_result.get("message") or guided_result.get("final_answer") or ""
+                if answer:
+                    yield {"type": "token", "data": {"text": answer}}
+                from app.routes.aira_x import _normalize_run_response
 
-                    normalized = _normalize_run_response(result)
-                    response = compose(normalized, session_id=ctx.session_id, trace=ctx.trace)
-                    self._persist_trace(ctx, response)
-                    yield {"type": "final", "data": response.model_dump()}
-                    return
+                normalized = _normalize_run_response(guided_result)
+                response = compose(normalized, session_id=ctx.session_id, trace=ctx.trace)
+                self._persist_trace(ctx, response)
+                yield {"type": "final", "data": response.model_dump()}
+                return
 
             reasoning = reason_about_turn(
                 ctx.message,
@@ -408,7 +420,15 @@ class AssistantSupervisor:
         selection: ClarificationSelection,
         ctx: TurnContext,
     ) -> dict[str, Any]:
-        """Continue the original task using the user's selected choices."""
+        """Resolve the clarification into a concrete plan awaiting approval.
+
+        A clarification answer is the missing information, not the final task:
+        the supervisor reconstructs the original request with the exact
+        selections, produces an execution plan, and gates execution behind
+        approval. It must NOT report completion here — nothing ran yet — and it
+        must never fall into the generic "needs a specific executable action"
+        tool fallback.
+        """
         clarification_store.clear(ctx.session_id)
         ctx.trace.event("clarification_received", reply=reply)
         ctx.trace.event(
@@ -417,51 +437,156 @@ class AssistantSupervisor:
             selected_options=selection.selected_options,
             custom_notes=selection.custom_notes,
         )
-
-        goal = build_continuation_goal(pending, selection)
-        reasoning = reason_about_turn(
-            goal,
-            history=ctx.history,
-            has_uploaded_files=ctx.has_uploaded_files,
-            uploaded_file_names=ctx.uploaded_file_names,
-        )
-        # Never ask again: the user already answered.
-        reasoning.needs_clarification = False
-        reasoning.clarification_questions = []
-        classification = reasoning.classification
-
-        ctx.trace.event(
-            "classified",
-            mode=classification.mode,
-            confidence=classification.confidence,
-        )
-        ctx.trace.event("reasoned", **reasoning.trace_fields())
         ctx.trace.event(
             "workflow_resumed_after_clarification",
             original_request=pending.original_request,
             selected_options=selection.selected_options,
         )
 
-        if classification.mode in CONVERSATIONAL_MODES:
-            message = generate_conversational_answer(goal, ctx.history)
-            result = self._chat_result(classification, message)
+        ctx.trace.event("stage", stage="planning")
+        goal = build_continuation_goal(pending, selection)
+        resolved_task = resolved_task_from(pending, selection)
+        steps = generate_plan_steps(pending.original_request, selection)
+
+        plan = PendingPlan(
+            original_request=pending.original_request,
+            goal=goal,
+            resolved_task=resolved_task,
+            steps=steps,
+        )
+        plan_store.set(ctx.session_id, plan)
+        ctx.trace.event("stage", stage="plan_ready", steps=len(steps))
+
+        message = render_plan_message(selection, steps)
+        return {
+            "run_id": uuid4().hex,
+            "status": "plan_ready",
+            "decision": "plan_ready",
+            "mode": "execution_planning",
+            "message": message,
+            "final_answer": message,
+            "sources": [],
+            "artifacts": [],
+            "approval_summary": None,
+            "meta": {
+                "is_multi_question": False,
+                "question_count": 1,
+                "has_sources": False,
+                "has_artifacts": False,
+                "requires_approval": False,
+                "approval_required": True,
+                "resumed_from_clarification": True,
+                "resolved_task": resolved_task,
+                "plan_steps": steps,
+                "original_request": pending.original_request,
+                "selected_options": selection.selected_options,
+                **({"custom_notes": selection.custom_notes} if selection.custom_notes else {}),
+            },
+        }
+
+    async def _handle_plan_reply(
+        self, reply: str, plan: PendingPlan, ctx: TurnContext
+    ) -> dict[str, Any] | None:
+        """Approve/reject a pending plan; None routes the turn normally."""
+        decision = parse_plan_decision(reply)
+        if decision == "approve":
+            return await self._execute_approved_plan(plan, ctx)
+        if decision == "reject":
+            plan_store.clear(ctx.session_id)
+            ctx.trace.event("plan_discarded", original_request=plan.original_request)
+            message = (
+                "Okay — I've discarded that plan. Tell me what you'd like to "
+                "change, or describe the task again."
+            )
+            return {
+                "run_id": uuid4().hex,
+                "status": "completed",
+                "decision": "plan_discarded",
+                "mode": "execution_planning",
+                "message": message,
+                "final_answer": message,
+                "sources": [],
+                "artifacts": [],
+                "approval_summary": None,
+                "meta": {
+                    "is_multi_question": False,
+                    "question_count": 1,
+                    "has_sources": False,
+                    "has_artifacts": False,
+                    "requires_approval": False,
+                    "original_request": plan.original_request,
+                },
+            }
+        return None
+
+    async def _execute_approved_plan(
+        self, plan: PendingPlan, ctx: TurnContext
+    ) -> dict[str, Any]:
+        """Execute the approved plan: generate the implementation deliverable.
+
+        Only after this step may the turn report completion. The generation is
+        constrained to the exact selected technologies (FAISS stays FAISS,
+        ChromaDB stays ChromaDB, backend-only stays backend-only).
+        """
+        plan_store.clear(ctx.session_id)
+        ctx.trace.event("plan_approved", original_request=plan.original_request)
+        ctx.trace.event("stage", stage="executing_workflow")
+
+        numbered = "\n".join(
+            f"{i}. {step}" for i, step in enumerate(plan.steps, start=1)
+        )
+        try:
+            implementation = LLMClient().generate(
+                system=(
+                    "You are AIRA-X executing an approved implementation plan. "
+                    "Produce the implementation now — complete, runnable code "
+                    "with file paths, plus brief setup notes. STRICT RULES: use "
+                    "EXACTLY the technologies the user selected (never "
+                    "substitute a different vector store, framework, or LLM "
+                    "provider). If the output format is backend-only, do not "
+                    "produce frontend code beyond what is needed to explain "
+                    "integration. Follow the plan steps in order."
+                ),
+                prompt=f"{plan.goal}\n\nApproved plan:\n{numbered}",
+                temperature=0.2,
+            ).strip()
+        except Exception:
+            implementation = ""
+
+        ctx.trace.event("stage", stage="validation")
+        if not implementation:
+            message = (
+                "I couldn't generate the implementation because no LLM provider "
+                "is available right now. The approved plan is preserved above — "
+                "try again once the model connection is restored."
+            )
+            status, decision = "failed", "plan_execution_failed"
         else:
-            result = await self._dispatch_non_chat(goal, classification, ctx, reasoning=reasoning)
+            message = implementation
+            status, decision = "completed", "plan_executed"
 
-        ack = acknowledgment_for(selection)
-        if ack:
-            body = result.get("message") or result.get("final_answer") or ""
-            combined = f"{ack}\n\n{body}".strip()
-            result["message"] = combined
-            result["final_answer"] = combined
-
-        result.setdefault("meta", {})
-        result["meta"]["resumed_from_clarification"] = True
-        result["meta"]["original_request"] = pending.original_request
-        result["meta"]["selected_options"] = selection.selected_options
-        if selection.custom_notes:
-            result["meta"]["custom_notes"] = selection.custom_notes
-        return result
+        ctx.trace.event("execution_completed", status=status)
+        return {
+            "run_id": uuid4().hex,
+            "status": status,
+            "decision": decision,
+            "mode": "execution_planning",
+            "message": message,
+            "final_answer": message,
+            "sources": [],
+            "artifacts": [],
+            "approval_summary": None,
+            "meta": {
+                "is_multi_question": False,
+                "question_count": 1,
+                "has_sources": False,
+                "has_artifacts": False,
+                "requires_approval": False,
+                "executed_plan_steps": plan.steps,
+                "resolved_task": plan.resolved_task,
+                "original_request": plan.original_request,
+            },
+        }
 
     def _persist_trace(self, ctx: TurnContext, response: AssistantResponse) -> None:
         """Best-effort: tracing must never break a turn."""
@@ -493,6 +618,13 @@ class AssistantSupervisor:
             pass
 
     async def _dispatch(self, goal: str, ctx: TurnContext) -> dict[str, Any]:
+        # A plan awaiting approval: approve -> execute, reject -> discard.
+        plan = plan_store.get(ctx.session_id)
+        if plan is not None:
+            handled = await self._handle_plan_reply(goal, plan, ctx)
+            if handled is not None:
+                return handled
+
         # A pending clarification for this session: if this message answers it,
         # resume the original task with the selected choices.
         pending = clarification_store.get(ctx.session_id)

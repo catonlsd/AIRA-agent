@@ -32,6 +32,7 @@ _SOURCE_TYPE_BY_MODE = {
     "web_research": "web",
     "document_qa": "documents",
     "execution": "tools",
+    "execution_planning": "model",
     "research_then_execution": "tools",
     "multi_question": "mixed",
     "approval_resume": "tools",

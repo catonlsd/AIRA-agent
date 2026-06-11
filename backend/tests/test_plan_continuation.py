@@ -1,0 +1,257 @@
+# File: backend/tests/test_plan_continuation.py
+"""Clarification selection must resume real planning/execution — not claim
+completion, and never hit the generic "needs a specific executable action"
+tool fallback."""
+
+import pytest
+
+import app.assistant_supervisor as sup_module
+from app.assistant_supervisor import AssistantSupervisor
+from app.clarification import (
+    ClarificationSelection,
+    clarification_store,
+    generate_plan_steps,
+    parse_plan_decision,
+    plan_store,
+)
+from app.context_builder import build_turn_context
+from app.supervisor_reasoning import reason_about_turn
+
+_SESSION = "plan-test-session"
+_RAG_GOAL = "Build me a RAG system"
+_FALLBACK = "needs a specific executable action"
+
+
+@pytest.fixture(autouse=True)
+def _clean_stores():
+    for store in (clarification_store, plan_store):
+        store.clear(_SESSION)
+        store.clear(None)
+    yield
+    for store in (clarification_store, plan_store):
+        store.clear(_SESSION)
+        store.clear(None)
+
+
+async def _resolve_rag(
+    supervisor: AssistantSupervisor,
+    stack: str = "Next.js + FastAPI + FAISS",
+    tools: str = "Hybrid search + citations",
+    output_format: str = "Backend implementation",
+):
+    """Present the RAG clarification, then answer it with the given choices."""
+    present_ctx = build_turn_context(_RAG_GOAL, session_id=_SESSION, run_id="p-present")
+    reasoning = reason_about_turn(_RAG_GOAL)
+    await supervisor._dispatch_non_chat(
+        _RAG_GOAL, reasoning.classification, present_ctx, reasoning=reasoning
+    )
+
+    reply = (
+        "Clarification response:\n"
+        f"Original request: {_RAG_GOAL}\n"
+        f"Stack: {stack}\n"
+        f"Tools: {tools}\n"
+        f"Output format: {output_format}"
+    )
+    resume_ctx = build_turn_context(reply, session_id=_SESSION, run_id="p-resume")
+    result = await supervisor._dispatch(reply, resume_ctx)
+    return result, resume_ctx
+
+
+# ── 1. No "Execution complete" after selection ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_selection_does_not_return_execution_complete():
+    supervisor = AssistantSupervisor()
+    result, _ = await _resolve_rag(supervisor)
+
+    assert result["status"] == "plan_ready"
+    assert result["decision"] != "execution_completed"
+    assert "execution complete" not in result["message"].lower()
+
+
+# ── 2. Resolved task record ──────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_selection_creates_resolved_task():
+    supervisor = AssistantSupervisor()
+    result, _ = await _resolve_rag(supervisor)
+
+    resolved = result["meta"]["resolved_task"]
+    assert resolved["original_request"] == _RAG_GOAL
+    assert resolved["selected_stack"] == "Next.js + FastAPI + FAISS"
+    assert resolved["selected_tools"] == "Hybrid search + citations"
+    assert resolved["selected_output_format"] == "Backend implementation"
+    assert resolved["custom_notes"] is None
+
+
+# ── 3-4. Plan exists and preserves the stack ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_rag_selection_creates_execution_plan():
+    supervisor = AssistantSupervisor()
+    result, _ = await _resolve_rag(supervisor)
+
+    steps = result["meta"]["plan_steps"]
+    assert len(steps) >= 4
+    assert any("inspect" in step.lower() for step in steps)
+    assert any("valid" in step.lower() for step in steps)
+    # The numbered plan appears in the reply too.
+    assert "Plan:" in result["message"]
+    assert "1." in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_selected_stack_is_preserved_in_plan():
+    supervisor = AssistantSupervisor()
+    result, _ = await _resolve_rag(supervisor)
+
+    steps = " ".join(result["meta"]["plan_steps"])
+    assert "Next.js + FastAPI + FAISS" in steps
+
+
+# ── 5-6. Vector store fidelity ───────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_faiss_selection_produces_faiss_plan_not_chromadb():
+    supervisor = AssistantSupervisor()
+    result, _ = await _resolve_rag(supervisor, stack="Next.js + FastAPI + FAISS")
+
+    plan_text = " ".join(result["meta"]["plan_steps"]) + result["message"]
+    assert "FAISS" in plan_text
+    assert "ChromaDB" not in plan_text
+
+
+@pytest.mark.asyncio
+async def test_chromadb_selection_produces_chromadb_plan():
+    supervisor = AssistantSupervisor()
+    result, _ = await _resolve_rag(supervisor, stack="FastAPI + ChromaDB + Groq")
+
+    plan_text = " ".join(result["meta"]["plan_steps"])
+    assert "ChromaDB" in plan_text
+    assert "FAISS" not in plan_text
+
+
+# ── 7-8. Output-format awareness ─────────────────────────────────────────────
+
+
+def test_backend_only_output_has_no_frontend_steps():
+    selection = ClarificationSelection(
+        choices={1: "FastAPI + ChromaDB + Groq", 2: "PDF upload + semantic search", 3: "Backend implementation"}
+    )
+    steps = generate_plan_steps(_RAG_GOAL, selection)
+    assert not any("frontend" in step.lower() for step in steps)
+    assert any("backend" in step.lower() for step in steps)
+
+
+def test_full_stack_output_has_backend_and_frontend_steps():
+    selection = ClarificationSelection(
+        choices={1: "FastAPI + ChromaDB + Groq", 2: "Multi-document Q&A + memory", 3: "Full backend + frontend structure"}
+    )
+    steps = generate_plan_steps(_RAG_GOAL, selection)
+    assert any("backend" in step.lower() for step in steps)
+    assert any("frontend" in step.lower() for step in steps)
+
+
+# ── 9. Approval gate before file changes ─────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_plan_requires_approval_before_file_changes():
+    supervisor = AssistantSupervisor()
+    result, _ = await _resolve_rag(supervisor)
+
+    assert result["meta"]["approval_required"] is True
+    assert "Approval required before modifying project files" in result["message"]
+    # The plan is parked, waiting for the user's go-ahead.
+    plan = plan_store.get(_SESSION)
+    assert plan is not None
+    assert plan.status == "awaiting_approval"
+
+
+# ── 10. No generic tool fallback after a valid selection ─────────────────────
+
+
+@pytest.mark.asyncio
+async def test_no_executable_action_fallback_after_selection(monkeypatch):
+    supervisor = AssistantSupervisor()
+    result, _ = await _resolve_rag(supervisor)
+    assert _FALLBACK not in result["message"]
+
+    # Even after approval, the supervisor executes the plan directly and never
+    # routes into the keyword tool planner's fallback.
+    monkeypatch.setattr(
+        sup_module.LLMClient,
+        "generate",
+        lambda self, system, prompt, temperature=0.2: "# main.py\nFastAPI app using FAISS",
+    )
+    approve_ctx = build_turn_context("approve plan", session_id=_SESSION, run_id="p-approve")
+    executed = await supervisor._dispatch("approve plan", approve_ctx)
+    assert _FALLBACK not in executed["message"]
+
+
+# ── 11. Completed only after actual execution ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_completed_only_after_actual_execution(monkeypatch):
+    supervisor = AssistantSupervisor()
+    captured = {}
+
+    def _fake_generate(self, system, prompt, temperature=0.2):
+        captured["system"] = system
+        captured["prompt"] = prompt
+        return "# Implementation\nFastAPI + FAISS backend code here."
+
+    monkeypatch.setattr(sup_module.LLMClient, "generate", _fake_generate)
+
+    result, _ = await _resolve_rag(supervisor)
+    assert result["status"] == "plan_ready"  # not completed yet
+
+    approve_ctx = build_turn_context("approve plan", session_id=_SESSION, run_id="p-exec")
+    executed = await supervisor._dispatch("approve plan", approve_ctx)
+
+    assert executed["status"] == "completed"
+    assert executed["decision"] == "plan_executed"
+    # The execution prompt carried the exact goal + plan.
+    assert _RAG_GOAL in captured["prompt"]
+    assert "Next.js + FastAPI + FAISS" in captured["prompt"]
+    # Stack fidelity is enforced in the instructions.
+    assert "never" in captured["system"].lower()
+    # Plan is consumed; a second "approve plan" routes normally.
+    assert plan_store.get(_SESSION) is None
+    # Trace shows the executing/validation stages.
+    stages = [e.get("stage") for e in approve_ctx.trace.events if e.get("name") == "stage"]
+    assert "executing_workflow" in stages
+    assert "validation" in stages
+
+
+# ── Plan decision parsing + rejection ────────────────────────────────────────
+
+
+def test_plan_decision_parsing():
+    assert parse_plan_decision("approve plan") == "approve"
+    assert parse_plan_decision("Approve") == "approve"
+    assert parse_plan_decision("yes, go ahead") == "approve"
+    assert parse_plan_decision("looks good") == "approve"
+    assert parse_plan_decision("reject") == "reject"
+    assert parse_plan_decision("cancel") == "reject"
+    # Unrelated messages route normally.
+    assert parse_plan_decision("what is FAISS?") is None
+    assert parse_plan_decision("git push") is None
+
+
+@pytest.mark.asyncio
+async def test_rejecting_plan_discards_it():
+    supervisor = AssistantSupervisor()
+    await _resolve_rag(supervisor)
+
+    reject_ctx = build_turn_context("cancel", session_id=_SESSION, run_id="p-reject")
+    result = await supervisor._dispatch("cancel", reject_ctx)
+
+    assert result["decision"] == "plan_discarded"
+    assert plan_store.get(_SESSION) is None
