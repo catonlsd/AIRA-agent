@@ -75,6 +75,28 @@ from app.turn_classifier import (
     WEB_RESEARCH_MODE,
 )
 
+import json
+import logging
+
+# Operational lifecycle log (ops-facing, never shown in the chat UI). One
+# structured line per significant supervisor event, correlated by
+# session_id/run_id so deployments can grep a full turn end-to-end.
+_ops_logger = logging.getLogger("aira_x.supervisor")
+
+
+def _ops_log(event: str, ctx, **fields) -> None:
+    try:
+        payload = {
+            "event": event,
+            "session_id": getattr(ctx, "session_id", None),
+            "turn_id": getattr(getattr(ctx, "trace", None), "turn_id", None),
+            **fields,
+        }
+        _ops_logger.info(json.dumps(payload, default=str))
+    except Exception:
+        pass
+
+
 MAX_QUESTIONS = 20
 
 # Modes answered directly by the LLM (history-aware), not by a tool/research path.
@@ -443,6 +465,7 @@ class AssistantSupervisor:
             option_groups=option_groups_for(goal),
         )
         clarification_store.set(ctx.session_id, pending)
+        _ops_log("clarification_requested", ctx, original_request=goal)
         message = render_clarification_message(pending)
         ctx.trace.event(
             "clarification_options_presented",
@@ -570,6 +593,7 @@ class AssistantSupervisor:
         else:
             ctx.trace.event("action_approved", actions=len(pending.actions))
             ctx.trace.event("stage", stage="executing_workflow")
+            _ops_log("runtime_validation_started", ctx, actions=len(pending.actions))
             executable = ExecutablePlan.from_dict(pending.plan)
             evidence = execute_runtime_validation(
                 executable,
@@ -581,6 +605,9 @@ class AssistantSupervisor:
             message = render_runtime_report(evidence)
             status = "completed" if evidence.get("status") == "completed" else "failed"
             ctx.trace.event("execution_completed", status=status)
+            _ops_log("runtime_validation_finished", ctx, status=status,
+                     failure_class=evidence.get("failure_class"),
+                     repairs=len(evidence.get("repairs", [])))
 
         return {
             "run_id": uuid4().hex,
@@ -651,6 +678,7 @@ class AssistantSupervisor:
         plan_store.clear(ctx.session_id)
         ctx.trace.event("plan_approved", original_request=plan.original_request)
         ctx.trace.event("stage", stage="executing_workflow")
+        _ops_log("execution_started", ctx, original_request=plan.original_request)
 
         if plan.executable:
             executable = ExecutablePlan.from_dict(plan.executable)
@@ -705,6 +733,8 @@ class AssistantSupervisor:
             files_written=len(report.files_written),
             repairs=len(report.repairs),
         )
+        _ops_log("execution_finished", ctx, status=status,
+                 files_written=len(report.files_written), repairs=len(report.repairs))
         return {
             "run_id": uuid4().hex,
             "status": status,
@@ -764,6 +794,9 @@ class AssistantSupervisor:
                 capabilities_used=reasoned.get("capabilities_used"),
             )
             self.tracer.persist(record)
+            _ops_log("turn_completed", ctx, run_id=response.run_id,
+                     mode=response.mode, status=response.status,
+                     latency_ms=ctx.trace.elapsed_ms())
         except Exception:
             pass
 
@@ -803,6 +836,9 @@ class AssistantSupervisor:
             confidence=classification.confidence,
         )
         ctx.trace.event("reasoned", **reasoning.trace_fields())
+        _ops_log("route_chosen", ctx, mode=classification.mode,
+                 confidence=classification.confidence,
+                 conversation_type=reasoning.conversation_type)
 
         if classification.mode in CONVERSATIONAL_MODES:
             # Direct-answer path: conversational/knowledge/self-memory turns
