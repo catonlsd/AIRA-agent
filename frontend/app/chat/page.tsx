@@ -49,6 +49,13 @@ import {
   type Citation,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import {
+  describeRuntimeAction,
+  presentExecutionPhases,
+  provenanceLabel,
+  summarizeEvidence,
+  type ExecutionPhase,
+} from "@/lib/execution-presenter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -779,6 +786,94 @@ function PlanApprovalActions({
   );
 }
 
+// ─── Premium execution UX ─────────────────────────────────────────────────────
+// Presentation components for the guided execution flow: a minimal phase
+// stepper, a meaningful runtime-approval card, and compact evidence chips.
+// All labels come from the presenter layer — never raw backend enums.
+
+function ExecutionProgress({ phases }: { phases: ExecutionPhase[] }) {
+  return (
+    <div className="exec-progress" aria-label="Execution progress">
+      {phases.map((phase) => (
+        <span key={phase.key} className={cn("exec-phase", `exec-phase--${phase.state}`)}>
+          <span className="exec-phase-dot" aria-hidden="true" />
+          {phase.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function RuntimeApprovalCard({
+  actions,
+  busy,
+  onDecide,
+}: {
+  actions: Array<{ type?: string; description?: string; payload?: { command?: string } }>;
+  busy: boolean;
+  onDecide: (text: string) => void;
+}) {
+  const [choice, setChoice] = useState<"approve" | "reject" | null>(null);
+  const disabled = busy || choice !== null;
+
+  return (
+    <div className="runtime-approval-card">
+      <p className="runtime-approval-title">Validate the generated project?</p>
+      <p className="runtime-approval-sub">
+        Your files are written. With your approval, AIRA-X will run these checks
+        and repair issues it finds — approval is needed because they run real
+        commands on your machine.
+      </p>
+      <ul className="runtime-approval-list">
+        {actions.map((action, index) => (
+          <li key={index}>{describeRuntimeAction(action)}</li>
+        ))}
+      </ul>
+      <details className="runtime-approval-details">
+        <summary>Show exact commands</summary>
+        <pre>{actions.map((a) => a.payload?.command ?? "").filter(Boolean).join("\n")}</pre>
+      </details>
+      <div className="plan-approval-row">
+        <button
+          type="button"
+          className="clarify-continue"
+          disabled={disabled}
+          onClick={() => {
+            setChoice("approve");
+            onDecide("approve");
+          }}
+        >
+          {choice === "approve" ? "Validating…" : "Run validation"}
+        </button>
+        <button
+          type="button"
+          className="plan-reject-btn"
+          disabled={disabled}
+          onClick={() => {
+            setChoice("reject");
+            onDecide("reject");
+          }}
+        >
+          Skip — keep files as-is
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EvidenceStrip({ chips }: { chips: ReturnType<typeof summarizeEvidence> }) {
+  if (chips.length === 0) return null;
+  return (
+    <div className="evidence-strip" aria-label="Execution evidence">
+      {chips.map((chip, index) => (
+        <span key={index} className={cn("evidence-chip", `evidence-chip--${chip.tone}`)}>
+          {chip.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /**
  * OctaInline — minimal, localized supervisor indicator shown inside the active
  * assistant response (so feedback stays visible when Octa near the composer is
@@ -806,10 +901,25 @@ function ResearchTurnCard({ turn, liveState, liveLabel, busy = false, onClarify 
   const clarification = isClarificationData(assistantResponse?.metadata?.clarification)
     ? (assistantResponse!.metadata.clarification as ClarificationData)
     : null;
+  // Presenter layer: map raw backend metadata into user-facing execution UX.
+  const meta = (assistantResponse?.metadata ?? {}) as Record<string, any>;
+  const phases = presentExecutionPhases(meta);
+  // Runtime-action approval gets its own meaningful card (check descriptions,
+  // commands tucked into a detail view) instead of generic buttons.
+  const runtimeActions =
+    meta.turn_status === "awaiting_action_approval" && Array.isArray(meta.runtime_actions)
+      ? (meta.runtime_actions as Array<{ type?: string; description?: string; payload?: { command?: string } }>)
+      : null;
   // A plan awaiting the user's go-ahead before real execution starts.
   const awaitingPlanApproval =
-    Boolean(assistantResponse?.metadata?.approval_required) &&
-    Array.isArray(assistantResponse?.metadata?.plan_steps);
+    !runtimeActions &&
+    Boolean(meta.approval_required) &&
+    Array.isArray(meta.plan_steps);
+  const evidenceChips =
+    meta.turn_status === "completed" || meta.turn_status === "failed"
+      ? summarizeEvidence(meta)
+      : [];
+  const provenance = provenanceLabel(meta.answered_from);
   const taskCount = multiTask?.metadata?.task_count ?? 0;
   const failedTasks = multiTask?.metadata?.failed_tasks ?? [];
   const completedTasks = taskCount > 0 ? Math.max(taskCount - failedTasks.length, 0) : 0;
@@ -869,6 +979,9 @@ function ResearchTurnCard({ turn, liveState, liveLabel, busy = false, onClarify 
               <p className="text-sm font-bold text-[var(--text-strong)] leading-4">
                 {multiTask ? "Multi-task results" : "AIRA-X"}
               </p>
+              {provenance && (
+                <p className="mt-0.5 text-xs text-[var(--text-muted)]">{provenance}</p>
+              )}
               {multiTask && taskCount > 0 && (
                 <p className="mt-0.5 text-xs text-[var(--text-muted)]">
                   {failedTasks.length > 0
@@ -882,10 +995,15 @@ function ResearchTurnCard({ turn, liveState, liveLabel, busy = false, onClarify 
           {/* Answer body — structured clarifications render as option cards
               instead of the markdown fallback text. */}
           <div className="aira-answer-body">
+            {phases && <ExecutionProgress phases={phases} />}
             {clarification && onClarify ? (
               <ClarificationCard data={clarification} busy={busy} onSubmit={onClarify} />
             ) : (
               <AssistantAnswerContent answer={turn.response.answer} />
+            )}
+            {evidenceChips.length > 0 && <EvidenceStrip chips={evidenceChips} />}
+            {runtimeActions && onClarify && (
+              <RuntimeApprovalCard actions={runtimeActions} busy={busy} onDecide={onClarify} />
             )}
             {awaitingPlanApproval && onClarify && (
               <PlanApprovalActions busy={busy} onDecide={onClarify} />
@@ -1767,6 +1885,114 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
 }
 .plan-reject-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* ── Premium execution UX ── */
+.exec-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin-bottom: 1rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--surface-soft);
+}
+.exec-phase {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-subtle);
+}
+.exec-phase-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--border-strong);
+  flex-shrink: 0;
+}
+.exec-phase--done { color: var(--text-muted); }
+.exec-phase--done .exec-phase-dot { background: var(--success, #15a06a); }
+.exec-phase--active { color: var(--text-strong); }
+.exec-phase--active .exec-phase-dot {
+  background: var(--accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 60%, transparent);
+  animation: octa-glow 1.6s ease-in-out infinite;
+}
+.exec-phase--failed { color: var(--danger); }
+.exec-phase--failed .exec-phase-dot { background: var(--danger); }
+
+.runtime-approval-card {
+  margin-top: 1rem;
+  border: 1px solid color-mix(in srgb, var(--warning, #d9822b) 35%, var(--border));
+  border-radius: 1rem;
+  background: var(--surface-soft);
+  padding: 0.9rem 1rem;
+}
+.runtime-approval-title { font-size: 0.875rem; font-weight: 800; color: var(--text-strong); }
+.runtime-approval-sub { margin-top: 0.3rem; font-size: 0.78rem; line-height: 1.5; color: var(--text-muted); }
+.runtime-approval-list { margin: 0.6rem 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.3rem; }
+.runtime-approval-list li {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.runtime-approval-list li::before {
+  content: "";
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.runtime-approval-details { margin-top: 0.6rem; }
+.runtime-approval-details summary {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-subtle);
+  cursor: pointer;
+}
+.runtime-approval-details pre {
+  margin-top: 0.4rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--surface-muted);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  color: var(--text-muted);
+}
+
+.evidence-strip { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.9rem; }
+.evidence-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.22rem 0.65rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text-muted);
+}
+.evidence-chip--good {
+  color: var(--success, #15a06a);
+  border-color: color-mix(in srgb, var(--success, #15a06a) 40%, transparent);
+  background: var(--success-soft, var(--surface-soft));
+}
+.evidence-chip--warn {
+  color: var(--warning, #d9822b);
+  border-color: color-mix(in srgb, var(--warning, #d9822b) 40%, transparent);
+}
+.evidence-chip--bad {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
 /* localized in-message indicator (inside the streaming answer card) */
 .octa-inline {
   display: inline-flex;
@@ -2524,7 +2750,14 @@ export default function ChatPage() {
       );
       const citations = Array.isArray(final.sources) ? (final.sources as Citation[]) : [];
       const runId = typeof final.run_id === "string" ? final.run_id : null;
-      const meta = ((final as Record<string, unknown>).meta as Record<string, unknown>) ?? {};
+      const rawMeta = ((final as Record<string, unknown>).meta as Record<string, unknown>) ?? {};
+      // Carry status/decision into the turn so the presenter layer can map
+      // execution phases without re-parsing the stream.
+      const meta = {
+        ...rawMeta,
+        turn_status: String((final as Record<string, unknown>).status ?? ""),
+        turn_decision: String((final as Record<string, unknown>).decision ?? ""),
+      };
       setAiraXResponse(null);
       setTurns((prev) =>
         prev.map((t) => {
