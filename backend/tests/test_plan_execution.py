@@ -220,3 +220,103 @@ def test_no_completion_without_files(_sandbox):
     report = execute_plan(_plan([_validate_step(1)]), generate=lambda **k: "x")
     assert report.status == "failed"
     assert "no files were written" in (report.error or "")
+
+
+# ── Runtime self-check (install/run + diagnose + repair) ─────────────────────
+
+
+def _runtime_plan():
+    return _plan([_write_step(1, "main.py"), _validate_step(2)])
+
+
+def test_runtime_actions_built_from_evidence():
+    from app.plan_executor import ExecutionReport, build_runtime_actions
+
+    plan = _runtime_plan()
+    report = ExecutionReport(
+        files_written=[
+            {"path": "generated/test_project/main.py", "bytes": 10},
+            {"path": "generated/test_project/requirements.txt", "bytes": 10},
+        ]
+    )
+    actions = build_runtime_actions(plan, report)
+    commands = [a["payload"]["command"] for a in actions]
+    assert any("pip install -r" in c for c in commands)
+    assert any("compileall" in c for c in commands)
+    for action in actions:
+        assert action["tool"] == "shell_tool"
+        assert action["status"] == "pending"
+
+
+def test_runtime_validation_repairs_failing_file(_sandbox):
+    from app.plan_executor import build_runtime_actions, execute_runtime_validation, ExecutionReport
+
+    plan = _runtime_plan()
+    report = ExecutionReport(files_written=[{"path": "generated/test_project/main.py", "bytes": 5}])
+    actions = build_runtime_actions(plan, report)
+
+    calls = {"n": 0}
+
+    def _runner(tool, action, payload=None):
+        if tool == "file_tool":
+            return {"success": True, "output": ""}
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"success": False, "output": 'File "main.py", line 3\nSyntaxError'}
+        return {"success": True, "output": "compiled"}
+
+    evidence = execute_runtime_validation(
+        plan, actions, generate=lambda **k: "def fixed():\n    return 1\n", run_tool=_runner
+    )
+
+    assert evidence["status"] == "completed"
+    assert len(evidence["repairs"]) == 1
+    assert evidence["repairs"][0]["path"].endswith("main.py")
+    # Both the failed and the successful command runs are recorded as evidence.
+    assert len(evidence["commands"]) == 2
+
+
+def test_runtime_validation_fails_honestly(_sandbox):
+    from app.plan_executor import build_runtime_actions, execute_runtime_validation, ExecutionReport
+
+    plan = _runtime_plan()
+    report = ExecutionReport(files_written=[{"path": "generated/test_project/main.py", "bytes": 5}])
+    actions = build_runtime_actions(plan, report)
+
+    def _runner(tool, action, payload=None):
+        if tool == "file_tool":
+            return {"success": True, "output": ""}
+        return {"success": False, "output": 'File "main.py": persistent failure'}
+
+    evidence = execute_runtime_validation(
+        plan, actions, generate=lambda **k: "x = 1\n", run_tool=_runner
+    )
+    assert evidence["status"] == "failed"
+    assert evidence["error"]
+
+
+# ── Top-level mode means routed intent, never prompt shape ───────────────────
+
+
+def test_single_run_normalizer_uses_routed_mode():
+    from app.routes.aira_x import _build_clean_single_run_response
+
+    plain = _build_clean_single_run_response(
+        {"final_answer": "done", "status": "completed"}
+    )
+    assert plain["mode"] == "execution"
+    assert plain["meta"]["prompt_shape"] == "single"
+
+    resumed = _build_clean_single_run_response(
+        {"final_answer": "done", "approval_resolution": {"status": "approved"}}
+    )
+    assert resumed["mode"] == "approval_resume"
+
+    explicit = _build_clean_single_run_response(
+        {"final_answer": "done", "mode": "web_research"}
+    )
+    assert explicit["mode"] == "web_research"
+
+    # "single_question" must never appear as a top-level mode.
+    for record in (plain, resumed, explicit):
+        assert record["mode"] != "single_question"

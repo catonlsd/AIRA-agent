@@ -160,6 +160,22 @@ class PendingPlan:
 # clarification answer OR a plan approval, never both.
 plan_store = ClarificationStore()
 
+
+@dataclass
+class PendingAction:
+    """Risky runtime actions (install/run) awaiting per-action approval."""
+
+    goal: str
+    project_dir: str
+    plan: dict = field(default_factory=dict)  # serialized ExecutablePlan
+    actions: list = field(default_factory=list)  # structured runtime steps
+    files: list = field(default_factory=list)
+    status: str = "awaiting_action_approval"
+
+
+# Runtime-validation actions awaiting approval (post plan execution).
+action_store = ClarificationStore()
+
 _PLAN_APPROVE_PATTERN = re.compile(
     r"^\s*(approve(\s+(the\s+)?plan)?|yes[,.!]?(\s+(please|proceed|go ahead|do it))?|"
     r"proceed|go ahead|looks good|lgtm|start|run it|execute(\s+(the\s+)?plan)?|do it)\s*[.!]*\s*$",

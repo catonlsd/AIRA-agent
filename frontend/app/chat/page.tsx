@@ -2552,6 +2552,9 @@ export default function ChatPage() {
       } else if (finalStatus === "plan_ready") {
         setOctaState("approval");
         flashOcta("Plan ready — approval required.");
+      } else if (finalStatus === "awaiting_action_approval") {
+        setOctaState("approval");
+        flashOcta("Files written — approve runtime validation.");
       } else {
         setOctaState("success");
       }

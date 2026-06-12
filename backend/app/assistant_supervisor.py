@@ -25,8 +25,10 @@ from app.capabilities.execution.execution_service import ExecutionService
 from app.capabilities.research.research_service import ResearchService
 from app.clarification import (
     ClarificationSelection,
+    PendingAction,
     PendingClarification,
     PendingPlan,
+    action_store,
     build_continuation_goal,
     clarification_store,
     generate_plan_steps,
@@ -51,8 +53,12 @@ from app.multi_question_handler import handle_multi_question_prompt
 from app.plan_executor import (
     ExecutablePlan,
     build_executable_plan,
+    build_runtime_actions,
     execute_plan,
+    execute_runtime_validation,
     render_execution_report,
+    render_runtime_offer,
+    render_runtime_report,
 )
 from app.supervisor_reasoning import (
     CAP_DOCUMENT_QA,
@@ -148,12 +154,18 @@ class AssistantSupervisor:
                 yield {"type": "final", "data": response.model_dump()}
                 return
 
-            # Pending guided flows: a plan awaiting approval, then a pending
-            # clarification whose answer resumes the original task.
+            # Pending guided flows: runtime actions, then a plan awaiting
+            # approval, then a clarification whose answer resumes the task.
             guided_result: dict[str, Any] | None = None
-            plan = plan_store.get(ctx.session_id)
-            if plan is not None:
-                guided_result = await self._handle_plan_reply(ctx.message, plan, ctx)
+            pending_action = action_store.get(ctx.session_id)
+            if pending_action is not None:
+                guided_result = await self._handle_action_reply(
+                    ctx.message, pending_action, ctx
+                )
+            if guided_result is None:
+                plan = plan_store.get(ctx.session_id)
+                if plan is not None:
+                    guided_result = await self._handle_plan_reply(ctx.message, plan, ctx)
             if guided_result is None:
                 pending = clarification_store.get(ctx.session_id)
                 if pending is not None:
@@ -507,6 +519,59 @@ class AssistantSupervisor:
             },
         }
 
+    async def _handle_action_reply(
+        self, reply: str, pending: PendingAction, ctx: TurnContext
+    ) -> dict[str, Any] | None:
+        """Approve/reject gated runtime actions; None routes the turn normally."""
+        decision = parse_plan_decision(reply)
+        if decision is None:
+            return None
+        action_store.clear(ctx.session_id)
+
+        if decision == "reject":
+            ctx.trace.event("runtime_validation_rejected")
+            message = (
+                "Okay — skipping runtime validation. The generated files are "
+                f"kept under {pending.project_dir}/ and remain syntax-validated."
+            )
+            status, evidence = "completed", {}
+        else:
+            ctx.trace.event("action_approved", actions=len(pending.actions))
+            ctx.trace.event("stage", stage="executing_workflow")
+            executable = ExecutablePlan.from_dict(pending.plan)
+            evidence = execute_runtime_validation(
+                executable,
+                pending.actions,
+                generate=lambda **kwargs: LLMClient().generate(**kwargs),
+                on_event=lambda event, data: ctx.trace.event("stage", stage=event, **data),
+            )
+            ctx.trace.event("stage", stage="validation")
+            message = render_runtime_report(evidence)
+            status = "completed" if evidence.get("status") == "completed" else "failed"
+            ctx.trace.event("execution_completed", status=status)
+
+        return {
+            "run_id": uuid4().hex,
+            "status": status,
+            "decision": "runtime_validated" if status == "completed" else "runtime_validation_failed",
+            "mode": "execution_planning",
+            "message": message,
+            "final_answer": message,
+            "sources": [],
+            "artifacts": list(pending.files),
+            "approval_summary": None,
+            "meta": {
+                "is_multi_question": False,
+                "question_count": 1,
+                "has_sources": False,
+                "has_artifacts": bool(pending.files),
+                "requires_approval": False,
+                "runtime": evidence,
+                "files_written": [{"path": p} for p in pending.files],
+                "original_request": pending.goal,
+            },
+        }
+
     async def _handle_plan_reply(
         self, reply: str, plan: PendingPlan, ctx: TurnContext
     ) -> dict[str, Any] | None:
@@ -576,7 +641,28 @@ class AssistantSupervisor:
 
         ctx.trace.event("stage", stage="validation")
         message = render_execution_report(executable, report)
+
+        # Self-check: offer gated runtime validation (install + run) for the
+        # generated project. Risky commands need their own approval.
+        runtime_actions: list[dict[str, Any]] = []
         if report.status == "completed":
+            runtime_actions = build_runtime_actions(executable, report)
+
+        if report.status == "completed" and runtime_actions:
+            action_store.set(
+                ctx.session_id,
+                PendingAction(
+                    goal=plan.goal,
+                    project_dir=executable.project_dir,
+                    plan=executable.to_dict(),
+                    actions=runtime_actions,
+                    files=[entry["path"] for entry in report.files_written],
+                ),
+            )
+            status, decision = "awaiting_action_approval", "plan_executed"
+            message += "\n" + render_runtime_offer(runtime_actions)
+            ctx.trace.event("stage", stage="awaiting_action_approval")
+        elif report.status == "completed":
             status, decision = "completed", "plan_executed"
         else:
             status, decision = "failed", "plan_execution_failed"
@@ -603,11 +689,18 @@ class AssistantSupervisor:
                 "has_sources": False,
                 "has_artifacts": bool(report.files_written),
                 "requires_approval": False,
+                "approval_required": bool(runtime_actions),
+                **(
+                    {"plan_steps": [a["description"] for a in runtime_actions]}
+                    if runtime_actions
+                    else {}
+                ),
                 "executed_plan_steps": plan.steps,
                 "execution_plan": executable.to_dict(),
                 "files_written": report.files_written,
                 "validation": report.validation,
                 "repairs": report.repairs,
+                "runtime_actions": runtime_actions,
                 "resolved_task": plan.resolved_task,
                 "original_request": plan.original_request,
             },
@@ -643,6 +736,13 @@ class AssistantSupervisor:
             pass
 
     async def _dispatch(self, goal: str, ctx: TurnContext) -> dict[str, Any]:
+        # Runtime actions awaiting per-action approval: approve -> run + verify.
+        pending_action = action_store.get(ctx.session_id)
+        if pending_action is not None:
+            handled = await self._handle_action_reply(goal, pending_action, ctx)
+            if handled is not None:
+                return handled
+
         # A plan awaiting approval: approve -> execute, reject -> discard.
         plan = plan_store.get(ctx.session_id)
         if plan is not None:

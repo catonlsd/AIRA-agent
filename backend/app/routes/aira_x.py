@@ -526,13 +526,23 @@ def _build_clean_single_run_response(workflow: dict[str, Any]) -> dict[str, Any]
     approval_summary = _build_approval_summary_from_workflow(workflow)
 
     cleaned = dict(workflow)
-    cleaned["mode"] = "single_question"
+    # Top-level mode means the ROUTED INTENT, never the prompt shape. Raw
+    # workflow dicts reaching this normalizer are tool-execution runs — either
+    # an approval resume or a plain execution turn. Prompt shape lives in meta.
+    if isinstance(workflow.get("mode"), str) and workflow["mode"]:
+        mode = workflow["mode"]
+    elif workflow.get("approval_resolution") or workflow.get("approval_in_progress"):
+        mode = "approval_resume"
+    else:
+        mode = "execution"
+    cleaned["mode"] = mode
     cleaned["message"] = workflow.get("final_answer")
     cleaned["sources"] = sources
     cleaned["artifacts"] = artifacts
     cleaned["approval_summary"] = approval_summary
     cleaned["meta"] = {
         "is_multi_question": False,
+        "prompt_shape": "single",
         "question_count": 1,
         "has_sources": bool(sources),
         "has_artifacts": bool(artifacts),

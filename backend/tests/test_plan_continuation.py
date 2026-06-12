@@ -9,6 +9,7 @@ import app.assistant_supervisor as sup_module
 from app.assistant_supervisor import AssistantSupervisor
 from app.clarification import (
     ClarificationSelection,
+    action_store,
     clarification_store,
     generate_plan_steps,
     parse_plan_decision,
@@ -24,11 +25,11 @@ _FALLBACK = "needs a specific executable action"
 
 @pytest.fixture(autouse=True)
 def _clean_stores():
-    for store in (clarification_store, plan_store):
+    for store in (clarification_store, plan_store, action_store):
         store.clear(_SESSION)
         store.clear(None)
     yield
-    for store in (clarification_store, plan_store):
+    for store in (clarification_store, plan_store, action_store):
         store.clear(_SESSION)
         store.clear(None)
 
@@ -223,6 +224,8 @@ async def test_no_executable_action_fallback_after_selection(monkeypatch, tmp_pa
 
 @pytest.mark.asyncio
 async def test_completed_only_after_actual_execution(monkeypatch, tmp_path):
+    """Full state machine: plan_ready -> executing -> awaiting_action_approval
+    -> runtime validation -> completed, with real evidence at each gate."""
     _sandbox_workspace(monkeypatch, tmp_path)
     supervisor = AssistantSupervisor()
     captured = {}
@@ -236,26 +239,71 @@ async def test_completed_only_after_actual_execution(monkeypatch, tmp_path):
     approve_ctx = build_turn_context("approve plan", session_id=_SESSION, run_id="p-exec")
     executed = await supervisor._dispatch("approve plan", approve_ctx)
 
-    assert executed["status"] == "completed"
+    # Files written + validated, but the run now offers gated runtime
+    # validation (the project contains .py files) — still not "completed".
+    assert executed["status"] == "awaiting_action_approval"
     assert executed["decision"] == "plan_executed"
-    # REAL evidence: the files exist on disk and are listed in the reply.
     files = executed["meta"]["files_written"]
-    assert files, "completion requires written files"
+    assert files, "execution requires written files"
     for entry in files:
         assert (tmp_path / entry["path"]).exists()
         assert entry["path"] in executed["message"]
     assert executed["meta"]["validation"]["missing_or_invalid"] == []
-    # Stack fidelity is enforced in the codegen instructions.
+    assert executed["meta"]["runtime_actions"]
     assert "never" in captured["system"].lower()
     assert _RAG_GOAL in captured["prompt"]
-    # Plan is consumed; a second "approve plan" routes normally.
     assert plan_store.get(_SESSION) is None
-    # Trace shows the executing/validating stages.
+    assert action_store.get(_SESSION) is not None
     stages = [e.get("stage") for e in approve_ctx.trace.events if e.get("name") == "stage"]
     assert "executing_workflow" in stages
     assert "executing_step" in stages
     assert "validating" in stages
-    assert "validation" in stages
+    assert "awaiting_action_approval" in stages
+
+    # Approve the runtime actions: commands actually run (stubbed runner) and
+    # only then does the run report completed — with command evidence.
+    from tools.tool_router import ToolRouter
+
+    commands_run = []
+
+    def _fake_run(tool_name, action, payload=None):
+        commands_run.append((tool_name, action, (payload or {}).get("command", "")))
+        return {"success": True, "output": "ok"}
+
+    monkeypatch.setattr(ToolRouter, "run", staticmethod(_fake_run))
+
+    run_ctx = build_turn_context("approve", session_id=_SESSION, run_id="p-runtime")
+    validated = await supervisor._dispatch("approve", run_ctx)
+
+    assert validated["status"] == "completed"
+    assert validated["decision"] == "runtime_validated"
+    runtime = validated["meta"]["runtime"]
+    assert runtime["status"] == "completed"
+    assert any("compileall" in cmd for _, _, cmd in commands_run)
+    assert all(entry["success"] for entry in runtime["commands"])
+    assert action_store.get(_SESSION) is None
+
+
+@pytest.mark.asyncio
+async def test_rejecting_runtime_validation_keeps_files(monkeypatch, tmp_path):
+    _sandbox_workspace(monkeypatch, tmp_path)
+    supervisor = AssistantSupervisor()
+    _stub_codegen(monkeypatch)
+    await _resolve_rag(supervisor)
+
+    approve_ctx = build_turn_context("approve plan", session_id=_SESSION, run_id="p-x1")
+    executed = await supervisor._dispatch("approve plan", approve_ctx)
+    assert executed["status"] == "awaiting_action_approval"
+
+    reject_ctx = build_turn_context("reject", session_id=_SESSION, run_id="p-x2")
+    result = await supervisor._dispatch("reject", reject_ctx)
+
+    assert result["status"] == "completed"
+    assert "skipping runtime validation" in result["message"].lower()
+    assert action_store.get(_SESSION) is None
+    # The generated files survive.
+    for entry in executed["meta"]["files_written"]:
+        assert (tmp_path / entry["path"]).exists()
 
 
 # ── Plan decision parsing + rejection ────────────────────────────────────────

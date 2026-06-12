@@ -439,6 +439,137 @@ def _run_validate_step(
     return None
 
 
+# ── Runtime self-check (gated behind per-action approval) ───────────────────
+
+
+def build_runtime_actions(plan: ExecutablePlan, report: ExecutionReport) -> list[dict[str, Any]]:
+    """Structured install/run steps for self-checking the generated project."""
+    files = [entry["path"] for entry in report.files_written]
+    actions: list[dict[str, Any]] = []
+    requirements = next((p for p in files if p.endswith("requirements.txt")), None)
+    if requirements:
+        actions.append(
+            {
+                "id": len(actions) + 1,
+                "type": "install",
+                "tool": "shell_tool",
+                "action": "run",
+                "payload": {"command": f"pip install -r {requirements}"},
+                "status": "pending",
+                "description": "Install Python dependencies",
+            }
+        )
+    if any(p.endswith(".py") for p in files):
+        actions.append(
+            {
+                "id": len(actions) + 1,
+                "type": "smoke_test",
+                "tool": "shell_tool",
+                "action": "run",
+                "payload": {"command": f"python -m compileall -q {plan.project_dir}"},
+                "status": "pending",
+                "description": "Compile-check the generated Python project",
+            }
+        )
+    return actions
+
+
+def execute_runtime_validation(
+    plan: ExecutablePlan,
+    actions: list[dict[str, Any]],
+    generate: Callable[..., str],
+    run_tool: Optional[Callable[..., dict[str, Any]]] = None,
+    on_event: Optional[Callable[[str, dict[str, Any]], None]] = None,
+) -> dict[str, Any]:
+    """Run approved install/smoke commands; diagnose + repair once on failure.
+
+    Returns evidence: every command run with its captured output, repairs
+    performed, and an honest completed/failed status.
+    """
+
+    def emit(event: str, **data: Any) -> None:
+        if on_event:
+            try:
+                on_event(event, data)
+            except Exception:
+                pass
+
+    # Resolved at call time so tests/hosts can swap the tool runner.
+    if run_tool is None:
+        run_tool = ToolRouter.run
+
+    plan_files = [str(s.payload.get("path")) for s in plan.steps if s.type == "write"]
+    evidence: dict[str, Any] = {"status": "completed", "commands": [], "repairs": []}
+
+    for action in actions:
+        command = str(action.get("payload", {}).get("command", ""))
+        unsafe = _is_payload_safe(action.get("payload", {}))
+        if unsafe:
+            evidence["status"] = "failed"
+            evidence["error"] = f"unsafe runtime action ({unsafe})"
+            return evidence
+
+        for attempt in range(2):  # initial + one repaired retry
+            emit("executing_step", description=action.get("description"), command=command)
+            result = run_tool(action["tool"], action["action"], dict(action["payload"]))
+            output = str(result.get("output") or result.get("error") or "")
+            evidence["commands"].append(
+                {"command": command, "success": bool(result.get("success")), "output": output[:2000]}
+            )
+            if result.get("success"):
+                break
+
+            # Diagnose: find a generated file named in the failure output.
+            target = next((p for p in plan_files if p.split("/")[-1] in output), None)
+            if attempt == 0 and target:
+                emit("repairing", path=target, error=output[:300])
+                try:
+                    step = next(s for s in plan.steps if str(s.payload.get("path")) == target)
+                    content = _generate_file_content(plan, step, generate, error_context=output[:1500])
+                except Exception as error:
+                    evidence["status"] = "failed"
+                    evidence["error"] = f"repair generation failed: {error}"
+                    return evidence
+                write = run_tool("file_tool", "write_file", {"path": target, "content": content})
+                if write.get("success"):
+                    evidence["repairs"].append({"path": target, "error": output[:300]})
+                    continue
+            evidence["status"] = "failed"
+            evidence["error"] = f"runtime validation failed: {command}"
+            return evidence
+
+    return evidence
+
+
+def render_runtime_offer(actions: list[dict[str, Any]]) -> str:
+    lines = ["", "Runtime validation available — with your approval I will run:"]
+    for action in actions:
+        lines.append(f"- {action['payload']['command']}  ({action['description']})")
+    lines.append(
+        'Reply "approve" to run and self-check the project, or "reject" to keep '
+        "the files as-is."
+    )
+    return "\n".join(lines)
+
+
+def render_runtime_report(evidence: dict[str, Any]) -> str:
+    lines: list[str] = []
+    if evidence.get("status") == "completed":
+        lines.append("Runtime validation passed — evidence:")
+    else:
+        lines.append("Runtime validation failed — evidence:")
+    for entry in evidence.get("commands", []):
+        flag = "ok" if entry["success"] else "FAILED"
+        lines.append(f"- [{flag}] {entry['command']}")
+        if entry["output"].strip():
+            lines.append(f"  output: {entry['output'].strip()[:300]}")
+    for repair in evidence.get("repairs", []):
+        lines.append(f"- repaired {repair['path']} after: {repair['error'][:120]}")
+    if evidence.get("error"):
+        lines.append(f"Error: {evidence['error']}")
+    return "\n".join(lines)
+
+
 # ── Evidence report rendering ────────────────────────────────────────────────
 
 
