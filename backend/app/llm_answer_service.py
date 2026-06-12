@@ -26,7 +26,35 @@ from app.conversation import (
     offline_general_chat_message,
 )
 from app.core.llm import LLMClient
+from app.product_manifest import (
+    is_product_meta_question,
+    manifest_context,
+    offline_meta_answer,
+)
 from app.turn_classifier import SELF_MEMORY_MODE
+
+# Self/meta questions ("what can you do", "what additions does your
+# architecture need") answer from the product manifest — never from generic
+# chatbot knowledge. Style is enforced: grounded, concise, zero boilerplate.
+PRODUCT_META_SYSTEM_PROMPT = (
+    "You are AIRA-X, answering a question about YOURSELF — your identity, "
+    "capabilities, limitations, or what should be improved in your "
+    "architecture.\n\n"
+    "Ground every claim in the product truth below. Reference real system "
+    "areas (supervisor, execution loop, runtime validation, repair loop, "
+    "ChromaDB document retrieval, tracing, artifact pipeline, frontend UX) — "
+    "never invent features.\n\n"
+    "STYLE RULES (strict):\n"
+    "- Start directly with the substance. No gratitude, no praise, no "
+    "'thank you for asking'.\n"
+    "- NEVER use generic AI phrases such as 'advanced NLP', 'knowledge "
+    "graphs', 'improved contextual understanding', or 'as an AI language "
+    "model'.\n"
+    "- Be concise, strategic, and specific — like a strong engineer "
+    "describing their own system. Short paragraphs or tight bullets.\n"
+    "- Honest about limitations; no marketing fluff.\n\n"
+    "PRODUCT TRUTH:\n"
+)
 
 # Self-memory turns ("do you know me", "who am I") must be honest: recall only
 # what THIS conversation contains, never invent personal details, and never
@@ -76,6 +104,9 @@ class DirectAnswerService:
         """Non-streaming direct answer for one turn."""
         if mode == SELF_MEMORY_MODE:
             return self._self_memory_answer(goal, history)
+        # Product-self questions answer from the manifest, never generically.
+        if is_product_meta_question(goal):
+            return self._meta_answer(goal)
         # General chat / knowledge: the shared persona path (history-gated,
         # format-aware, memory-silent). Falls back offline internally.
         return generate_conversational_answer(goal, history)
@@ -97,6 +128,8 @@ class DirectAnswerService:
         """Offline message when the provider yields nothing."""
         if mode == SELF_MEMORY_MODE:
             return offline_self_memory_message(history)
+        if is_product_meta_question(goal):
+            return offline_meta_answer(goal)
         return offline_general_chat_message(goal)
 
     # ── internals ────────────────────────────────────────────────────────────
@@ -110,11 +143,28 @@ class DirectAnswerService:
                 _memory_transcript_prompt(goal, history),
                 0.4,
             )
+        if is_product_meta_question(goal):
+            return (
+                PRODUCT_META_SYSTEM_PROMPT + manifest_context(),
+                goal,
+                0.3,
+            )
         return (
             AIRA_X_PERSONA_SYSTEM_PROMPT,
             _build_history_prompt(goal, history),
             0.7,
         )
+
+    def _meta_answer(self, goal: str) -> str:
+        try:
+            answer = LLMClient().generate(
+                system=PRODUCT_META_SYSTEM_PROMPT + manifest_context(),
+                prompt=goal,
+                temperature=0.3,
+            )
+        except Exception:
+            answer = ""
+        return (answer or "").strip() or offline_meta_answer(goal)
 
     def _self_memory_answer(self, goal: str, history: Sequence[dict] | None) -> str:
         try:
