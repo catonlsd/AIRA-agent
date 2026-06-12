@@ -443,35 +443,111 @@ def _run_validate_step(
 
 
 def build_runtime_actions(plan: ExecutablePlan, report: ExecutionReport) -> list[dict[str, Any]]:
-    """Structured install/run steps for self-checking the generated project."""
+    """Typed, ordered validation steps derived from what was generated.
+
+    Order is deliberate and stable: install -> compile/build -> import smoke.
+    Each action carries a type used later for failure classification.
+    """
     files = [entry["path"] for entry in report.files_written]
     actions: list[dict[str, Any]] = []
+
+    def _add(action_type: str, command: str, description: str) -> None:
+        actions.append(
+            {
+                "id": len(actions) + 1,
+                "type": action_type,
+                "tool": "shell_tool",
+                "action": "run",
+                "payload": {"command": command},
+                "status": "pending",
+                "description": description,
+            }
+        )
+
     requirements = next((p for p in files if p.endswith("requirements.txt")), None)
     if requirements:
-        actions.append(
-            {
-                "id": len(actions) + 1,
-                "type": "install",
-                "tool": "shell_tool",
-                "action": "run",
-                "payload": {"command": f"pip install -r {requirements}"},
-                "status": "pending",
-                "description": "Install Python dependencies",
-            }
-        )
+        _add("install", f"pip install -r {requirements}", "Install Python dependencies")
+    if any(p.endswith("package.json") for p in files):
+        _add("install", f"npm install --prefix {plan.project_dir}", "Install JS dependencies")
+
     if any(p.endswith(".py") for p in files):
-        actions.append(
-            {
-                "id": len(actions) + 1,
-                "type": "smoke_test",
-                "tool": "shell_tool",
-                "action": "run",
-                "payload": {"command": f"python -m compileall -q {plan.project_dir}"},
-                "status": "pending",
-                "description": "Compile-check the generated Python project",
-            }
+        _add(
+            "smoke_test",
+            f"python -m compileall -q {plan.project_dir}",
+            "Compile-check the generated Python project",
+        )
+    if any(p.endswith((".ts", ".tsx")) for p in files) and any(
+        p.endswith("package.json") for p in files
+    ):
+        _add(
+            "build",
+            f"npm run build --if-present --prefix {plan.project_dir}",
+            "Build/type-check the generated JS/TS project",
+        )
+
+    # Import smoke test: actually import the Python entry module.
+    entry = next((p for p in files if p.endswith("main.py")), None)
+    if entry:
+        rel = entry[len(plan.project_dir) + 1 :] if entry.startswith(plan.project_dir) else entry
+        module = rel[:-3].replace("/", ".").replace("\\", ".")
+        _add(
+            "import_smoke",
+            (
+                f"python -c \"import sys; sys.path.insert(0, '{plan.project_dir}'); "
+                f"import importlib; importlib.import_module('{module}')\""
+            ),
+            "Import the entry module as a startup smoke test",
         )
     return actions
+
+
+# ── Failure classification (drives repair decisions, traces, reporting) ─────
+
+_TRACEBACK_FILE = re.compile(r'File "([^"]+)"')
+_MISSING_MODULE = re.compile(r"no module named '?\"?([\w.]+)", re.IGNORECASE)
+
+
+def classify_runtime_failure(action_type: str, output: str) -> str:
+    """Map a failed validation step to a meaningful failure class."""
+    text = (output or "").lower()
+    if action_type == "install":
+        return "dependency_install_failed"
+    if "no module named" in text or "modulenotfounderror" in text or "importerror" in text:
+        return "import_failed"
+    if "syntaxerror" in text or "indentationerror" in text:
+        return "compile_failed"
+    if action_type == "import_smoke":
+        return "startup_failed"
+    if action_type == "build":
+        return "build_failed"
+    if action_type == "smoke_test":
+        return "compile_failed"
+    if action_type == "healthcheck":
+        return "healthcheck_failed"
+    return "unrecoverable_runtime_failure"
+
+
+def _repair_target(output: str, plan_files: list[str]) -> Optional[str]:
+    """Map failure evidence to the most likely generated file to repair."""
+    text = output or ""
+    # 1. Traceback file paths are the strongest signal.
+    for raw in _TRACEBACK_FILE.findall(text):
+        name = raw.replace("\\", "/").split("/")[-1]
+        for path in plan_files:
+            if path.endswith(name):
+                return path
+    # 2. A missing module maps to its generated file, else to requirements.txt.
+    missing = _MISSING_MODULE.search(text)
+    if missing:
+        module = missing.group(1).split(".")[-1]
+        for path in plan_files:
+            if path.endswith(f"{module}.py"):
+                return path
+        for path in plan_files:
+            if path.endswith("requirements.txt"):
+                return path
+    # 3. Fallback: any generated filename mentioned in the output.
+    return next((p for p in plan_files if p.split("/")[-1] in text), None)
 
 
 def execute_runtime_validation(
@@ -499,45 +575,83 @@ def execute_runtime_validation(
         run_tool = ToolRouter.run
 
     plan_files = [str(s.payload.get("path")) for s in plan.steps if s.type == "write"]
-    evidence: dict[str, Any] = {"status": "completed", "commands": [], "repairs": []}
+    evidence: dict[str, Any] = {
+        "status": "completed",
+        "commands": [],
+        "repairs": [],
+        "retry_count": 0,
+    }
 
     for action in actions:
         command = str(action.get("payload", {}).get("command", ""))
+        action_type = str(action.get("type", "smoke_test"))
         unsafe = _is_payload_safe(action.get("payload", {}))
         if unsafe:
             evidence["status"] = "failed"
+            evidence["failure_class"] = "unrecoverable_runtime_failure"
             evidence["error"] = f"unsafe runtime action ({unsafe})"
-            return evidence
+            break
 
-        for attempt in range(2):  # initial + one repaired retry
+        for attempt in range(2):  # initial + one repaired retry, never more
             emit("executing_step", description=action.get("description"), command=command)
             result = run_tool(action["tool"], action["action"], dict(action["payload"]))
             output = str(result.get("output") or result.get("error") or "")
-            evidence["commands"].append(
-                {"command": command, "success": bool(result.get("success")), "output": output[:2000]}
-            )
+            entry: dict[str, Any] = {
+                "command": command,
+                "type": action_type,
+                "success": bool(result.get("success")),
+                "output": output[:2000],
+            }
             if result.get("success"):
+                evidence["commands"].append(entry)
                 break
 
-            # Diagnose: find a generated file named in the failure output.
-            target = next((p for p in plan_files if p.split("/")[-1] in output), None)
+            failure_class = classify_runtime_failure(action_type, output)
+            entry["classification"] = failure_class
+            evidence["commands"].append(entry)
+            evidence["failure_class"] = failure_class
+
+            # Evidence-driven repair: map the failure to a generated file. A
+            # failed dependency install only repairs its requirements file —
+            # blind code regeneration cannot fix a broken installer.
+            target = _repair_target(output, plan_files)
+            if failure_class == "dependency_install_failed" and (
+                target is None or not target.endswith("requirements.txt")
+            ):
+                target = next(
+                    (p for p in plan_files if p.endswith("requirements.txt")), None
+                )
             if attempt == 0 and target:
-                emit("repairing", path=target, error=output[:300])
+                emit("repairing", path=target, classification=failure_class, error=output[:300])
+                evidence["retry_count"] += 1
                 try:
                     step = next(s for s in plan.steps if str(s.payload.get("path")) == target)
                     content = _generate_file_content(plan, step, generate, error_context=output[:1500])
                 except Exception as error:
                     evidence["status"] = "failed"
+                    evidence["failure_class"] = "repair_failed"
                     evidence["error"] = f"repair generation failed: {error}"
-                    return evidence
+                    break
                 write = run_tool("file_tool", "write_file", {"path": target, "content": content})
                 if write.get("success"):
-                    evidence["repairs"].append({"path": target, "error": output[:300]})
+                    evidence["repairs"].append(
+                        {"path": target, "classification": failure_class, "error": output[:300]}
+                    )
+                    emit("retrying", command=command)
                     continue
             evidence["status"] = "failed"
             evidence["error"] = f"runtime validation failed: {command}"
-            return evidence
+            break
+        if evidence["status"] == "failed":
+            break
 
+    executed = evidence["commands"]
+    evidence["validation_summary"] = {
+        "planned": len(actions),
+        "executed": len({e["command"] for e in executed}),
+        "passed": len([e for e in executed if e["success"]]),
+        "failed": len([e for e in executed if not e["success"]]),
+    }
     return evidence
 
 
@@ -552,21 +666,64 @@ def render_runtime_offer(actions: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+_TYPE_LABELS = {
+    "install": "dependency install",
+    "smoke_test": "compile check",
+    "import_smoke": "import/startup smoke test",
+    "build": "build/type-check",
+    "healthcheck": "healthcheck",
+}
+
+
 def render_runtime_report(evidence: dict[str, Any]) -> str:
+    """Honest, readable runtime summary — no raw log dumps in the main answer."""
+    commands = evidence.get("commands", [])
+    repairs = evidence.get("repairs", [])
+    passed_types = [
+        _TYPE_LABELS.get(e.get("type", ""), e.get("type", "check"))
+        for e in commands
+        if e["success"]
+    ]
     lines: list[str] = []
+
     if evidence.get("status") == "completed":
-        lines.append("Runtime validation passed — evidence:")
+        checks = ", ".join(dict.fromkeys(passed_types)) or "validation checks"
+        lines.append(f"Runtime validation passed: {checks}.")
+        if repairs:
+            lines.append("")
+            lines.append(f"Repairs made along the way ({len(repairs)}):")
+            for repair in repairs:
+                lines.append(
+                    f"- {repair['path']} — regenerated after {repair.get('classification', 'a failure')}"
+                )
+        lines.append("")
+        lines.append(
+            "The generated project is installed and passes its checks. Next: "
+            "review the files and run the app; ask me to adjust anything."
+        )
+        return "\n".join(lines)
+
+    failure_class = evidence.get("failure_class", "runtime failure")
+    failed = next((e for e in commands if not e["success"]), {})
+    lines.append(f"Runtime validation failed ({failure_class}).")
+    if failed:
+        lines.append(f"- failing step: {failed.get('command', '?')}")
+        excerpt = (failed.get("output") or "").strip()
+        if excerpt:
+            lines.append(f"- error excerpt: {excerpt[:240]}")
+    if repairs:
+        for repair in repairs:
+            lines.append(
+                f"- repair attempted: regenerated {repair['path']} "
+                f"(after {repair.get('classification', 'failure')}) — the retry still failed"
+            )
     else:
-        lines.append("Runtime validation failed — evidence:")
-    for entry in evidence.get("commands", []):
-        flag = "ok" if entry["success"] else "FAILED"
-        lines.append(f"- [{flag}] {entry['command']}")
-        if entry["output"].strip():
-            lines.append(f"  output: {entry['output'].strip()[:300]}")
-    for repair in evidence.get("repairs", []):
-        lines.append(f"- repaired {repair['path']} after: {repair['error'][:120]}")
-    if evidence.get("error"):
-        lines.append(f"Error: {evidence['error']}")
+        lines.append("- no safe repair target could be identified, so no blind retry was made")
+    lines.append("")
+    lines.append(
+        "The generated files are kept on disk. Manual follow-up is needed for "
+        "the failing step above — or tell me what to change and I'll regenerate it."
+    )
     return "\n".join(lines)
 
 

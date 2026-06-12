@@ -272,8 +272,10 @@ def test_runtime_validation_repairs_failing_file(_sandbox):
     assert evidence["status"] == "completed"
     assert len(evidence["repairs"]) == 1
     assert evidence["repairs"][0]["path"].endswith("main.py")
-    # Both the failed and the successful command runs are recorded as evidence.
-    assert len(evidence["commands"]) == 2
+    # The failed run and the successful retry are both recorded as evidence.
+    statuses = [e["success"] for e in evidence["commands"]]
+    assert statuses[0] is False and all(statuses[1:])
+    assert evidence["retry_count"] == 1
 
 
 def test_runtime_validation_fails_honestly(_sandbox):
