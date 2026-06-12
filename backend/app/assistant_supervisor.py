@@ -275,12 +275,48 @@ class AssistantSupervisor:
             return await self._compose_document_and_research(goal, classification, ctx)
 
         if classification.mode == DOCUMENT_QA_MODE:
+            # Document-first: answer from the uploaded files when the evidence
+            # supports it; otherwise say so honestly and escalate to broader
+            # research, clearly marked. Vector internals stay in meta/traces.
             ctx.trace.event("document_qa_started")
             result = self._document_service().answer(goal, history=ctx.history)
-            ctx.trace.event(
-                "document_qa_completed",
-                has_evidence=result.get("meta", {}).get("has_evidence"),
-            )
+            has_evidence = result.get("meta", {}).get("has_evidence")
+            ctx.trace.event("document_qa_completed", has_evidence=has_evidence)
+
+            result.setdefault("meta", {})
+            if has_evidence is False:
+                ctx.trace.event("stage", stage="document_fallback_research")
+                try:
+                    research = self.research.run(
+                        goal,
+                        history=ctx.history,
+                        preferences=ctx.preferences,
+                        want_web=True,
+                        want_documents=False,
+                        mode=WEB_RESEARCH_MODE,
+                    )
+                except Exception:
+                    research = {}
+                answer = (
+                    research.get("message") or research.get("final_answer") or ""
+                ).strip()
+                if answer:
+                    notice = (
+                        "Your uploaded documents don't appear to contain enough "
+                        "information to answer that directly, so here's what "
+                        "broader research says:"
+                    )
+                    result["message"] = f"{notice}\n\n{answer}"
+                    result["final_answer"] = result["message"]
+                    result["sources"] = list(research.get("sources", []))
+                    result["decision"] = "document_qa_web_fallback"
+                    result["meta"]["answered_from"] = "web_fallback"
+                    result["meta"]["has_sources"] = bool(result["sources"])
+                else:
+                    # No usable fallback: keep the honest insufficiency reply.
+                    result["meta"]["answered_from"] = "insufficient_documents"
+            else:
+                result["meta"]["answered_from"] = "uploaded_documents"
             return self._with_classification(result, classification)
 
         if classification.mode == WEB_RESEARCH_MODE:

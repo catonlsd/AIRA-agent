@@ -75,9 +75,12 @@ async def test_document_qa_route_uses_document_service_without_workflow(monkeypa
     # answers honestly rather than hallucinating, and never runs the workflow.
     assert response["status"] == "completed"
     assert response["mode"] == "document_qa"
-    assert response["decision"] == "document_qa_insufficient_evidence"
+    # Insufficient document evidence now escalates to clearly-marked research.
+    assert response["decision"] in (
+        "document_qa_web_fallback",
+        "document_qa_insufficient_evidence",
+    )
     assert response["meta"]["has_evidence"] is False
-    assert response["sources"] == []
     assert response["approval_summary"] is None
     assert response["meta"]["turn_classification"]["mode"] == "document_qa"
 

@@ -114,7 +114,10 @@ async def test_no_evidence_document_fallback(db):
     r = await _run("according to the document, explain quantum chromodynamics in detail", db)
     assert r.response_type == "document_research"
     assert r.metadata.get("has_evidence") is False
-    assert "couldn't find" in r.answer.lower()
+    # Document-first now escalates honestly: the answer is clearly marked as
+    # coming from broader research because the files were insufficient.
+    assert "don't appear to contain enough information" in r.answer.lower()
+    assert r.metadata.get("answered_from") in ("web_fallback", "insufficient_documents")
     assert r.citations == []
 
 
