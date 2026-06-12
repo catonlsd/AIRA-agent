@@ -176,9 +176,6 @@ async def test_approve_without_pending_state_routes_normally(monkeypatch):
             }
 
     supervisor.execution = _ExecStub()
-    monkeypatch.setattr(
-        sup_module, "generate_conversational_answer", lambda goal, history=None: "ok"
-    )
 
     ctx = build_turn_context("approve", session_id=_SESSION, run_id="rw-idem")
     result = await supervisor._dispatch("approve", ctx)
@@ -224,9 +221,6 @@ async def test_second_approval_after_completion_is_safe(monkeypatch, sandbox, co
             }
 
     supervisor.execution = _ExecStub()
-    monkeypatch.setattr(
-        sup_module, "generate_conversational_answer", lambda goal, history=None: "ok"
-    )
     ctx = build_turn_context("approve", session_id=_SESSION, run_id="rw-d5")
     second = await supervisor._dispatch("approve", ctx)
     assert second["decision"] not in ("runtime_validated", "plan_executed")

@@ -42,13 +42,8 @@ from app.clarification import (
     structured_clarification,
 )
 from app.context_builder import TurnContext
-from app.conversation import (
-    AIRA_X_PERSONA_SYSTEM_PROMPT,
-    _build_history_prompt,
-    generate_conversational_answer,
-    offline_general_chat_message,
-)
 from app.core.llm import LLMClient
+from app.llm_answer_service import DirectAnswerService
 from app.multi_question_handler import handle_multi_question_prompt
 from app.plan_executor import (
     ExecutablePlan,
@@ -109,6 +104,7 @@ class AssistantSupervisor:
     def __init__(self) -> None:
         self.research = ResearchService()
         self.execution = ExecutionService()
+        self.answers = DirectAnswerService()
         self.tracer = TraceService()
         self._documents = None  # lazily built (constructs a vector-store client)
 
@@ -211,17 +207,17 @@ class AssistantSupervisor:
             }
 
             if classification.mode in CONVERSATIONAL_MODES:
+                # Direct-answer path: streamed straight from the answer
+                # service — no tools, no workflow noise.
                 chunks: list[str] = []
-                for piece in LLMClient().stream(
-                    AIRA_X_PERSONA_SYSTEM_PROMPT,
-                    _build_history_prompt(ctx.message, ctx.history),
-                    temperature=0.7,
+                for piece in self.answers.stream(
+                    ctx.message, mode=classification.mode, history=ctx.history
                 ):
-                    if not piece:
-                        continue
                     chunks.append(piece)
                     yield {"type": "token", "data": {"text": piece}}
-                message = "".join(chunks).strip() or offline_general_chat_message(ctx.message)
+                message = "".join(chunks).strip() or self.answers.fallback(
+                    ctx.message, mode=classification.mode, history=ctx.history
+                )
                 result = self._chat_result(classification, message)
             else:
                 # Workflow intelligence: surface the stage before dispatching.
@@ -773,7 +769,11 @@ class AssistantSupervisor:
         ctx.trace.event("reasoned", **reasoning.trace_fields())
 
         if classification.mode in CONVERSATIONAL_MODES:
-            message = generate_conversational_answer(goal, ctx.history)
+            # Direct-answer path: conversational/knowledge/self-memory turns
+            # answer through the dedicated service, never the workflow.
+            message = self.answers.answer(
+                goal, mode=classification.mode, history=ctx.history
+            )
             return self._chat_result(classification, message)
 
         return await self._dispatch_non_chat(goal, classification, ctx, reasoning=reasoning)
