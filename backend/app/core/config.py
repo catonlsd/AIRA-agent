@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     security_headers_enabled: bool = True
     request_logging_enabled: bool = True
 
+    # Boot/health validation actually launches a generated app in a bounded
+    # subprocess. Operators can disable it in constrained environments (no spawn
+    # permission, locked-down CI) — detection still runs and reports honestly.
+    enable_boot_validation: bool = True
+    boot_ready_timeout_seconds: float = 8.0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

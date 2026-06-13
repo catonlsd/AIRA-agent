@@ -175,6 +175,16 @@ export function summarizeEvidence(
   }
   const repairs = Array.isArray(meta.runtime?.repairs) ? meta.runtime.repairs.length : 0;
   if (repairs > 0) chips.push({ label: `${repairs} issue${repairs === 1 ? "" : "s"} repaired`, tone: "warn" });
+
+  // Startup/health verification (only when it really ran).
+  const startup = meta.runtime?.startup;
+  if (startup?.attempted) {
+    if (startup.success) {
+      chips.push({ label: `app booted · health ${startup.probe_status ?? "OK"}`, tone: "good" });
+    } else {
+      chips.push({ label: `startup ${startup.classification ?? "failed"}`, tone: "bad" });
+    }
+  }
   return chips;
 }
 

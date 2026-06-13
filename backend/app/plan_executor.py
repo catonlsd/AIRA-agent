@@ -498,6 +498,24 @@ def build_runtime_actions(plan: ExecutablePlan, report: ExecutionReport) -> list
             ),
             "Import the entry module as a startup smoke test",
         )
+
+    # Startup/health validation: only when the output is a runnable service and
+    # a safe boot plan can be derived (else skipped honestly downstream).
+    from app.startup_validator import detect_boot_target
+
+    target = detect_boot_target(plan.project_dir, files)
+    if target is not None:
+        actions.append(
+            {
+                "id": len(actions) + 1,
+                "type": "startup_probe",
+                "tool": "startup_validator",
+                "action": "boot_and_probe",
+                "payload": {"boot": target.to_dict()},
+                "status": "pending",
+                "description": f"Start the {target.framework} app and probe {target.health_path}",
+            }
+        )
     return actions
 
 
@@ -556,11 +574,14 @@ def execute_runtime_validation(
     generate: Callable[..., str],
     run_tool: Optional[Callable[..., dict[str, Any]]] = None,
     on_event: Optional[Callable[[str, dict[str, Any]], None]] = None,
+    startup_runner: Optional[Callable[..., dict[str, Any]]] = None,
 ) -> dict[str, Any]:
     """Run approved install/smoke commands; diagnose + repair once on failure.
 
     Returns evidence: every command run with its captured output, repairs
-    performed, and an honest completed/failed status.
+    performed, an optional startup/health probe result, and an honest
+    completed/failed status. `startup_runner` is injectable so tests never spawn
+    real processes.
     """
 
     def emit(event: str, **data: Any) -> None:
@@ -570,9 +591,13 @@ def execute_runtime_validation(
             except Exception:
                 pass
 
-    # Resolved at call time so tests/hosts can swap the tool runner.
+    # Resolved at call time so tests/hosts can swap the tool runner / launcher.
     if run_tool is None:
         run_tool = ToolRouter.run
+    if startup_runner is None:
+        from app.startup_validator import run_startup_probe
+
+        startup_runner = run_startup_probe
 
     plan_files = [str(s.payload.get("path")) for s in plan.steps if s.type == "write"]
     evidence: dict[str, Any] = {
@@ -583,8 +608,26 @@ def execute_runtime_validation(
     }
 
     for action in actions:
-        command = str(action.get("payload", {}).get("command", ""))
         action_type = str(action.get("type", "smoke_test"))
+
+        # Startup/health validation is a controlled, bounded subprocess — never
+        # the blocking command runner. It brings its own evidence + teardown.
+        if action_type == "startup_probe":
+            startup = _run_startup_step(
+                plan, action, plan_files, generate, run_tool, startup_runner, emit
+            )
+            evidence["startup"] = startup
+            if startup.get("repairs"):
+                evidence["repairs"].extend(startup["repairs"])
+                evidence["retry_count"] += len(startup["repairs"])
+            if startup.get("attempted") and not startup.get("success"):
+                evidence["status"] = "failed"
+                evidence["failure_class"] = startup.get("classification", "unrecoverable_startup_failure")
+                evidence["error"] = f"startup validation failed: {startup.get('classification')}"
+                break
+            continue
+
+        command = str(action.get("payload", {}).get("command", ""))
         unsafe = _is_payload_safe(action.get("payload", {}))
         if unsafe:
             evidence["status"] = "failed"
@@ -655,6 +698,83 @@ def execute_runtime_validation(
     return evidence
 
 
+def _startup_repair_target(
+    classification: str, output: str, plan_files: list[str], entry_file: str
+) -> Optional[str]:
+    """Pick the file a startup failure most likely lives in (evidence-driven)."""
+    # A traceback path is the strongest signal.
+    traceback_target = _repair_target(output, plan_files)
+    if traceback_target:
+        return traceback_target
+    if classification == "missing_runtime_dependency":
+        return next((p for p in plan_files if p.endswith("requirements.txt")), None)
+    if classification in (
+        "process_crashed",
+        "startup_command_failed",
+        "startup_timeout",
+        "readiness_failed",
+        "healthcheck_failed",
+    ):
+        return entry_file if entry_file in plan_files else (plan_files[0] if plan_files else None)
+    return None
+
+
+def _run_startup_step(
+    plan: ExecutablePlan,
+    action: dict[str, Any],
+    plan_files: list[str],
+    generate: Callable[..., str],
+    run_tool: Callable[..., dict[str, Any]],
+    startup_runner: Callable[..., dict[str, Any]],
+    emit: Callable[..., None],
+) -> dict[str, Any]:
+    """Run the bounded startup probe; on failure, repair once and re-probe."""
+    from app.startup_validator import BootTarget
+
+    target = BootTarget.from_dict(action["payload"]["boot"])
+
+    def _probe() -> dict[str, Any]:
+        return startup_runner(target, on_event=lambda e, d: emit(e, **d))
+
+    startup = _probe()
+    # Disabled or already healthy → nothing more to do.
+    if not startup.get("attempted") or startup.get("success"):
+        return startup
+
+    classification = startup.get("classification", "unrecoverable_startup_failure")
+    repair_target = _startup_repair_target(
+        classification, startup.get("output", ""), plan_files, target.entry_file
+    )
+    if not repair_target:
+        startup["repairs"] = []
+        return startup  # no safe target → honest failure, no blind retry
+
+    emit("repairing", path=repair_target, classification=classification)
+    try:
+        step = next(s for s in plan.steps if str(s.payload.get("path")) == repair_target)
+        content = _generate_file_content(
+            plan, step, generate, error_context=(startup.get("output") or classification)[:1500]
+        )
+    except Exception as error:
+        startup["repairs"] = []
+        startup["classification"] = "startup_repair_failed"
+        startup["error"] = f"repair generation failed: {error}"
+        return startup
+
+    write = run_tool("file_tool", "write_file", {"path": repair_target, "content": content})
+    if not write.get("success"):
+        startup["repairs"] = []
+        startup["classification"] = "startup_repair_failed"
+        return startup
+
+    emit("retrying", path=repair_target)
+    retried = _probe()  # bounded: exactly one retry
+    retried["repairs"] = [{"path": repair_target, "classification": classification}]
+    if not retried.get("success"):
+        retried.setdefault("classification", "startup_repair_failed")
+    return retried
+
+
 def render_runtime_offer(actions: list[dict[str, Any]]) -> str:
     lines = ["", "Runtime validation available — with your approval I will run:"]
     for action in actions:
@@ -686,9 +806,27 @@ def render_runtime_report(evidence: dict[str, Any]) -> str:
     ]
     lines: list[str] = []
 
+    startup = evidence.get("startup") or {}
+
     if evidence.get("status") == "completed":
         checks = ", ".join(dict.fromkeys(passed_types)) or "validation checks"
         lines.append(f"Runtime validation passed: {checks}.")
+        # Startup/health verification — only claim it when it really happened.
+        if startup.get("attempted") and startup.get("success"):
+            status = startup.get("probe_status")
+            secs = startup.get("startup_seconds")
+            lines.append(
+                f"Startup check passed: the {startup.get('framework', 'app')} booted "
+                f"and {startup.get('health_url', 'its health endpoint')} responded "
+                f"{status}" + (f" in {secs}s." if secs is not None else ".")
+            )
+        elif startup.get("attempted") is False and startup.get("reason"):
+            lines.append(f"Startup check skipped ({startup['reason']}).")
+        elif not startup:
+            lines.append(
+                "Startup check skipped: the output isn't a runnable service I can "
+                "safely boot, so install/compile/import were verified but not a live boot."
+            )
         if repairs:
             lines.append("")
             lines.append(f"Repairs made along the way ({len(repairs)}):")
@@ -698,15 +836,25 @@ def render_runtime_report(evidence: dict[str, Any]) -> str:
                 )
         lines.append("")
         lines.append(
-            "The generated project is installed and passes its checks. Next: "
-            "review the files and run the app; ask me to adjust anything."
+            "Next: review the files and run the app; ask me to adjust anything."
         )
         return "\n".join(lines)
 
     failure_class = evidence.get("failure_class", "runtime failure")
     failed = next((e for e in commands if not e["success"]), {})
     lines.append(f"Runtime validation failed ({failure_class}).")
-    if failed:
+    # A startup failure carries its evidence in `startup`, not `commands`. Note
+    # what DID pass first, so the user knows how far it got.
+    if startup.get("attempted") and not startup.get("success"):
+        passed = ", ".join(dict.fromkeys(passed_types))
+        if passed:
+            lines.append(f"- earlier checks passed: {passed}")
+        lines.append(f"- failing step: start {startup.get('framework', 'app')} and probe {startup.get('health_url', '')}")
+        excerpt = (startup.get("output") or startup.get("error") or "").strip()
+        if excerpt:
+            lines.append(f"- error excerpt: {excerpt[:240]}")
+        lines.append(f"- process teardown: {startup.get('teardown', 'unknown')}")
+    elif failed:
         lines.append(f"- failing step: {failed.get('command', '?')}")
         excerpt = (failed.get("output") or "").strip()
         if excerpt:
