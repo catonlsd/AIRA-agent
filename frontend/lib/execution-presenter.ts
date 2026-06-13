@@ -33,8 +33,49 @@ export function describeRuntimeAction(action: {
 export function isExecutionTurn(meta: Meta | undefined): boolean {
   if (!meta) return false;
   return Boolean(
-    meta.execution_plan || meta.runtime || meta.files_written || meta.runtime_actions
+    meta.execution_plan ||
+      meta.runtime ||
+      meta.files_written ||
+      meta.runtime_actions ||
+      meta.artifact_pending ||
+      meta.artifact
   );
+}
+
+/** A completed/validated artifact ready for the result card. */
+export type ArtifactView = {
+  type: string;
+  title: string;
+  filename: string;
+  downloadUrl: string | null;
+  extent: string; // "8 slides" / "12 paragraphs" / "20 rows"
+  validated: boolean;
+  externalNote: string | null;
+};
+
+export function presentArtifact(meta: Meta | undefined): ArtifactView | null {
+  const art = meta?.artifact;
+  if (!art) return null;
+  const details = art.validation?.details ?? {};
+  const extent =
+    art.type === "pptx"
+      ? `${details.slides ?? "?"} slides`
+      : art.type === "docx"
+      ? `${details.paragraphs ?? "?"} paragraphs`
+      : `${details.rows ?? "?"} rows`;
+  const externalNote =
+    art.location === "external" && art.requested_path
+      ? `Saved to the workspace download area (couldn't write to ${art.requested_path} directly).`
+      : null;
+  return {
+    type: String(art.type ?? "").toUpperCase(),
+    title: art.title ?? art.filename ?? "Artifact",
+    filename: art.filename ?? "",
+    downloadUrl: art.download_url ?? null,
+    extent,
+    validated: Boolean(art.validation?.valid),
+    externalNote,
+  };
 }
 
 /**
@@ -74,8 +115,20 @@ export function presentExecutionPhases(meta: Meta | undefined): ExecutionPhase[]
       p.key === "validate" ? { ...p, label: "Validation — awaiting approval" } : p
     );
   }
-  if (decision === "runtime_validated") {
+  if (decision === "runtime_validated" || decision === "artifact_generated") {
     return make("done", "done", "done", "done");
+  }
+  if (decision === "artifact_rejected") {
+    return make("done", "done", "done", "done", "Not generated").map((p) =>
+      p.key === "done" ? { ...p, state: "pending" } : p
+    );
+  }
+  if (decision === "artifact_generation_failed") {
+    return make("done", "done", "pending", "pending").map((p) => {
+      if (p.key === "validate") return { ...p, state: "failed" };
+      if (p.key === "done") return { ...p, label: "Could not complete", state: "failed" };
+      return p;
+    });
   }
   if (decision === "plan_executed" && status === "completed") {
     // Runtime validation skipped by choice — say so honestly.

@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     vector_store: Literal["chroma", "json"] = "chroma"
     chroma_dir: str = "./storage/chroma"
     document_collection: str = "aira_documents"
+    # Safe default output area for generated artifacts (PPTX/DOCX/XLSX).
+    artifacts_dir: str = "./storage/artifacts"
 
     web_search_provider: Literal["tavily", "serpapi", "brave", "none"] = "none"
     tavily_api_key: str | None = None
@@ -93,6 +95,7 @@ class Settings(BaseSettings):
         Path(self.vector_db_dir).mkdir(parents=True, exist_ok=True)
         Path(self.upload_dir).mkdir(parents=True, exist_ok=True)
         Path(self.chroma_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.artifacts_dir).mkdir(parents=True, exist_ok=True)
 
     def validate_runtime_config(self) -> None:
         if self.llm_provider == "groq" and not self.groq_api_key:

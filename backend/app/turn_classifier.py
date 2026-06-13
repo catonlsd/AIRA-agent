@@ -283,18 +283,9 @@ def classify_turn(
             artifact_type=None,
         )
 
-    if _has_explicit_document_reference(cleaned_prompt, uploaded_file_names):
-        return TurnClassification(
-            mode=DOCUMENT_QA_MODE,
-            reason="The prompt explicitly refers to an uploaded document or file.",
-            confidence=0.9,
-            needs_research=False,
-            needs_execution=False,
-            needs_document_analysis=True,
-            needs_approval_review=False,
-            artifact_type=None,
-        )
-
+    # An explicit artifact creation request ("build a presentation from the
+    # uploaded files") wins over a bare document reference: the artifact path
+    # already grounds its content in the uploaded documents when present.
     if artifact_type is not None:
         return TurnClassification(
             mode=RESEARCH_THEN_EXECUTION_MODE,
@@ -305,6 +296,18 @@ def classify_turn(
             needs_document_analysis=has_uploaded_files,
             needs_approval_review=True,
             artifact_type=artifact_type,
+        )
+
+    if _has_explicit_document_reference(cleaned_prompt, uploaded_file_names):
+        return TurnClassification(
+            mode=DOCUMENT_QA_MODE,
+            reason="The prompt explicitly refers to an uploaded document or file.",
+            confidence=0.9,
+            needs_research=False,
+            needs_execution=False,
+            needs_document_analysis=True,
+            needs_approval_review=False,
+            artifact_type=None,
         )
 
     if _is_execution_request(cleaned_prompt):

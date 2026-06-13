@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
+from app.artifacts.service import ArtifactService, PendingArtifact, artifact_store
 from app.capabilities.execution.execution_service import ExecutionService
 from app.capabilities.research.research_service import ResearchService
 from app.clarification import (
@@ -127,6 +128,7 @@ class AssistantSupervisor:
         self.research = ResearchService()
         self.execution = ExecutionService()
         self.answers = DirectAnswerService()
+        self.artifacts = ArtifactService()
         self.tracer = TraceService()
         self._documents = None  # lazily built (constructs a vector-store client)
 
@@ -175,7 +177,12 @@ class AssistantSupervisor:
             # Pending guided flows: runtime actions, then a plan awaiting
             # approval, then a clarification whose answer resumes the task.
             guided_result: dict[str, Any] | None = None
-            pending_action = action_store.get(ctx.session_id)
+            pending_artifact = artifact_store.get(ctx.session_id)
+            if pending_artifact is not None:
+                guided_result = await self._handle_artifact_reply(
+                    ctx.message, pending_artifact, ctx
+                )
+            pending_action = action_store.get(ctx.session_id) if guided_result is None else None
             if pending_action is not None:
                 guided_result = await self._handle_action_reply(
                     ctx.message, pending_action, ctx
@@ -287,6 +294,14 @@ class AssistantSupervisor:
             )
             return self._present_clarification(
                 goal, classification, reasoning.clarification_questions, ctx
+            )
+
+        # Artifact requests (PPTX/DOCX/XLSX): prepare structured content, then
+        # present a plan to approve before generating the real file. Runs
+        # through the same plan -> approve -> generate -> validate model as code.
+        if getattr(classification, "artifact_type", None):
+            return self._present_artifact_plan(
+                goal, classification, classification.artifact_type, ctx
             )
 
         # Capability composition: the question spans documents AND the web.
@@ -574,6 +589,155 @@ class AssistantSupervisor:
             },
         }
 
+    def _present_artifact_plan(
+        self, goal: str, classification, kind: str, ctx: TurnContext
+    ) -> dict[str, Any]:
+        """Prepare artifact content + delivery, park a plan awaiting approval."""
+        ctx.trace.event("stage", stage="planning")
+        context = None
+        if ctx.has_uploaded_files:
+            # Document-grounded artifacts: prepare from the uploaded files.
+            try:
+                doc = self._document_service().answer(goal, history=ctx.history)
+                if doc.get("meta", {}).get("has_evidence"):
+                    context = doc.get("message") or doc.get("final_answer")
+            except Exception:
+                context = None
+
+        pending, message = self.artifacts.plan(
+            goal,
+            kind,
+            generate=lambda **kwargs: LLMClient().generate(**kwargs),
+            context=context,
+        )
+        artifact_store.set(ctx.session_id, pending)
+        ctx.trace.event("stage", stage="plan_ready", artifact_kind=kind)
+        _ops_log("artifact_planned", ctx, kind=kind, status=pending.status)
+
+        result = {
+            "run_id": uuid4().hex,
+            "status": "plan_ready",
+            "decision": "artifact_plan_ready",
+            "mode": classification.mode,
+            "message": message,
+            "final_answer": message,
+            "sources": [],
+            "artifacts": [],
+            "approval_summary": None,
+            "meta": {
+                "is_multi_question": False,
+                "question_count": 1,
+                "has_sources": False,
+                "has_artifacts": False,
+                "requires_approval": False,
+                "approval_required": True,
+                "artifact_pending": True,
+                "artifact_kind": kind,
+                "plan_steps": ["Prepare content", "Generate file", "Validate it opens"],
+                "save_location": pending.delivery.get("location"),
+                "requested_path": pending.delivery.get("requested_path"),
+            },
+        }
+        return self._with_classification(result, classification)
+
+    async def _handle_artifact_reply(
+        self, reply: str, pending: PendingArtifact, ctx: TurnContext
+    ) -> dict[str, Any] | None:
+        """Approve -> generate + validate the real file; reject -> honest stop."""
+        decision = parse_plan_decision(reply)
+        if decision is None:
+            return None
+        artifact_store.clear(ctx.session_id)
+
+        if decision == "reject":
+            ctx.trace.event("artifact_rejected", kind=pending.kind)
+            message = (
+                f"Okay — I didn't generate the {pending.kind.upper()}. Tell me what "
+                "to change and I'll prepare it again."
+            )
+            return self._artifact_response(
+                "completed", "artifact_rejected", message, pending, ctx, artifact=None
+            )
+
+        ctx.trace.event("stage", stage="executing_workflow")
+        _ops_log("artifact_generation_started", ctx, kind=pending.kind)
+        outcome = self.artifacts.generate(pending)
+        ctx.trace.event("stage", stage="validation")
+
+        if outcome["status"] != "completed":
+            ctx.trace.event("execution_completed", status="failed", kind=pending.kind)
+            _ops_log("artifact_generation_finished", ctx, status="failed", kind=pending.kind)
+            message = (
+                f"I couldn't produce a valid {pending.kind.upper()} — {outcome.get('error', 'generation failed')}. "
+                "The file was not created; tell me what to adjust and I'll retry."
+            )
+            return self._artifact_response(
+                "failed", "artifact_generation_failed", message, pending, ctx, artifact=None,
+                validation=outcome.get("validation"),
+            )
+
+        artifact = outcome["artifact"]
+        ctx.trace.event(
+            "execution_completed", status="completed", kind=pending.kind,
+            validation=artifact.get("validation", {}).get("details"),
+        )
+        _ops_log("artifact_generation_finished", ctx, status="completed",
+                 kind=pending.kind, filename=artifact["filename"])
+        message = self._render_artifact_success(artifact)
+        return self._artifact_response(
+            "completed", "artifact_generated", message, pending, ctx,
+            artifact=artifact, validation=artifact.get("validation"),
+        )
+
+    @staticmethod
+    def _render_artifact_success(artifact: dict[str, Any]) -> str:
+        details = artifact.get("validation", {}).get("details", {})
+        kind = artifact["type"]
+        if kind == "pptx":
+            extent = f"{details.get('slides', '?')} slides"
+        elif kind == "docx":
+            extent = f"{details.get('paragraphs', '?')} paragraphs"
+        else:
+            extent = f"{details.get('rows', '?')} rows"
+        note = ""
+        if artifact.get("location") == "external" and artifact.get("requested_path"):
+            note = (
+                f" You asked to save it to {artifact['requested_path']}; for safety "
+                "it's in the workspace download area — download it from there."
+            )
+        return (
+            f"Created “{artifact['title']}” ({kind.upper()}, {extent}) and validated "
+            f"it opens correctly.{note} Download: {artifact['download_url']}"
+        )
+
+    def _artifact_response(
+        self, status, decision, message, pending: PendingArtifact, ctx: TurnContext,
+        *, artifact: dict[str, Any] | None, validation: dict | None = None,
+    ) -> dict[str, Any]:
+        artifacts = [artifact] if artifact else []
+        return {
+            "run_id": uuid4().hex,
+            "status": status,
+            "decision": decision,
+            "mode": "research_then_execution",
+            "message": message,
+            "final_answer": message,
+            "sources": [],
+            "artifacts": artifacts,
+            "approval_summary": None,
+            "meta": {
+                "is_multi_question": False,
+                "question_count": 1,
+                "has_sources": False,
+                "has_artifacts": bool(artifacts),
+                "requires_approval": False,
+                "artifact_kind": pending.kind,
+                **({"artifact": artifact} if artifact else {}),
+                **({"validation": validation} if validation else {}),
+                "original_request": pending.goal,
+            },
+        }
+
     async def _handle_action_reply(
         self, reply: str, pending: PendingAction, ctx: TurnContext
     ) -> dict[str, Any] | None:
@@ -801,6 +965,13 @@ class AssistantSupervisor:
             pass
 
     async def _dispatch(self, goal: str, ctx: TurnContext) -> dict[str, Any]:
+        # An artifact plan awaiting approval: approve -> generate, reject -> stop.
+        pending_artifact = artifact_store.get(ctx.session_id)
+        if pending_artifact is not None:
+            handled = await self._handle_artifact_reply(goal, pending_artifact, ctx)
+            if handled is not None:
+                return handled
+
         # Runtime actions awaiting per-action approval: approve -> run + verify.
         pending_action = action_store.get(ctx.session_id)
         if pending_action is not None:

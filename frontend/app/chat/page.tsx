@@ -51,9 +51,11 @@ import {
 import { cn } from "@/lib/utils";
 import {
   describeRuntimeAction,
+  presentArtifact,
   presentExecutionPhases,
   provenanceLabel,
   summarizeEvidence,
+  type ArtifactView,
   type ExecutionPhase,
 } from "@/lib/execution-presenter";
 
@@ -861,6 +863,34 @@ function RuntimeApprovalCard({
   );
 }
 
+function ArtifactCard({ artifact }: { artifact: ArtifactView }) {
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const href = artifact.downloadUrl ? `${apiBase}${artifact.downloadUrl}` : null;
+  const icon =
+    artifact.type === "PPTX" ? FileText : artifact.type === "XLSX" ? Database : FileText;
+  const Icon = icon;
+  return (
+    <div className="artifact-card">
+      <span className="artifact-icon" aria-hidden="true">
+        <Icon className="h-5 w-5" />
+      </span>
+      <div className="artifact-body">
+        <p className="artifact-title">{artifact.title}</p>
+        <p className="artifact-meta">
+          {artifact.type} · {artifact.extent}
+          {artifact.validated && <span className="artifact-valid"> · ✓ validated</span>}
+        </p>
+        {artifact.externalNote && <p className="artifact-note">{artifact.externalNote}</p>}
+      </div>
+      {href && (
+        <a className="artifact-download" href={href} download={artifact.filename}>
+          Download
+        </a>
+      )}
+    </div>
+  );
+}
+
 function EvidenceStrip({ chips }: { chips: ReturnType<typeof summarizeEvidence> }) {
   if (chips.length === 0) return null;
   return (
@@ -920,6 +950,7 @@ function ResearchTurnCard({ turn, liveState, liveLabel, busy = false, onClarify 
       ? summarizeEvidence(meta)
       : [];
   const provenance = provenanceLabel(meta.answered_from);
+  const artifact = presentArtifact(meta);
   const taskCount = multiTask?.metadata?.task_count ?? 0;
   const failedTasks = multiTask?.metadata?.failed_tasks ?? [];
   const completedTasks = taskCount > 0 ? Math.max(taskCount - failedTasks.length, 0) : 0;
@@ -1001,6 +1032,7 @@ function ResearchTurnCard({ turn, liveState, liveLabel, busy = false, onClarify 
             ) : (
               <AssistantAnswerContent answer={turn.response.answer} />
             )}
+            {artifact && <ArtifactCard artifact={artifact} />}
             {evidenceChips.length > 0 && <EvidenceStrip chips={evidenceChips} />}
             {runtimeActions && onClarify && (
               <RuntimeApprovalCard actions={runtimeActions} busy={busy} onDecide={onClarify} />
@@ -1992,6 +2024,54 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
   color: var(--danger);
   border-color: color-mix(in srgb, var(--danger) 40%, transparent);
 }
+
+/* artifact result card */
+.artifact-card {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: 1rem;
+  background: var(--surface-soft);
+}
+.artifact-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  flex-shrink: 0;
+  border-radius: 0.7rem;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.artifact-body { min-width: 0; flex: 1; }
+.artifact-title {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.artifact-meta { margin-top: 0.15rem; font-size: 0.74rem; font-weight: 600; color: var(--text-muted); }
+.artifact-valid { color: var(--success, #15a06a); }
+.artifact-note { margin-top: 0.3rem; font-size: 0.72rem; color: var(--text-subtle); }
+.artifact-download {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 0.7rem;
+  background: var(--accent);
+  color: var(--accent-foreground);
+  padding: 0.5rem 0.95rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+.artifact-download:hover { transform: translateY(-1px); }
 
 /* localized in-message indicator (inside the streaming answer card) */
 .octa-inline {

@@ -91,6 +91,26 @@ def root() -> dict:
     }
 
 
+@app.get("/artifacts/{filename}")
+def download_artifact(filename: str):
+    """Serve a generated artifact (PPTX/DOCX/XLSX) from the safe output area."""
+    from pathlib import Path
+
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+
+    root = Path(settings.artifacts_dir).resolve()
+    target = (root / filename).resolve()
+    # Path-traversal guard: only serve files directly inside the artifacts dir.
+    if target.parent != root or not target.is_file():
+        raise HTTPException(status_code=404, detail="Artifact not found.")
+    return FileResponse(
+        path=str(target),
+        filename=target.name,
+        media_type="application/octet-stream",
+    )
+
+
 @app.get("/health")
 def health() -> dict:
     """Liveness: the process is up."""
