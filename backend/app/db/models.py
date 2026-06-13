@@ -57,3 +57,25 @@ class UserPreference(Base):
     value: Mapped[str] = mapped_column(Text, nullable=False)
     is_sensitive: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class GuidedFlow(Base):
+    """Durable, multi-process-safe pending state for guided flows.
+
+    One row per (session_key, kind) pending step — plan / runtime-action /
+    artifact approval, or clarification follow-up. The `status` column is the
+    idempotency marker: a single atomic UPDATE from "pending" to "consumed"
+    claims the flow, so a resume can only ever run once across processes.
+    """
+
+    __tablename__ = "guided_flows"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_key: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)

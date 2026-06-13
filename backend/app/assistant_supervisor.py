@@ -517,7 +517,12 @@ class AssistantSupervisor:
         must never fall into the generic "needs a specific executable action"
         tool fallback.
         """
-        clarification_store.clear(ctx.session_id)
+        # Atomic claim: a second resume (duplicate click / racing process) gets
+        # None and is told honestly, so the original request is never re-run.
+        if clarification_store.consume(ctx.session_id) is None:
+            return self._already_handled_result(
+                "That clarification was already answered — send your next message to continue."
+            )
         ctx.trace.event("clarification_received", reply=reply)
         ctx.trace.event(
             "clarification_resolved",
@@ -647,7 +652,11 @@ class AssistantSupervisor:
         decision = parse_plan_decision(reply)
         if decision is None:
             return None
-        artifact_store.clear(ctx.session_id)
+        # Idempotent claim — a duplicate approval can't generate the file twice.
+        if artifact_store.consume(ctx.session_id) is None:
+            return self._already_handled_result(
+                "That artifact request was already handled — ask again to make a new one."
+            )
 
         if decision == "reject":
             ctx.trace.event("artifact_rejected", kind=pending.kind)
@@ -745,7 +754,11 @@ class AssistantSupervisor:
         decision = parse_plan_decision(reply)
         if decision is None:
             return None
-        action_store.clear(ctx.session_id)
+        # Idempotent claim — duplicate approvals can't re-run validation.
+        if action_store.consume(ctx.session_id) is None:
+            return self._already_handled_result(
+                "Those validation steps were already handled — send a new request to continue."
+            )
 
         if decision == "reject":
             ctx.trace.event("runtime_validation_rejected")
@@ -800,10 +813,19 @@ class AssistantSupervisor:
     ) -> dict[str, Any] | None:
         """Approve/reject a pending plan; None routes the turn normally."""
         decision = parse_plan_decision(reply)
+        if decision is None:
+            return None
+        # Idempotent claim: only the first approve/reject runs; a duplicate (or
+        # a racing process) gets None and is told honestly — never double-runs.
+        claimed = plan_store.consume(ctx.session_id)
+        if claimed is None:
+            return self._already_handled_result(
+                "That plan was already approved or discarded — send a new request to continue."
+            )
+        plan = claimed
         if decision == "approve":
             return await self._execute_approved_plan(plan, ctx)
         if decision == "reject":
-            plan_store.clear(ctx.session_id)
             ctx.trace.event("plan_discarded", original_request=plan.original_request)
             message = (
                 "Okay — I've discarded that plan. Tell me what you'd like to "
@@ -838,8 +860,10 @@ class AssistantSupervisor:
         prepare -> safety check -> tool call -> validate -> repair/retry ->
         continue. Completion is only reported with evidence: files written to
         disk, read back, and validated. Prose is never accepted as execution.
+
+        The plan was already atomically claimed in `_handle_plan_reply`, so this
+        runs exactly once.
         """
-        plan_store.clear(ctx.session_id)
         ctx.trace.event("plan_approved", original_request=plan.original_request)
         ctx.trace.event("stage", stage="executing_workflow")
         _ops_log("execution_started", ctx, original_request=plan.original_request)
@@ -1030,6 +1054,33 @@ class AssistantSupervisor:
             "confidence": classification.confidence,
         }
         return result
+
+    def _already_handled_result(self, message: str) -> dict[str, Any]:
+        """Honest response when a guided step was already consumed or expired.
+
+        Returned when an atomic claim fails (duplicate click, racing process,
+        restart after completion, or a stale/expired flow) — never a fabricated
+        re-run of the original work.
+        """
+        return {
+            "run_id": uuid4().hex,
+            "status": "completed",
+            "decision": "already_handled",
+            "mode": GENERAL_CHAT_MODE,
+            "message": message,
+            "final_answer": message,
+            "sources": [],
+            "artifacts": [],
+            "approval_summary": None,
+            "meta": {
+                "is_multi_question": False,
+                "question_count": 1,
+                "has_sources": False,
+                "has_artifacts": False,
+                "requires_approval": False,
+                "already_handled": True,
+            },
+        }
 
     def _clarification_result(self, classification) -> dict[str, Any]:
         message = (

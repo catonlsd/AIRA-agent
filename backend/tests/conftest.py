@@ -46,6 +46,17 @@ def stub_llm(monkeypatch):
     monkeypatch.setattr(llm_module.LLMClient, "generate", _fake_generate)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_guided_flows():
+    """Guided-flow state is now durable (DB-backed) — wipe it between tests so
+    pending plans/approvals never leak across cases."""
+    from app.guided_flow_store import guided_flow_store
+
+    guided_flow_store.clear_all()
+    yield
+    guided_flow_store.clear_all()
+
+
 @pytest_asyncio.fixture
 async def sample_run():
     """A real completed workflow run, persisted to the workflow store.

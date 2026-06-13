@@ -28,7 +28,7 @@ from app.artifacts.spec import (
 )
 from app.artifacts.styles import get_style
 from app.artifacts.validator import ArtifactValidator
-from app.clarification import ClarificationStore
+from app.guided_flow_store import GuidedFlowAdapter
 
 
 @dataclass
@@ -40,8 +40,28 @@ class PendingArtifact:
     status: str = "awaiting_plan_approval"
 
 
-# Session-scoped pending-artifact store (same mechanics as plan/action stores).
-artifact_store = ClarificationStore()
+def _artifact_to_dict(p: "PendingArtifact") -> dict:
+    return {
+        "goal": p.goal,
+        "kind": p.kind,
+        "spec": p.spec,
+        "delivery": p.delivery,
+        "status": p.status,
+    }
+
+
+def _artifact_from_dict(d: dict) -> "PendingArtifact":
+    return PendingArtifact(
+        goal=d.get("goal", ""),
+        kind=d.get("kind", ""),
+        spec=d.get("spec") or {},
+        delivery=d.get("delivery") or {},
+        status=d.get("status", "awaiting_plan_approval"),
+    )
+
+
+# Durable, multi-process-safe pending-artifact store (restart-safe).
+artifact_store = GuidedFlowAdapter("artifact", _artifact_to_dict, _artifact_from_dict)
 
 
 def _spec_to_dict(spec: ArtifactSpec) -> dict:

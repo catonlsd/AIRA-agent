@@ -16,9 +16,10 @@ if the server restarts, the user simply re-asks.
 from __future__ import annotations
 
 import re
-import threading
 from dataclasses import dataclass, field
 from typing import Optional
+
+from app.guided_flow_store import GuidedFlowAdapter
 
 # ── Option templates ─────────────────────────────────────────────────────────
 
@@ -111,32 +112,31 @@ class ClarificationSelection:
         }
 
 
-class ClarificationStore:
-    """In-memory pending-clarification state, one entry per session."""
-
-    def __init__(self) -> None:
-        self._pending: dict[str, PendingClarification] = {}
-        self._lock = threading.Lock()
-
-    @staticmethod
-    def _key(session_id: Optional[str]) -> str:
-        return session_id or "anonymous"
-
-    def set(self, session_id: Optional[str], pending: PendingClarification) -> None:
-        with self._lock:
-            self._pending[self._key(session_id)] = pending
-
-    def get(self, session_id: Optional[str]) -> Optional[PendingClarification]:
-        with self._lock:
-            return self._pending.get(self._key(session_id))
-
-    def clear(self, session_id: Optional[str]) -> None:
-        with self._lock:
-            self._pending.pop(self._key(session_id), None)
+def _clarification_to_dict(p: "PendingClarification") -> dict:
+    return {
+        "original_request": p.original_request,
+        "questions": list(p.questions),
+        # JSON keys are strings; group keys are ints — restored on load.
+        "option_groups": {str(g): opts for g, opts in p.option_groups.items()},
+        "status": p.status,
+    }
 
 
-# Module-level store shared by the supervisor (process-local by design).
-clarification_store = ClarificationStore()
+def _clarification_from_dict(d: dict) -> "PendingClarification":
+    return PendingClarification(
+        original_request=d.get("original_request", ""),
+        questions=list(d.get("questions", [])),
+        option_groups={int(g): opts for g, opts in (d.get("option_groups") or {}).items()},
+        status=d.get("status", "awaiting_clarification"),
+    )
+
+
+# Durable, multi-process-safe store (backed by the DB; restart-safe). The
+# adapter preserves the old .get/.set/.clear API and adds atomic .consume.
+clarification_store = GuidedFlowAdapter(
+    "clarification", _clarification_to_dict, _clarification_from_dict,
+    run_id_of=lambda p: None,
+)
 
 
 # ── Resolved-task planning (clarification → plan → approval → execution) ─────
@@ -156,9 +156,34 @@ class PendingPlan:
     status: str = "awaiting_plan_approval"
 
 
-# Same session-store mechanics, separate slot: a session can be waiting on a
-# clarification answer OR a plan approval, never both.
-plan_store = ClarificationStore()
+def _plan_to_dict(p: "PendingPlan") -> dict:
+    return {
+        "original_request": p.original_request,
+        "goal": p.goal,
+        "resolved_task": p.resolved_task,
+        "steps": list(p.steps),
+        "executable": p.executable,
+        "status": p.status,
+    }
+
+
+def _plan_from_dict(d: dict) -> "PendingPlan":
+    return PendingPlan(
+        original_request=d.get("original_request", ""),
+        goal=d.get("goal", ""),
+        resolved_task=d.get("resolved_task") or {},
+        steps=list(d.get("steps", [])),
+        executable=d.get("executable"),
+        status=d.get("status", "awaiting_plan_approval"),
+    )
+
+
+# A session can be waiting on a clarification answer OR a plan approval — each
+# is a separate durable slot keyed by kind.
+plan_store = GuidedFlowAdapter(
+    "plan", _plan_to_dict, _plan_from_dict,
+    run_id_of=lambda p: (p.executable or {}).get("run_id") if isinstance(p.executable, dict) else None,
+)
 
 
 @dataclass
@@ -173,8 +198,30 @@ class PendingAction:
     status: str = "awaiting_action_approval"
 
 
+def _action_to_dict(p: "PendingAction") -> dict:
+    return {
+        "goal": p.goal,
+        "project_dir": p.project_dir,
+        "plan": p.plan,
+        "actions": p.actions,
+        "files": p.files,
+        "status": p.status,
+    }
+
+
+def _action_from_dict(d: dict) -> "PendingAction":
+    return PendingAction(
+        goal=d.get("goal", ""),
+        project_dir=d.get("project_dir", ""),
+        plan=d.get("plan") or {},
+        actions=list(d.get("actions", [])),
+        files=list(d.get("files", [])),
+        status=d.get("status", "awaiting_action_approval"),
+    )
+
+
 # Runtime-validation actions awaiting approval (post plan execution).
-action_store = ClarificationStore()
+action_store = GuidedFlowAdapter("action", _action_to_dict, _action_from_dict)
 
 _PLAN_APPROVE_PATTERN = re.compile(
     r"^\s*(approve(\s+(the\s+)?plan)?|yes[,.!]?(\s+(please|proceed|go ahead|do it))?|"

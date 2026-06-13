@@ -71,11 +71,26 @@ for the Python entry module. Failures are classified
 once with evidence-targeted regeneration, and reported honestly. It does **not**
 yet boot long-running apps or ping HTTP endpoints.
 
+## Guided-flow state (durable)
+
+Pending approval / clarification / plan / runtime-action / artifact state is
+**persisted in the database** (`guided_flows` table), not process memory:
+
+- **Restart-safe** — a server restart between "plan ready" and "approve" keeps
+  the pending flow; the user can still approve and it resumes.
+- **Multi-process-safe** — the request can hit process A and the approval
+  process B; the approval loads state from the DB.
+- **Idempotent** — resume is a single atomic status flip (`pending` →
+  `consumed`), so duplicate clicks / races / retries run the work exactly once;
+  a second attempt is told honestly ("already handled").
+- **Stale-state honest** — missing / expired (24 h TTL) / already-consumed
+  flows resolve to a clear message, never a fabricated re-run.
+
+The `GuidedFlowStore` interface is small and swappable — re-point it at
+Redis/Postgres for multi-replica scale-out without touching the supervisor.
+
 ## Known limitations (current)
 
-- Pending approval/clarification/plan state is **in-memory per process** — it
-  does not survive restarts and requires single-replica deployment (or sticky
-  sessions) for guided flows.
 - SQLite + local ChromaDB are single-node; conversation memory is not
   session-scoped server-side; rate limiting is in-memory per replica.
 - Artifact generation (PPTX/DOCX) is not yet wired through the evidence-based
