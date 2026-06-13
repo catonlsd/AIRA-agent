@@ -65,6 +65,11 @@ class TurnContext:
     run_id: str
     trace: TurnTrace
 
+    # Ownership scope for everything created this turn (guided flows, artifacts,
+    # document retrieval). Defaults to the session principal; an authenticated
+    # route can pass an account-scoped owner instead.
+    owner: str = ""
+
     history: list[dict] = field(default_factory=list)
     preferences: dict = field(default_factory=dict)
 
@@ -88,6 +93,7 @@ def build_turn_context(
     uploaded_file_names: Optional[list[str]] = None,
     history: Optional[list[dict]] = None,
     history_limit: Optional[int] = None,
+    owner: Optional[str] = None,
 ) -> TurnContext:
     """Assemble the normalized context for one turn.
 
@@ -106,11 +112,17 @@ def build_turn_context(
     message = sanitize_text(message)
     file_names = [name for name in (uploaded_file_names or []) if name]
 
+    # Default owner is the session itself; an authenticated route passes the
+    # principal's owner_key instead. Ownership scopes guided flows, artifacts,
+    # and document retrieval.
+    resolved_owner = (owner or "").strip() or resolved_session
+
     context = TurnContext(
         message=message,
         session_id=resolved_session,
         run_id=run_id or uuid4().hex,
         trace=trace,
+        owner=resolved_owner,
         uploaded_file_names=file_names,
         has_uploaded_files=bool(file_names),
         resume_run_id=run_id,

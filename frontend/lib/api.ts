@@ -515,11 +515,15 @@ export async function sendChat(
 }
 
 export async function uploadDocuments(
-  files: FileList
+  files: FileList,
+  sessionId?: string
 ): Promise<{ documents: unknown[] }> {
   const body = new FormData();
 
   Array.from(files).forEach((file) => body.append("files", file));
+  // Scope the upload to this session so document-first answers only retrieve
+  // the uploader's own files.
+  if (sessionId) body.append("session_id", sessionId);
 
   const response = await fetch(`${API_URL}/upload`, {
     method: "POST",

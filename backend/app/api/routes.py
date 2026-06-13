@@ -1,7 +1,7 @@
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -370,6 +370,7 @@ def build_contextual_query(question: str, history: list[dict]) -> str:
 @router.post("/upload")
 def upload_documents(
     files: list[UploadFile] = File(...),
+    session_id: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ) -> dict:
     if not files:
@@ -454,10 +455,14 @@ def upload_documents(
             try:
                 from app.services.document_qa_service import get_document_qa_service
 
+                # Scope ingested chunks to the uploader so document-first
+                # retrieval stays within the owner (matches the chat's ctx.owner,
+                # which defaults to the session id).
                 get_document_qa_service().ingest(
                     document_id=document.id,
                     document_name=document.original_filename,
                     pages=pages,
+                    owner=session_id or None,
                 )
             except Exception:
                 pass

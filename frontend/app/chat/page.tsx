@@ -2943,7 +2943,7 @@ export default function ChatPage() {
     setUploadMessage("");
     setUploadError("");
     try {
-      const result = await uploadDocuments(files);
+      const result = await uploadDocuments(files, sessionId);
       const count = result.documents?.length || files.length;
       const firstEver = sessionDocNames.length === 0;
       setUploadedDocs((prev) => [...prev, ...names]);

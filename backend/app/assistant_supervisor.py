@@ -177,22 +177,22 @@ class AssistantSupervisor:
             # Pending guided flows: runtime actions, then a plan awaiting
             # approval, then a clarification whose answer resumes the task.
             guided_result: dict[str, Any] | None = None
-            pending_artifact = artifact_store.get(ctx.session_id)
+            pending_artifact = artifact_store.get(ctx.owner)
             if pending_artifact is not None:
                 guided_result = await self._handle_artifact_reply(
                     ctx.message, pending_artifact, ctx
                 )
-            pending_action = action_store.get(ctx.session_id) if guided_result is None else None
+            pending_action = action_store.get(ctx.owner) if guided_result is None else None
             if pending_action is not None:
                 guided_result = await self._handle_action_reply(
                     ctx.message, pending_action, ctx
                 )
             if guided_result is None:
-                plan = plan_store.get(ctx.session_id)
+                plan = plan_store.get(ctx.owner)
                 if plan is not None:
                     guided_result = await self._handle_plan_reply(ctx.message, plan, ctx)
             if guided_result is None:
-                pending = clarification_store.get(ctx.session_id)
+                pending = clarification_store.get(ctx.owner)
                 if pending is not None:
                     selection = parse_selection(ctx.message, pending)
                     if selection is not None:
@@ -316,7 +316,7 @@ class AssistantSupervisor:
             # supports it; otherwise say so honestly and escalate to broader
             # research, clearly marked. Vector internals stay in meta/traces.
             ctx.trace.event("document_qa_started")
-            result = self._document_service().answer(goal, history=ctx.history)
+            result = self._document_service().answer(goal, history=ctx.history, owner=ctx.owner)
             has_evidence = result.get("meta", {}).get("has_evidence")
             ctx.trace.event("document_qa_completed", has_evidence=has_evidence)
 
@@ -383,7 +383,7 @@ class AssistantSupervisor:
         combines the two grounded answers. Sources from both are preserved.
         """
         ctx.trace.event("stage", stage="reading_documents")
-        doc_result = self._document_service().answer(goal, history=ctx.history)
+        doc_result = self._document_service().answer(goal, history=ctx.history, owner=ctx.owner)
         doc_answer = (doc_result.get("message") or doc_result.get("final_answer") or "").strip()
 
         ctx.trace.event("stage", stage="collecting_sources")
@@ -479,7 +479,7 @@ class AssistantSupervisor:
             questions=questions,
             option_groups=option_groups_for(goal),
         )
-        clarification_store.set(ctx.session_id, pending)
+        clarification_store.set(ctx.owner, pending)
         _ops_log("clarification_requested", ctx, original_request=goal)
         message = render_clarification_message(pending)
         ctx.trace.event(
@@ -519,7 +519,7 @@ class AssistantSupervisor:
         """
         # Atomic claim: a second resume (duplicate click / racing process) gets
         # None and is told honestly, so the original request is never re-run.
-        if clarification_store.consume(ctx.session_id) is None:
+        if clarification_store.consume(ctx.owner) is None:
             return self._already_handled_result(
                 "That clarification was already answered — send your next message to continue."
             )
@@ -558,7 +558,7 @@ class AssistantSupervisor:
             steps=steps,
             executable=executable.to_dict(),
         )
-        plan_store.set(ctx.session_id, plan)
+        plan_store.set(ctx.owner, plan)
         ctx.trace.event(
             "stage",
             stage="plan_ready",
@@ -603,19 +603,22 @@ class AssistantSupervisor:
         if ctx.has_uploaded_files:
             # Document-grounded artifacts: prepare from the uploaded files.
             try:
-                doc = self._document_service().answer(goal, history=ctx.history)
+                doc = self._document_service().answer(goal, history=ctx.history, owner=ctx.owner)
                 if doc.get("meta", {}).get("has_evidence"):
                     context = doc.get("message") or doc.get("final_answer")
             except Exception:
                 context = None
+
+        from app.auth import owner_token_for
 
         pending, message = self.artifacts.plan(
             goal,
             kind,
             generate=lambda **kwargs: LLMClient().generate(**kwargs),
             context=context,
+            owner_token=owner_token_for(ctx.owner),
         )
-        artifact_store.set(ctx.session_id, pending)
+        artifact_store.set(ctx.owner, pending)
         ctx.trace.event("stage", stage="plan_ready", artifact_kind=kind)
         _ops_log("artifact_planned", ctx, kind=kind, status=pending.status)
 
@@ -653,7 +656,7 @@ class AssistantSupervisor:
         if decision is None:
             return None
         # Idempotent claim — a duplicate approval can't generate the file twice.
-        if artifact_store.consume(ctx.session_id) is None:
+        if artifact_store.consume(ctx.owner) is None:
             return self._already_handled_result(
                 "That artifact request was already handled — ask again to make a new one."
             )
@@ -755,7 +758,7 @@ class AssistantSupervisor:
         if decision is None:
             return None
         # Idempotent claim — duplicate approvals can't re-run validation.
-        if action_store.consume(ctx.session_id) is None:
+        if action_store.consume(ctx.owner) is None:
             return self._already_handled_result(
                 "Those validation steps were already handled — send a new request to continue."
             )
@@ -817,7 +820,7 @@ class AssistantSupervisor:
             return None
         # Idempotent claim: only the first approve/reject runs; a duplicate (or
         # a racing process) gets None and is told honestly — never double-runs.
-        claimed = plan_store.consume(ctx.session_id)
+        claimed = plan_store.consume(ctx.owner)
         if claimed is None:
             return self._already_handled_result(
                 "That plan was already approved or discarded — send a new request to continue."
@@ -990,21 +993,21 @@ class AssistantSupervisor:
 
     async def _dispatch(self, goal: str, ctx: TurnContext) -> dict[str, Any]:
         # An artifact plan awaiting approval: approve -> generate, reject -> stop.
-        pending_artifact = artifact_store.get(ctx.session_id)
+        pending_artifact = artifact_store.get(ctx.owner)
         if pending_artifact is not None:
             handled = await self._handle_artifact_reply(goal, pending_artifact, ctx)
             if handled is not None:
                 return handled
 
         # Runtime actions awaiting per-action approval: approve -> run + verify.
-        pending_action = action_store.get(ctx.session_id)
+        pending_action = action_store.get(ctx.owner)
         if pending_action is not None:
             handled = await self._handle_action_reply(goal, pending_action, ctx)
             if handled is not None:
                 return handled
 
         # A plan awaiting approval: approve -> execute, reject -> discard.
-        plan = plan_store.get(ctx.session_id)
+        plan = plan_store.get(ctx.owner)
         if plan is not None:
             handled = await self._handle_plan_reply(goal, plan, ctx)
             if handled is not None:
@@ -1012,7 +1015,7 @@ class AssistantSupervisor:
 
         # A pending clarification for this session: if this message answers it,
         # resume the original task with the selected choices.
-        pending = clarification_store.get(ctx.session_id)
+        pending = clarification_store.get(ctx.owner)
         if pending is not None:
             selection = parse_selection(goal, pending)
             if selection is not None:

@@ -24,6 +24,8 @@ from app.turn_classifier import DOCUMENT_QA_MODE
 
 # Minimum top-hit similarity to treat retrieved chunks as real evidence.
 DEFAULT_MIN_EVIDENCE_SCORE = 0.15
+# Ownership scope applied to documents when none is supplied (single-user dev).
+DEFAULT_OWNER = "shared"
 
 # Whole-document requests (summaries/overviews) don't semantically match any
 # single chunk, so they would score below the threshold even when documents are
@@ -87,6 +89,7 @@ class DocumentQnAService:
         pages: list[dict],
         chunk_size: Optional[int] = None,
         overlap: Optional[int] = None,
+        owner: Optional[str] = None,
     ) -> int:
         chunks = chunk_pages(
             pages,
@@ -96,13 +99,16 @@ class DocumentQnAService:
         if not chunks:
             return 0
 
+        owner = owner or DEFAULT_OWNER
         ids: list[str] = []
         texts: list[str] = []
         metadatas: list[dict] = []
         for index, chunk in enumerate(chunks):
-            ids.append(f"{document_id}:{index}")
+            # Owner-namespaced id so two owners' documents never collide.
+            ids.append(f"{owner}:{document_id}:{index}")
             texts.append(chunk["text"])
             metadata = {
+                "owner": owner,  # ownership scope for retrieval isolation
                 "document_id": document_id,
                 "document_name": document_name,
                 "chunk_index": index,
@@ -120,9 +126,14 @@ class DocumentQnAService:
         self.store.delete({"document_id": document_id})
 
     # ── Retrieval ────────────────────────────────────────────────────────────
-    def retrieve(self, query: str, k: Optional[int] = None) -> list[RetrievedChunk]:
+    def retrieve(
+        self, query: str, k: Optional[int] = None, *, owner: Optional[str] = None
+    ) -> list[RetrievedChunk]:
         query_vector = self.embeddings.embed_query(query)
-        hits = self.store.query(query_vector, k or settings.retrieval_k)
+        # Scope retrieval to the owner so one user's documents never surface in
+        # another's answers (vector-store metadata filter; internals stay hidden).
+        where = {"owner": owner} if owner else None
+        hits = self.store.query(query_vector, k or settings.retrieval_k, where=where)
 
         chunks: list[RetrievedChunk] = []
         for text, metadata, score in hits:
@@ -146,13 +157,14 @@ class DocumentQnAService:
         *,
         history: Optional[Sequence[dict]] = None,
         k: Optional[int] = None,
+        owner: Optional[str] = None,
     ) -> dict[str, Any]:
         broad_request = _is_broad_document_request(query)
         retrieve_k = k or settings.retrieval_k
         if broad_request:
             retrieve_k = max(retrieve_k, _BROAD_REQUEST_K)
 
-        chunks = self.retrieve(query, retrieve_k)
+        chunks = self.retrieve(query, retrieve_k, owner=owner)
         top_score = chunks[0].score if chunks else 0.0
         # For summarize/overview requests, having any document chunks is enough;
         # for specific questions, require the content-similarity threshold so we

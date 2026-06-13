@@ -91,18 +91,38 @@ def root() -> dict:
     }
 
 
-@app.get("/artifacts/{filename}")
-def download_artifact(filename: str):
-    """Serve a generated artifact (PPTX/DOCX/XLSX) from the safe output area."""
+@app.get("/artifacts/{owner}/{filename}")
+def download_artifact(owner: str, filename: str, request: Request):
+    """Serve a generated artifact, scoped to the owning principal.
+
+    Access is enforced at the route, not by an unguessable filename: each owner
+    has an isolated directory keyed by an opaque HMAC token, so cross-owner
+    filename guessing fails. When API-key auth is enabled, an authenticated
+    request must additionally match the owner. Path traversal is blocked.
+    """
     from pathlib import Path
 
     from fastapi import HTTPException
     from fastapi.responses import FileResponse
 
+    from app.auth import principal_from_request
+
+    # Reject any path-segment tampering up front.
+    if "/" in owner or "\\" in owner or ".." in owner or "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=404, detail="Artifact not found.")
+
+    # When auth is on, an authenticated caller may only reach their own scope.
+    if settings.api_key:
+        principal = principal_from_request(request)
+        if principal.authenticated and principal.owner_token != owner:
+            logger.info('{"event": "artifact_access_denied", "owner": "%s"}', owner)
+            raise HTTPException(status_code=404, detail="Artifact not found.")
+
     root = Path(settings.artifacts_dir).resolve()
-    target = (root / filename).resolve()
-    # Path-traversal guard: only serve files directly inside the artifacts dir.
-    if target.parent != root or not target.is_file():
+    owner_dir = (root / owner).resolve()
+    target = (owner_dir / filename).resolve()
+    # Isolation guard: the file must live directly inside this owner's directory.
+    if owner_dir.parent != root or target.parent != owner_dir or not target.is_file():
         raise HTTPException(status_code=404, detail="Artifact not found.")
     return FileResponse(
         path=str(target),

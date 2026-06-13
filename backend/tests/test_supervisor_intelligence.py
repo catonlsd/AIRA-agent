@@ -145,7 +145,7 @@ async def test_composed_document_and_web_dispatch(monkeypatch):
     supervisor = AssistantSupervisor()
 
     class _DocStub:
-        def answer(self, goal, history=None):
+        def answer(self, goal, history=None, owner=None):
             return {
                 "message": "The document says X.",
                 "sources": [{"source_type": "document", "title": "report.pdf"}],

@@ -31,13 +31,17 @@ class DeliveryTarget:
     path: Path                 # absolute path the file is actually written to
     location: str              # "workspace" | "external"
     requires_approval: bool
+    owner_token: str = ""      # the owner directory this artifact lives under
     requested_path: Optional[str] = None  # the user's external request, if any
     download_url: Optional[str] = None
 
 
 class ArtifactDeliveryService:
-    def _root(self) -> Path:
-        root = Path(settings.artifacts_dir).resolve()
+    def _owner_dir(self, owner_token: str) -> Path:
+        # Each owner gets an isolated subdirectory so cross-owner filename
+        # guessing can't reach another user's files; the token is an HMAC.
+        token = (owner_token or "shared").replace("/", "").replace("\\", "").replace("..", "")
+        root = (Path(settings.artifacts_dir).resolve() / token)
         root.mkdir(parents=True, exist_ok=True)
         return root
 
@@ -45,15 +49,17 @@ class ArtifactDeliveryService:
         match = _SAVE_PATH.search(goal or "")
         return match.group(1) if match else None
 
-    def resolve(self, goal: str, filename: str) -> DeliveryTarget:
-        """Resolve where to write. External requests are flagged for approval.
+    def resolve(self, goal: str, filename: str, owner_token: str = "shared") -> DeliveryTarget:
+        """Resolve where to write, scoped to the owner. External requests are
+        flagged for approval.
 
-        For safety the file is always written inside the workspace artifacts
-        area (the file tools are sandboxed); an external request is recorded and
-        surfaced so the user can move/download it deliberately.
+        The file is always written inside the owner's workspace artifacts area
+        (file tools are sandboxed); the download URL is owner-scoped so access is
+        enforced at the route, not by an unguessable filename alone.
         """
-        root = self._root()
-        path = root / filename
+        owner_dir = self._owner_dir(owner_token)
+        path = owner_dir / filename
+        download_url = f"/artifacts/{owner_token}/{filename}"
         requested = self.detect_requested_path(goal)
         if requested is None:
             return DeliveryTarget(
@@ -61,17 +67,18 @@ class ArtifactDeliveryService:
                 path=path,
                 location="workspace",
                 requires_approval=False,
-                download_url=f"/artifacts/{filename}",
+                owner_token=owner_token,
+                download_url=download_url,
             )
 
-        # An explicit external location was requested.
         requested_abs = Path(requested).expanduser()
-        outside = root not in requested_abs.resolve().parents
+        outside = owner_dir not in requested_abs.resolve().parents
         return DeliveryTarget(
             filename=filename,
-            path=path,  # still the safe workspace path
+            path=path,  # still the safe, owner-scoped workspace path
             location="external",
             requires_approval=bool(outside),
+            owner_token=owner_token,
             requested_path=requested,
-            download_url=f"/artifacts/{filename}",
+            download_url=download_url,
         )

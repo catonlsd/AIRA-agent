@@ -107,13 +107,14 @@ class ArtifactService:
         *,
         generate: Optional[Callable[..., str]] = None,
         context: Optional[str] = None,
+        owner_token: str = "shared",
     ) -> tuple[PendingArtifact, str]:
         """Prepare content + delivery into a pending plan and a plan message."""
         spec = self.builder.build(
             goal, kind, generate=generate, context=context, style=get_style(kind).name
         )
         filename = f"{slugify(spec.title)}{spec.extension}"
-        target = self.delivery.resolve(goal, filename)
+        target = self.delivery.resolve(goal, filename, owner_token)
 
         pending = PendingArtifact(
             goal=goal,
@@ -210,6 +211,7 @@ def _delivery_to_dict(target: DeliveryTarget) -> dict:
         "path": str(target.path),
         "location": target.location,
         "requires_approval": target.requires_approval,
+        "owner_token": target.owner_token,
         "requested_path": target.requested_path,
         "download_url": target.download_url,
     }
@@ -223,6 +225,7 @@ def _delivery_from_dict(data: dict) -> DeliveryTarget:
         path=Path(data["path"]),
         location=data["location"],
         requires_approval=data["requires_approval"],
+        owner_token=data.get("owner_token", ""),
         requested_path=data.get("requested_path"),
         download_url=data.get("download_url"),
     )

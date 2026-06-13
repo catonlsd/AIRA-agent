@@ -89,6 +89,27 @@ Pending approval / clarification / plan / runtime-action / artifact state is
 The `GuidedFlowStore` interface is small and swappable — re-point it at
 Redis/Postgres for multi-replica scale-out without touching the supervisor.
 
+## Access boundaries (ownership)
+
+Every owned resource is scoped to a **principal** (`app/auth.py`): an
+authenticated API-key caller when `API_KEY` is set, otherwise the client
+session. The `owner_key` tags the resource; an opaque HMAC `owner_token` scopes
+download URLs and directories.
+
+- **Guided flows** (plan/runtime/artifact approval, clarification) are
+  owner-keyed in the durable store — one principal can't approve, resume, or
+  inspect another's pending flow.
+- **Artifacts** are written under an owner-scoped directory and served via
+  `GET /artifacts/{owner_token}/{filename}` — route-level isolation + path-
+  traversal guard; cross-owner filename guessing fails. When `API_KEY` is set,
+  an authenticated caller must additionally match the owner.
+- **Documents** are ingested with an `owner` and retrieval filters by it, so
+  one user's uploads never surface in another's document-first answers.
+
+Today the principal is session-derived (no login yet); the abstraction is built
+so real accounts / OAuth / team workspaces extend `resolve_principal` and
+`Principal` without changing the call sites.
+
 ## Known limitations (current)
 
 - SQLite + local ChromaDB are single-node; conversation memory is not

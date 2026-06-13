@@ -106,7 +106,8 @@ def test_xlsx_generation_creates_valid_file():
 def test_metadata_carries_download_url_and_validation():
     out = _build_and_generate("pptx", "Make a PPT on space")
     art = out["artifact"]
-    assert art["download_url"] == f"/artifacts/{art['filename']}"
+    # Download URL is now owner-scoped (default owner "shared" in this helper).
+    assert art["download_url"] == f"/artifacts/shared/{art['filename']}"
     assert art["location"] == "workspace"
     assert art["validation"]["type_matches"] is True
 
