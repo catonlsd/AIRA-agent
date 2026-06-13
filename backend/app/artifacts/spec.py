@@ -33,12 +33,17 @@ _MAX_ROWS = 200
 class Slide:
     title: str
     bullets: list[str] = field(default_factory=list)
+    layout: str = "content"  # title | agenda | section | content | summary
+    image_query: str | None = None  # what an image, if any, should depict
+    image_path: str | None = None   # resolved local image path (else text-only)
 
 
 @dataclass
 class Section:
     heading: str
     paragraphs: list[str] = field(default_factory=list)
+    bullets: list[str] = field(default_factory=list)
+    level: int = 1
 
 
 @dataclass
@@ -47,6 +52,8 @@ class ArtifactSpec:
 
     kind: str  # pptx | docx | xlsx
     title: str
+    subtitle: str = ""
+    style: str = ""                                          # style profile name
     slides: list[Slide] = field(default_factory=list)        # pptx
     sections: list[Section] = field(default_factory=list)    # docx
     sheet_name: str = "Sheet1"                                # xlsx
@@ -104,10 +111,13 @@ class ArtifactPlanBuilder:
         *,
         generate: Optional[Callable[..., str]] = None,
         context: Optional[str] = None,
+        style: str = "",
     ) -> ArtifactSpec:
         title = derive_title(goal, kind)
         data = self._prepare_content(goal, kind, title, generate, context)
-        return self._spec_from_data(kind, title, data)
+        spec = self._spec_from_data(kind, title, data)
+        spec.style = style
+        return spec
 
     # ── content preparation ──────────────────────────────────────────────────
 
@@ -122,18 +132,33 @@ class ArtifactPlanBuilder:
         if generate is None:
             return None
         schema = {
-            "pptx": '{"slides": [{"title": "...", "bullets": ["...", "..."]}]}  (6-9 slides incl. a title slide)',
-            "docx": '{"sections": [{"heading": "...", "paragraphs": ["..."]}]}  (intro + 4-7 sections)',
-            "xlsx": '{"sheet_name": "...", "headers": ["...", "..."], "rows": [["...", "..."]]}  (a useful header row + sample rows)',
+            "pptx": (
+                '{"subtitle": "one-line subtitle", "slides": [{"title": "...", '
+                '"bullets": ["concise point", "..."], "image_query": "optional '
+                'subject for an image, or null"}]}  — 5-8 content slides. Keep '
+                "bullets short (max 6 per slide, under ~12 words each); no walls "
+                "of text."
+            ),
+            "docx": (
+                '{"subtitle": "...", "sections": [{"heading": "...", '
+                '"paragraphs": ["..."], "bullets": ["optional key points"]}]}  — '
+                "start with an Executive Summary section, then 4-6 substantive "
+                "sections, ending with a Conclusion."
+            ),
+            "xlsx": (
+                '{"sheet_name": "short tab name", "headers": ["...", "..."], '
+                '"rows": [["...", "..."]]}  — a clear, consistent column order and '
+                "useful sample rows."
+            ),
         }[kind]
         grounding = f"\n\nUse this source material where relevant:\n{context}" if context else ""
         try:
             raw = generate(
                 system=(
                     "You are AIRA-X's artifact content planner. Produce ONLY a JSON "
-                    f"object for a {kind_noun(kind)} titled '{title}'. Shape: {schema}. "
-                    "Be substantive and well-structured. No markdown fences, no prose "
-                    "outside the JSON."
+                    f"object for a professional {kind_noun(kind)} titled '{title}'. "
+                    f"Shape: {schema}. Be substantive, well-structured, and concise. "
+                    "No markdown fences, no prose outside the JSON."
                 ),
                 prompt=f"{goal}{grounding}",
                 temperature=0.4,
@@ -165,23 +190,43 @@ class ArtifactPlanBuilder:
         return self._xlsx_spec(title, data)
 
     def _pptx_spec(self, title: str, data: Optional[dict]) -> ArtifactSpec:
-        slides: list[Slide] = [Slide(title=title, bullets=[])]  # title slide
+        subtitle = str((data or {}).get("subtitle") or "").strip() if isinstance(data, dict) else ""
+        content: list[Slide] = []
         raw_slides = (data or {}).get("slides") if isinstance(data, dict) else None
-        if isinstance(raw_slides, list) and raw_slides:
-            for item in raw_slides[: _MAX_SLIDES - 1]:
+        if isinstance(raw_slides, list):
+            for item in raw_slides:
                 if not isinstance(item, dict):
                     continue
                 stitle = str(item.get("title") or "").strip()
                 if not stitle:
                     continue
                 bullets = [str(b).strip() for b in (item.get("bullets") or []) if str(b).strip()]
-                slides.append(Slide(title=stitle, bullets=bullets[:8]))
-        if len(slides) == 1:  # fallback content slides
-            for heading in ("Overview", "Key Points", "Details", "Summary"):
-                slides.append(Slide(title=heading, bullets=[f"{heading} for {title}."]))
-        return ArtifactSpec(kind="pptx", title=title, slides=slides)
+                image_query = item.get("image_query")
+                image_query = str(image_query).strip() if image_query else None
+                content.append(
+                    Slide(title=stitle, bullets=bullets[:6], layout="content", image_query=image_query)
+                )
+        if not content:  # deterministic fallback content
+            for heading in ("Overview", "Key Points", "Details"):
+                content.append(Slide(title=heading, bullets=[f"{heading} for {title}."], layout="content"))
+        content = content[: _MAX_SLIDES - 3]
+
+        # Intentional deck structure: title -> agenda -> content -> summary.
+        slides: list[Slide] = [
+            Slide(title=title, bullets=[subtitle] if subtitle else [], layout="title")
+        ]
+        body = [s for s in content if "summary" not in s.title.lower() and "conclusion" not in s.title.lower()]
+        if len(body) >= 3:
+            slides.append(Slide(title="Agenda", bullets=[s.title for s in body[:6]], layout="agenda"))
+        slides.extend(content)
+        if not any("summary" in s.title.lower() or "conclusion" in s.title.lower() for s in content):
+            slides.append(
+                Slide(title="Summary", bullets=[f"Key takeaways on {title}."], layout="summary")
+            )
+        return ArtifactSpec(kind="pptx", title=title, subtitle=subtitle, slides=slides)
 
     def _docx_spec(self, title: str, data: Optional[dict]) -> ArtifactSpec:
+        subtitle = str((data or {}).get("subtitle") or "").strip() if isinstance(data, dict) else ""
         sections: list[Section] = []
         raw_sections = (data or {}).get("sections") if isinstance(data, dict) else None
         if isinstance(raw_sections, list) and raw_sections:
@@ -190,15 +235,23 @@ class ArtifactPlanBuilder:
                     continue
                 heading = str(item.get("heading") or "").strip()
                 paras = [str(p).strip() for p in (item.get("paragraphs") or []) if str(p).strip()]
-                if heading or paras:
-                    sections.append(Section(heading=heading or "Section", paragraphs=paras))
+                bullets = [str(b).strip() for b in (item.get("bullets") or []) if str(b).strip()]
+                if heading or paras or bullets:
+                    sections.append(
+                        Section(heading=heading or "Section", paragraphs=paras, bullets=bullets[:8], level=1)
+                    )
         if not sections:
             sections = [
-                Section(heading="Introduction", paragraphs=[f"This report covers {title}."]),
-                Section(heading="Overview", paragraphs=[f"Key aspects of {title}."]),
-                Section(heading="Summary", paragraphs=[f"Concluding notes on {title}."]),
+                Section(heading="Executive Summary", paragraphs=[f"This report covers {title}."], level=1),
+                Section(heading="Overview", paragraphs=[f"Key aspects of {title}."], level=1),
+                Section(heading="Conclusion", paragraphs=[f"Concluding notes on {title}."], level=1),
             ]
-        return ArtifactSpec(kind="docx", title=title, sections=sections)
+        # Ensure a leading summary and a closing section for clean report flow.
+        if not any("summary" in s.heading.lower() for s in sections):
+            sections.insert(0, Section(heading="Executive Summary", paragraphs=[f"An overview of {title}."], level=1))
+        if not any(h in sections[-1].heading.lower() for h in ("summary", "conclusion")):
+            sections.append(Section(heading="Conclusion", paragraphs=[f"Closing notes on {title}."], level=1))
+        return ArtifactSpec(kind="docx", title=title, subtitle=subtitle, sections=sections)
 
     def _xlsx_spec(self, title: str, data: Optional[dict]) -> ArtifactSpec:
         headers: list[str] = []
@@ -213,4 +266,7 @@ class ArtifactPlanBuilder:
         if not headers:
             headers = ["Item", "Value", "Notes"]
             rows = rows or [["Example", "", ""]]
+        # A meaningful tab name beats the generic "Sheet1".
+        if sheet_name in ("Sheet1", "Sheet", ""):
+            sheet_name = (slugify(title).replace("_", " ").title() or "Data")[:31]
         return ArtifactSpec(kind="xlsx", title=title, sheet_name=sheet_name, headers=headers, rows=rows)

@@ -46,18 +46,29 @@ export function isExecutionTurn(meta: Meta | undefined): boolean {
 export type ArtifactView = {
   type: string;
   title: string;
+  subtitle: string | null;
   filename: string;
   downloadUrl: string | null;
-  extent: string; // "8 slides" / "12 paragraphs" / "20 rows"
+  summary: string; // "8 slides" / "5 sections, 18 paragraphs" / "20 rows × 4 columns"
+  sizeLabel: string | null;
   validated: boolean;
+  saveLocation: string;
   externalNote: string | null;
 };
+
+function _humanSize(bytes: unknown): string | null {
+  const n = typeof bytes === "number" ? bytes : 0;
+  if (!n) return null;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
 
 export function presentArtifact(meta: Meta | undefined): ArtifactView | null {
   const art = meta?.artifact;
   if (!art) return null;
   const details = art.validation?.details ?? {};
-  const extent =
+  const fallbackExtent =
     art.type === "pptx"
       ? `${details.slides ?? "?"} slides`
       : art.type === "docx"
@@ -65,15 +76,18 @@ export function presentArtifact(meta: Meta | undefined): ArtifactView | null {
       : `${details.rows ?? "?"} rows`;
   const externalNote =
     art.location === "external" && art.requested_path
-      ? `Saved to the workspace download area (couldn't write to ${art.requested_path} directly).`
+      ? `Couldn't write to ${art.requested_path} directly — saved to the workspace download area.`
       : null;
   return {
     type: String(art.type ?? "").toUpperCase(),
     title: art.title ?? art.filename ?? "Artifact",
+    subtitle: art.subtitle || null,
     filename: art.filename ?? "",
     downloadUrl: art.download_url ?? null,
-    extent,
+    summary: art.summary || fallbackExtent,
+    sizeLabel: _humanSize(art.size_bytes),
     validated: Boolean(art.validation?.valid),
+    saveLocation: art.location === "external" ? "Workspace download area" : "Saved to workspace",
     externalNote,
   };
 }

@@ -26,6 +26,7 @@ from app.artifacts.spec import (
     kind_noun,
     slugify,
 )
+from app.artifacts.styles import get_style
 from app.artifacts.validator import ArtifactValidator
 from app.clarification import ClarificationStore
 
@@ -47,6 +48,8 @@ def _spec_to_dict(spec: ArtifactSpec) -> dict:
     return {
         "kind": spec.kind,
         "title": spec.title,
+        "subtitle": spec.subtitle,
+        "style": spec.style,
         "slides": [asdict(s) for s in spec.slides],
         "sections": [asdict(s) for s in spec.sections],
         "sheet_name": spec.sheet_name,
@@ -59,6 +62,8 @@ def _spec_from_dict(data: dict) -> ArtifactSpec:
     return ArtifactSpec(
         kind=data["kind"],
         title=data["title"],
+        subtitle=data.get("subtitle", ""),
+        style=data.get("style", ""),
         slides=[Slide(**s) for s in data.get("slides", [])],
         sections=[Section(**s) for s in data.get("sections", [])],
         sheet_name=data.get("sheet_name", "Sheet1"),
@@ -84,7 +89,9 @@ class ArtifactService:
         context: Optional[str] = None,
     ) -> tuple[PendingArtifact, str]:
         """Prepare content + delivery into a pending plan and a plan message."""
-        spec = self.builder.build(goal, kind, generate=generate, context=context)
+        spec = self.builder.build(
+            goal, kind, generate=generate, context=context, style=get_style(kind).name
+        )
         filename = f"{slugify(spec.title)}{spec.extension}"
         target = self.delivery.resolve(goal, filename)
 
@@ -107,12 +114,13 @@ class ArtifactService:
         """Generate + validate the real file. Completion requires validation."""
         spec = _spec_from_dict(pending.spec)
         target = _delivery_from_dict(pending.delivery)
+        style = get_style(spec.kind, spec.style or None)
         generator = get_generator(spec.kind)
         if generator is None:
             return {"status": "failed", "error": f"no generator for {spec.kind}"}
 
         try:
-            written = generator.write(spec, target.path)
+            written = generator.write(spec, target.path, style)
         except Exception as error:
             return {"status": "failed", "error": f"generation failed: {error}"}
 
@@ -127,14 +135,28 @@ class ArtifactService:
         artifact = {
             "type": spec.kind,
             "title": spec.title,
+            "subtitle": spec.subtitle,
             "filename": target.filename,
             "path": str(written),
             "download_url": target.download_url,
             "location": target.location,
             "requested_path": target.requested_path,
+            "style": style.name,
+            "summary": self._summary(spec, validation),
+            "size_bytes": validation.get("size_bytes"),
             "validation": validation,
         }
         return {"status": "completed", "artifact": artifact, "validation": validation}
+
+    @staticmethod
+    def _summary(spec: ArtifactSpec, validation: dict) -> str:
+        details = validation.get("details", {})
+        if spec.kind == "pptx":
+            return f"{details.get('slides', len(spec.slides))} slides"
+        if spec.kind == "docx":
+            return f"{len(spec.sections)} sections, {details.get('paragraphs', '?')} paragraphs"
+        cols = len(spec.headers)
+        return f"{details.get('rows', len(spec.rows) + 1)} rows × {cols} columns"
 
     # ── rendering ────────────────────────────────────────────────────────────
 

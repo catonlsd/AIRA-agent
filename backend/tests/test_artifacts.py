@@ -221,8 +221,133 @@ async def test_generation_failure_is_honest(monkeypatch):
 
 def test_plan_builder_uses_llm_content_when_available():
     def _gen(system, prompt, temperature=0.4):
-        return '{"slides": [{"title": "Solar", "bullets": ["Cheap", "Clean"]}, {"title": "Wind", "bullets": ["Scalable"]}]}'
+        return '{"slides": [{"title": "Solar", "bullets": ["Cheap", "Clean"]}, {"title": "Wind", "bullets": ["Scalable"]}, {"title": "Hydro", "bullets": ["Reliable"]}]}'
 
     spec = ArtifactPlanBuilder().build("PPT on renewables", "pptx", generate=_gen)
     titles = [s.title for s in spec.slides]
     assert "Solar" in titles and "Wind" in titles
+
+
+# ── Step 2: content structuring quality ──────────────────────────────────────
+
+
+def test_pptx_deck_has_intentional_structure():
+    def _gen(system, prompt, temperature=0.4):
+        slides = ", ".join(
+            f'{{"title": "Topic {i}", "bullets": ["a", "b"]}}' for i in range(1, 5)
+        )
+        return f'{{"subtitle": "An overview", "slides": [{slides}]}}'
+
+    spec = ArtifactPlanBuilder().build("PPT on energy", "pptx", generate=_gen)
+    layouts = [s.layout for s in spec.slides]
+    assert layouts[0] == "title"             # opens with a title slide
+    assert "agenda" in layouts               # agenda when enough content
+    assert layouts[-1] == "summary"          # closes with a summary
+    assert spec.subtitle == "An overview"
+    # Bullet density is capped (no walls of text).
+    assert all(len(s.bullets) <= 6 for s in spec.slides)
+
+
+def test_docx_has_summary_and_conclusion_and_bullets():
+    def _gen(system, prompt, temperature=0.4):
+        return (
+            '{"sections": [{"heading": "Background", "paragraphs": ["p1"], '
+            '"bullets": ["point a", "point b"]}]}'
+        )
+
+    spec = ArtifactPlanBuilder().build("Report on AI", "docx", generate=_gen)
+    headings = [s.heading.lower() for s in spec.sections]
+    assert any("summary" in h for h in headings)       # leading exec summary
+    assert any("conclusion" in h for h in headings)    # closing section
+    background = next(s for s in spec.sections if s.heading == "Background")
+    assert background.bullets == ["point a", "point b"]
+
+
+def test_xlsx_gets_meaningful_sheet_name():
+    spec = ArtifactPlanBuilder().build("Generate an XLSX sales tracker", "xlsx")
+    assert spec.sheet_name not in ("Sheet1", "Sheet", "")
+
+
+# ── Step 2: style/template applied ───────────────────────────────────────────
+
+
+def test_default_style_profiles_resolve():
+    from app.artifacts.styles import get_style
+
+    assert get_style("pptx").name == "presentation_default"
+    assert get_style("docx").name == "report_default"
+    assert get_style("xlsx").name == "spreadsheet_default"
+
+
+def test_generated_artifact_records_style_and_summary():
+    out = _build_and_generate("xlsx", "Generate an XLSX sales tracker")
+    art = out["artifact"]
+    assert art["style"] == "spreadsheet_default"
+    assert "rows" in art["summary"] and "columns" in art["summary"]
+    assert art["size_bytes"] > 0
+
+
+def test_xlsx_header_formatting_does_not_break_generation():
+    out = _build_and_generate("xlsx", "Generate a budget tracker")
+    from pathlib import Path
+
+    from openpyxl import load_workbook
+
+    wb = load_workbook(out["artifact"]["path"])
+    ws = wb.active
+    # Header row is bold (style applied) and a column width was set.
+    assert ws["A1"].font.bold is True
+    assert ws.column_dimensions["A"].width is not None
+
+
+# ── Step 2: optional, safe image support ─────────────────────────────────────
+
+
+def test_pptx_generation_succeeds_without_images():
+    # No image provider is configured by default -> text-only, still valid.
+    out = _build_and_generate("pptx", "Make a PPT on the ocean")
+    assert out["status"] == "completed"
+    assert out["artifact"]["validation"]["valid"] is True
+
+
+def test_pptx_inserts_image_when_one_resolves(monkeypatch, tmp_path):
+    # A tiny real PNG so python-pptx can embed it.
+    png = tmp_path / "pic.png"
+    png.write_bytes(
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+            "890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082"
+        )
+    )
+    import app.artifacts.images as images
+
+    monkeypatch.setattr(images, "_provider", lambda q: str(png))
+
+    from app.artifacts.generators import PptxArtifactGenerator
+    from app.artifacts.spec import ArtifactSpec, Slide
+    from app.artifacts.styles import get_style
+
+    spec = ArtifactSpec(
+        kind="pptx",
+        title="Imagery",
+        slides=[
+            Slide(title="Imagery", layout="title"),
+            Slide(title="With image", bullets=["a"], layout="content", image_query="ocean"),
+        ],
+    )
+    out_path = tmp_path / "deck.pptx"
+    PptxArtifactGenerator().write(spec, out_path, get_style("pptx"))
+    from pptx import Presentation
+
+    prs = Presentation(str(out_path))
+    # The content slide carries an embedded picture shape.
+    pics = [sh for slide in prs.slides for sh in slide.shapes if sh.shape_type == 13]
+    assert len(pics) == 1
+
+
+def test_bad_image_path_does_not_break_generation(monkeypatch, tmp_path):
+    import app.artifacts.images as images
+
+    monkeypatch.setattr(images, "_provider", lambda q: "/nonexistent/img.png")
+    out = _build_and_generate("pptx", "Make a PPT on mountains")
+    assert out["status"] == "completed"  # missing image -> graceful text-only

@@ -876,10 +876,13 @@ function ArtifactCard({ artifact }: { artifact: ArtifactView }) {
       </span>
       <div className="artifact-body">
         <p className="artifact-title">{artifact.title}</p>
+        {artifact.subtitle && <p className="artifact-subtitle">{artifact.subtitle}</p>}
         <p className="artifact-meta">
-          {artifact.type} · {artifact.extent}
+          {artifact.type} · {artifact.summary}
+          {artifact.sizeLabel && <span> · {artifact.sizeLabel}</span>}
           {artifact.validated && <span className="artifact-valid"> · ✓ validated</span>}
         </p>
+        <p className="artifact-loc">{artifact.saveLocation}</p>
         {artifact.externalNote && <p className="artifact-note">{artifact.externalNote}</p>}
       </div>
       {href && (
@@ -2056,8 +2059,10 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.artifact-meta { margin-top: 0.15rem; font-size: 0.74rem; font-weight: 600; color: var(--text-muted); }
+.artifact-subtitle { margin-top: 0.1rem; font-size: 0.76rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artifact-meta { margin-top: 0.2rem; font-size: 0.74rem; font-weight: 600; color: var(--text-muted); }
 .artifact-valid { color: var(--success, #15a06a); }
+.artifact-loc { margin-top: 0.15rem; font-size: 0.68rem; color: var(--text-subtle); }
 .artifact-note { margin-top: 0.3rem; font-size: 0.72rem; color: var(--text-subtle); }
 .artifact-download {
   flex-shrink: 0;
