@@ -81,7 +81,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         ):
             return await call_next(request)
 
-        client = request.client.host if request.client else "unknown"
+        # Principal-aware: an authenticated key gets its own bucket; otherwise
+        # fall back to the client IP. (Keying on the body's session id would
+        # require reading the request body, which breaks streaming.)
+        api_key = request.headers.get(settings.api_key_header) if settings.api_key else None
+        client = f"key:{api_key[:16]}" if api_key else (request.client.host if request.client else "unknown")
         limit = settings.rate_limit_per_minute
         now = time.time()
 

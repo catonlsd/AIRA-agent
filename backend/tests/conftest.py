@@ -48,13 +48,16 @@ def stub_llm(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _isolate_guided_flows():
-    """Guided-flow state is now durable (DB-backed) — wipe it between tests so
-    pending plans/approvals never leak across cases."""
+    """Guided-flow state and usage quotas are durable (DB-backed) — wipe them
+    between tests so pending approvals / quota counters never leak."""
     from app.guided_flow_store import guided_flow_store
+    from app.usage_limits import usage_limiter
 
     guided_flow_store.clear_all()
+    usage_limiter.reset()
     yield
     guided_flow_store.clear_all()
+    usage_limiter.reset()
 
 
 @pytest_asyncio.fixture

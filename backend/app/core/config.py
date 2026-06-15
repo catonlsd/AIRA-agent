@@ -69,6 +69,15 @@ class Settings(BaseSettings):
     security_headers_enabled: bool = True
     request_logging_enabled: bool = True
 
+    # ── Per-principal usage quotas (multi-user fairness / abuse resistance) ──
+    # Operator-tunable; durable + multi-process-safe. Disable for trusted setups.
+    quotas_enabled: bool = True
+    quota_window_seconds: int = 3600
+    max_pending_flows_per_owner: int = 5
+    execution_starts_per_window: int = 30
+    artifact_generations_per_window: int = 20
+    startup_validations_per_window: int = 20
+
     # Boot/health validation actually launches a generated app in a bounded
     # subprocess. Operators can disable it in constrained environments (no spawn
     # permission, locked-down CI) — detection still runs and reports honestly.
@@ -94,6 +103,20 @@ class Settings(BaseSettings):
     def parse_allowed_file_extensions(cls, value):
         if isinstance(value, str):
             return [ext.strip().lower().replace(".", "") for ext in value.split(",") if ext.strip()]
+        return value
+
+    @field_validator(
+        "quota_window_seconds",
+        "max_pending_flows_per_owner",
+        "execution_starts_per_window",
+        "artifact_generations_per_window",
+        "startup_validations_per_window",
+    )
+    @classmethod
+    def _positive_quota(cls, value, info):
+        # Quota limits must be positive integers — fail clearly on misconfig.
+        if not isinstance(value, int) or value <= 0:
+            raise ValueError(f"{info.field_name} must be a positive integer (got {value!r}).")
         return value
 
     def ensure_storage(self) -> None:

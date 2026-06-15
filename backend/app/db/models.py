@@ -79,3 +79,19 @@ class GuidedFlow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+
+class UsageRecord(Base):
+    """Durable, principal-scoped usage events for windowed quotas.
+
+    One row per quota-counted action (execution start, artifact generation,
+    startup validation). Counting rows newer than (now - window) gives a
+    multi-process-safe rate window without external infra.
+    """
+
+    __tablename__ = "usage_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    kind: Mapped[str] = mapped_column(String(48), index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)

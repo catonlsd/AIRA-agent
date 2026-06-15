@@ -162,6 +162,25 @@ class GuidedFlowStore:
             )
             session.commit()
 
+    def count_pending(self, session_id: Optional[str]) -> int:
+        """Number of in-flight (pending, non-expired) flows for this owner.
+
+        Used by the per-owner pending-flow quota — durable and multi-process
+        safe (counts DB rows, not in-memory state).
+        """
+        key = _session_key(session_id)
+        now = _now()
+        with self._session_factory() as session:
+            return (
+                session.query(GuidedFlow)
+                .filter(
+                    GuidedFlow.session_key == key,
+                    GuidedFlow.status == "pending",
+                )
+                .filter((GuidedFlow.expires_at.is_(None)) | (GuidedFlow.expires_at >= now))
+                .count()
+            )
+
     def clear_all(self) -> None:
         """Wipe every guided flow (used by tests for isolation)."""
         with self._session_factory() as session:

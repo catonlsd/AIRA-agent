@@ -62,6 +62,12 @@ from app.supervisor_reasoning import (
     TurnReasoning,
     reason_about_turn,
 )
+from app.usage_limits import (
+    KIND_ARTIFACT,
+    KIND_EXECUTION,
+    KIND_STARTUP,
+    quota_service,
+)
 from app.prompt_parsing import parse_prompt_for_questions
 from app.response_composer import compose
 from app.schemas.assistant_response import AssistantResponse
@@ -474,6 +480,10 @@ class AssistantSupervisor:
         ctx: TurnContext,
     ) -> dict[str, Any]:
         """Show guided options (or targeted questions) and remember the request."""
+        # Per-owner pending-flow cap: don't let one principal pile up approvals.
+        cap = quota_service.check_pending_flows(ctx.owner)
+        if not cap:
+            return self._limit_result(cap.message, cap.kind)
         pending = PendingClarification(
             original_request=goal,
             questions=questions,
@@ -598,6 +608,9 @@ class AssistantSupervisor:
         self, goal: str, classification, kind: str, ctx: TurnContext
     ) -> dict[str, Any]:
         """Prepare artifact content + delivery, park a plan awaiting approval."""
+        cap = quota_service.check_pending_flows(ctx.owner)
+        if not cap:
+            return self._limit_result(cap.message, cap.kind)
         ctx.trace.event("stage", stage="planning")
         context = None
         if ctx.has_uploaded_files:
@@ -655,11 +668,19 @@ class AssistantSupervisor:
         decision = parse_plan_decision(reply)
         if decision is None:
             return None
+        # Artifact-generation quota — checked before consuming so a blocked
+        # approval leaves the artifact pending to retry later.
+        if decision == "approve":
+            quota = quota_service.check_windowed(ctx.owner, KIND_ARTIFACT)
+            if not quota:
+                return self._limit_result(quota.message, quota.kind)
         # Idempotent claim — a duplicate approval can't generate the file twice.
         if artifact_store.consume(ctx.owner) is None:
             return self._already_handled_result(
                 "That artifact request was already handled — ask again to make a new one."
             )
+        if decision == "approve":
+            quota_service.record(ctx.owner, KIND_ARTIFACT)
 
         if decision == "reject":
             ctx.trace.event("artifact_rejected", kind=pending.kind)
@@ -757,11 +778,19 @@ class AssistantSupervisor:
         decision = parse_plan_decision(reply)
         if decision is None:
             return None
+        # Startup/runtime-validation quota — checked before consuming so a
+        # blocked approval leaves the actions pending to retry later.
+        if decision == "approve":
+            quota = quota_service.check_windowed(ctx.owner, KIND_STARTUP)
+            if not quota:
+                return self._limit_result(quota.message, quota.kind)
         # Idempotent claim — duplicate approvals can't re-run validation.
         if action_store.consume(ctx.owner) is None:
             return self._already_handled_result(
                 "Those validation steps were already handled — send a new request to continue."
             )
+        if decision == "approve":
+            quota_service.record(ctx.owner, KIND_STARTUP)
 
         if decision == "reject":
             ctx.trace.event("runtime_validation_rejected")
@@ -818,6 +847,12 @@ class AssistantSupervisor:
         decision = parse_plan_decision(reply)
         if decision is None:
             return None
+        # Execution-start quota — checked BEFORE consuming so a blocked approval
+        # leaves the plan pending to retry once the window clears.
+        if decision == "approve":
+            quota = quota_service.check_windowed(ctx.owner, KIND_EXECUTION)
+            if not quota:
+                return self._limit_result(quota.message, quota.kind)
         # Idempotent claim: only the first approve/reject runs; a duplicate (or
         # a racing process) gets None and is told honestly — never double-runs.
         claimed = plan_store.consume(ctx.owner)
@@ -827,6 +862,7 @@ class AssistantSupervisor:
             )
         plan = claimed
         if decision == "approve":
+            quota_service.record(ctx.owner, KIND_EXECUTION)
             return await self._execute_approved_plan(plan, ctx)
         if decision == "reject":
             ctx.trace.event("plan_discarded", original_request=plan.original_request)
@@ -1057,6 +1093,32 @@ class AssistantSupervisor:
             "confidence": classification.confidence,
         }
         return result
+
+    def _limit_result(self, message: str, kind: str) -> dict[str, Any]:
+        """Honest, clean response when a usage quota is hit (state untouched).
+
+        Detailed classification lives in meta/logs, not the user-facing text.
+        """
+        return {
+            "run_id": uuid4().hex,
+            "status": "completed",
+            "decision": "rate_limited",
+            "mode": GENERAL_CHAT_MODE,
+            "message": message,
+            "final_answer": message,
+            "sources": [],
+            "artifacts": [],
+            "approval_summary": None,
+            "meta": {
+                "is_multi_question": False,
+                "question_count": 1,
+                "has_sources": False,
+                "has_artifacts": False,
+                "requires_approval": False,
+                "rate_limited": True,
+                "limit_kind": kind,
+            },
+        }
 
     def _already_handled_result(self, message: str) -> dict[str, Any]:
         """Honest response when a guided step was already consumed or expired.
