@@ -140,3 +140,89 @@ def summarize_for_self_memory(preferences: dict[str, str]) -> str:
     if not phrases:
         return ""
     return "You've asked me to " + "; ".join(phrases) + "."
+
+
+# ── User-facing catalogue (the explicit settings surface) ────────────────────
+# The ONLY preferences a user may review/edit. Each entry is product-approved and
+# human-described — never a raw key. The settings API and UI render from this, so
+# arbitrary keys, internal session memory, and policy internals are never exposed.
+
+PREFERENCE_CATALOGUE: tuple[dict, ...] = (
+    {
+        "key": ANSWER_LENGTH,
+        "label": "Answer length",
+        "description": "How long answers should be by default.",
+        "options": [
+            {"value": "concise", "label": "Concise"},
+            {"value": "detailed", "label": "Detailed"},
+        ],
+    },
+    {
+        "key": ANSWER_FORMAT,
+        "label": "Answer format",
+        "description": "Whether answers lean on bullet points or flowing prose.",
+        "options": [
+            {"value": "bullets", "label": "Bullet points"},
+            {"value": "prose", "label": "Prose"},
+        ],
+    },
+    {
+        "key": ANSWER_STYLE,
+        "label": "Code-first answers",
+        "description": "Lead technical answers with a code example.",
+        "options": [
+            {"value": "code_first", "label": "Enabled"},
+        ],
+    },
+    {
+        "key": HEADINGS,
+        "label": "Headings",
+        "description": "Use markdown headings sparingly in longer answers.",
+        "options": [
+            {"value": "sparse", "label": "Use sparingly"},
+        ],
+    },
+    {
+        "key": ARTIFACT_STYLE,
+        "label": "Artifact style",
+        "description": "Default visual style for generated decks, docs, and sheets.",
+        "options": [
+            {"value": "clean_professional", "label": "Clean & professional"},
+        ],
+    },
+    {
+        "key": FALLBACK_DEFAULT,
+        "label": "Web fallback",
+        "description": "Fall back to broader web research when your uploaded documents don't cover a question.",
+        "options": [
+            {"value": "web", "label": "Enabled"},
+        ],
+    },
+)
+
+_CATALOGUE_BY_KEY = {entry["key"]: entry for entry in PREFERENCE_CATALOGUE}
+
+
+def allowed_keys() -> set[str]:
+    return set(_CATALOGUE_BY_KEY)
+
+
+def is_valid_preference(key: str, value: str) -> bool:
+    """True only for a catalogue key paired with one of its allowed values."""
+    entry = _CATALOGUE_BY_KEY.get(key)
+    if not entry:
+        return False
+    return any(option["value"] == value for option in entry["options"])
+
+
+def catalogue_with_values(saved: dict[str, str]) -> list[dict]:
+    """The catalogue annotated with the owner's current value per entry.
+
+    Only catalogue keys are returned; any stray stored key is ignored, so the
+    surface can never leak non-catalogue data. `value` is None when unset.
+    """
+    out: list[dict] = []
+    for entry in PREFERENCE_CATALOGUE:
+        value = saved.get(entry["key"])
+        out.append({**entry, "value": value if value is not None else None})
+    return out

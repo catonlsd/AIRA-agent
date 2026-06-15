@@ -22,6 +22,7 @@ from app.middleware import (
 )
 from app.routes.aira_x import router as aira_x_router
 from app.routes.assistant import router as assistant_router
+from app.routes.preferences import router as preferences_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,6 +55,7 @@ app = FastAPI(
 
 app.include_router(aira_x_router)
 app.include_router(assistant_router)
+app.include_router(preferences_router)
 app.include_router(router)
 
 # Middleware is added inner-first; the last added is outermost. Desired request

@@ -95,6 +95,22 @@ class PreferenceMemory:
             self.set(owner, key, value, source=source)
         return len(values or {})
 
+    def delete(self, owner: str | None, key: str) -> bool:
+        """Remove a single preference for an owner. Returns True if one existed."""
+        owner_key = _owner_key(owner)
+        with self._session_factory() as session:
+            removed = (
+                session.query(MemoryEntry)
+                .filter(
+                    MemoryEntry.owner == owner_key,
+                    MemoryEntry.category == self._category,
+                    MemoryEntry.key == key,
+                )
+                .delete()
+            )
+            session.commit()
+            return bool(removed)
+
     def clear(self, owner: str | None) -> None:
         owner_key = _owner_key(owner)
         with self._session_factory() as session:

@@ -16,12 +16,23 @@ import {
   RefreshCw,
   Server,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
+  Trash2,
   Wrench,
   XCircle,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
+import { getSessionId } from "@/lib/session";
+import {
+  clearAllPreferences,
+  fetchPreferences,
+  removePreference,
+  savePreference,
+  savedCount,
+  type PreferenceItem,
+} from "@/lib/preferences";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -331,6 +342,184 @@ function RuntimeHealthCard() {
   );
 }
 
+function PreferencesCard() {
+  const [items, setItems] = useState<PreferenceItem[]>([]);
+  const [status, setStatus] = useState<"loading" | "ready" | "offline">("loading");
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  const load = useCallback(async () => {
+    setStatus("loading");
+    try {
+      setItems(await fetchPreferences(getSessionId()));
+      setStatus("ready");
+    } catch {
+      setStatus("offline");
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const onSelect = useCallback(async (key: string, value: string, current: string | null) => {
+    setBusyKey(key);
+    try {
+      // Clicking the active value clears it (toggle off); otherwise set it.
+      const next =
+        current === value
+          ? await removePreference(getSessionId(), key)
+          : await savePreference(getSessionId(), key, value);
+      setItems(next);
+    } catch {
+      setStatus("offline");
+    } finally {
+      setBusyKey(null);
+    }
+  }, []);
+
+  const onRemove = useCallback(async (key: string) => {
+    setBusyKey(key);
+    try {
+      setItems(await removePreference(getSessionId(), key));
+    } catch {
+      setStatus("offline");
+    } finally {
+      setBusyKey(null);
+    }
+  }, []);
+
+  const onClearAll = useCallback(async () => {
+    setBusyKey("__all__");
+    try {
+      setItems(await clearAllPreferences(getSessionId()));
+      setConfirmClear(false);
+    } catch {
+      setStatus("offline");
+    } finally {
+      setBusyKey(null);
+    }
+  }, []);
+
+  const count = savedCount(items);
+
+  return (
+    <section className="sarvam-card rounded-[1.5rem] p-5">
+      <SectionHeading
+        icon={<SlidersHorizontal className="h-5 w-5" />}
+        title="Assistant Preferences"
+        description="Stable preferences AIRA-X remembers and applies to your answers and generated files. Your current message always overrides them, and you can change or clear these anytime."
+        action={
+          count > 0 && status === "ready" ? (
+            confirmClear ? (
+              <div className="inline-flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClearAll}
+                  disabled={busyKey === "__all__"}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--danger)_40%,transparent)] bg-[var(--danger-soft)] px-3 py-2 text-xs font-black text-[var(--danger)] transition hover:brightness-105"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Confirm clear all
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmClear(false)}
+                  className="rounded-full border border-[var(--border)] px-3 py-2 text-xs font-black text-[var(--text-muted)] transition hover:text-[var(--text-strong)]"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmClear(true)}
+                className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Clear all
+              </button>
+            )
+          ) : undefined
+        }
+      />
+
+      {status === "offline" && (
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4 text-sm text-[var(--text-muted)]">
+          Couldn&apos;t reach the assistant to load your preferences. They&apos;ll appear here when it&apos;s back online.
+        </div>
+      )}
+
+      {status === "loading" && (
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4 text-sm text-[var(--text-muted)]">
+          Loading your saved preferences…
+        </div>
+      )}
+
+      {status === "ready" && (
+        <>
+          <p className="mb-3 text-xs font-semibold text-[var(--text-subtle)]">
+            {count === 0
+              ? "No preferences saved yet — pick any below, or just tell AIRA-X in chat (e.g. “keep answers concise”)."
+              : `${count} preference${count === 1 ? "" : "s"} saved. Temporary conversation context is separate and isn’t shown here.`}
+          </p>
+
+          <div className="grid gap-3">
+            {items.map((item) => (
+              <div
+                key={item.key}
+                className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-[var(--text-strong)]">{item.label}</p>
+                    <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">{item.description}</p>
+                  </div>
+                  {item.value != null && (
+                    <button
+                      type="button"
+                      onClick={() => onRemove(item.key)}
+                      disabled={busyKey === item.key}
+                      className="shrink-0 text-xs font-bold text-[var(--text-subtle)] transition hover:text-[var(--danger)]"
+                      aria-label={`Remove ${item.label} preference`}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {item.options.map((option) => {
+                    const active = item.value === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => onSelect(item.key, option.value, item.value)}
+                        disabled={busyKey === item.key}
+                        aria-pressed={active}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-black transition",
+                          active
+                            ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
+                            : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
+                        )}
+                      >
+                        {active && <CheckCircle2 className="h-3.5 w-3.5" />}
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 function AppearanceCard() {
   return (
     <section className="sarvam-card rounded-[1.5rem] p-5">
@@ -570,6 +759,8 @@ export default function SettingsPage() {
           </div>
         </div>
       </section>
+
+      <PreferencesCard />
 
       <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <AppearanceCard />

@@ -179,6 +179,16 @@ Nothing about memory surfaces in the chat UI as a panel; preferences quietly
 improve output and self-memory answers are honest. The store interface is small
 and swappable for later settings/edit UI and team/workspace preferences.
 
+- **User control surface**: `GET/PUT/DELETE /preferences` (`app/routes/preferences.py`)
+  is owner-scoped and exposes only the product-approved catalogue — list, set,
+  clear-one, clear-all. Invalid keys/values are rejected (400); one owner can
+  never see or change another's. The frontend Settings page renders an
+  "Assistant Preferences" card (`frontend/lib/preferences.ts`) with human labels,
+  segmented controls, per-preference remove, and a confirmed clear-all — no raw
+  keys or storage internals. Session/task context is deliberately kept out of
+  this surface. The browser session id is now persisted (`frontend/lib/session.ts`)
+  so preferences edited in Settings apply to the same session's chat answers.
+
 ## Known limitations (current)
 
 - SQLite + local ChromaDB are single-node; conversation memory is not

@@ -49,6 +49,7 @@ import {
   type Citation,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { getSessionId } from "@/lib/session";
 import {
   describeRuntimeAction,
   presentArtifact,
@@ -2620,9 +2621,9 @@ export default function ChatPage() {
   const [uploadError, setUploadError]       = useState("");
   const [turns, setTurns]                   = useState<Turn[]>([]);
   const [airaXResponse, setAiraXResponse]   = useState<AiraXResponse | null>(null);
-  const [sessionId] = useState(() =>
-    typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now())
-  );
+  // Stable, persisted across reloads and shared with the Settings page, so the
+  // preferences a user edits in Settings apply to this session's answers.
+  const [sessionId] = useState(getSessionId);
   const [uploadedDocs, setUploadedDocs] = useState<string[]>([]);
   // Persistent "documents are available this conversation" signal — kept even if
   // the user dismisses a chip, so document-first routing keeps working.
