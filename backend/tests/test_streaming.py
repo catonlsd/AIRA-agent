@@ -101,6 +101,41 @@ async def test_stream_turn_execution_emits_final(monkeypatch, stub_stream):
 
 
 @pytest.mark.asyncio
+async def test_stream_turn_replays_recorded_phase_sequence(monkeypatch, stub_stream):
+    """The real stage journey recorded during dispatch is streamed live as
+    ordered `stage` trace events (not just the final), with duplicates collapsed."""
+    supervisor = AssistantSupervisor()
+
+    async def fake_dispatch(message, classification, ctx, reasoning=None):
+        # Simulate the phases a guided execution turn really records.
+        for stage in [
+            "executing_workflow",  # duplicate of the pre-dispatch stage → collapsed
+            "validation",
+            "startup_validation_started",
+            "waiting_for_ready",
+            "waiting_for_ready",  # consecutive duplicate → collapsed
+            "healthcheck_probing",
+        ]:
+            ctx.trace.event("stage", stage=stage)
+        return supervisor._chat_result(classification, "Done.") | {"mode": "execution"}
+
+    monkeypatch.setattr(supervisor, "_dispatch_non_chat", fake_dispatch)
+
+    ctx = build_turn_context("git status", session_id="s")
+    events = await _collect(supervisor.stream_turn(ctx))
+
+    stages = [e["data"]["stage"] for e in events if e["type"] == "trace" and e["data"].get("event") == "stage"]
+    assert stages == [
+        "executing_workflow",
+        "validation",
+        "startup_validation_started",
+        "waiting_for_ready",
+        "healthcheck_probing",
+    ]
+    assert events[-1]["type"] == "final"
+
+
+@pytest.mark.asyncio
 async def test_stream_turn_emits_error_event_without_crashing(monkeypatch):
     def boom(*args, **kwargs):
         raise RuntimeError("boom")

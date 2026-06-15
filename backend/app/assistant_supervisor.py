@@ -257,11 +257,27 @@ class AssistantSupervisor:
             else:
                 # Workflow intelligence: surface the stage before dispatching.
                 stage = _stage_for_mode(classification.mode, reasoning)
+                last_stage = stage
                 if stage:
                     yield {"type": "trace", "data": {"event": "stage", "stage": stage}}
+                # Replay the real phase sequence recorded during dispatch as live
+                # `stage` events (planning → executing → validating → starting_app
+                # → readiness → healthcheck → repairing → …). These are truthful:
+                # the phases actually ran, in this order — we surface what was
+                # previously only written to the trace. Consecutive duplicates are
+                # collapsed so the UI never flickers.
+                trace_mark = len(ctx.trace.events)
                 result = await self._dispatch_non_chat(
                     ctx.message, classification, ctx, reasoning=reasoning
                 )
+                for recorded in ctx.trace.events[trace_mark:]:
+                    if recorded.get("name") != "stage":
+                        continue
+                    stage_name = recorded.get("stage")
+                    if not stage_name or stage_name == last_stage:
+                        continue
+                    last_stage = stage_name
+                    yield {"type": "trace", "data": {"event": "stage", "stage": stage_name}}
                 for source in result.get("sources", []):
                     yield {"type": "source", "data": source}
                 answer = result.get("message") or result.get("final_answer") or ""

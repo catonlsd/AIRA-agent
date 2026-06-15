@@ -58,6 +58,11 @@ import {
   type ArtifactView,
   type ExecutionPhase,
 } from "@/lib/execution-presenter";
+import {
+  livePhaseForMode,
+  livePhaseForStage,
+  type LivePhase,
+} from "@/lib/live-phase-presenter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -2627,6 +2632,11 @@ export default function ChatPage() {
 
   // Octa companion state — mirrors the live supervisor state.
   const [octaState, setOctaState] = useState<OctaState>("idle");
+  // Live execution phase for the active streaming turn (planning → executing →
+  // validating → starting app → readiness → repairing …). Driven only by real
+  // SSE `stage`/`classified` events; cleared when the turn resolves so no stale
+  // progress lingers. Raw backend names never reach this — see live-phase-presenter.
+  const [livePhase, setLivePhase] = useState<LivePhase | null>(null);
   // Transient, event-driven supervisor message (e.g. "Document indexed…").
   const [octaFlash, setOctaFlash] = useState<string | null>(null);
   const octaFlashRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2666,8 +2676,11 @@ export default function ChatPage() {
   }, [octaState, turns, airaXResponse]);
 
   // Session awareness: before the first turn the supervisor reports a fresh
-  // session; afterwards plain "Ready". Event flashes take precedence.
-  const octaMessage = octaFlash ?? (octaState === "idle" && turns.length === 0 ? "New session" : undefined) ?? undefined;
+  // session; afterwards plain "Ready". Event flashes take precedence, then the
+  // live execution phase (so the composer Octa narrates real progress).
+  const liveMessage = livePhase && livePhase.tone === "active" ? livePhase.label : undefined;
+  const octaMessage =
+    octaFlash ?? liveMessage ?? (octaState === "idle" && turns.length === 0 ? "New session" : undefined) ?? undefined;
 
   const octaInspector: OctaInspectorData = {
     lastRoute,
@@ -2740,6 +2753,7 @@ export default function ChatPage() {
     setLoading(true);
     setAiraXLoading(false);
     setOctaFlash(null);
+    setLivePhase(null);
     setOctaState("routing");
     turnStartRef.current = Date.now();
 
@@ -2770,6 +2784,12 @@ export default function ChatPage() {
             if (data?.event === "classified" && typeof data.mode === "string") {
               setOctaState(octaStateForMode(data.mode));
               setLastRoute(data.mode);
+              setLivePhase((prev) => livePhaseForMode(data.mode as string) ?? prev);
+            }
+            // Live phase progression: each `stage` event advances the active
+            // turn's phase. Unknown stages keep the current phase (no raw enums).
+            if (data?.event === "stage" && typeof data.stage === "string") {
+              setLivePhase((prev) => livePhaseForStage(data.stage as string) ?? prev);
             }
           },
           onToken: (text) =>
@@ -2897,6 +2917,9 @@ export default function ChatPage() {
     } finally {
       setLoading(false);
       setAiraXLoading(false);
+      // The turn has resolved (success, approval-gate, or error) — drop the live
+      // phase so no stale progress indicator lingers on the next render.
+      setLivePhase(null);
     }
   }
 
@@ -3032,7 +3055,7 @@ export default function ChatPage() {
                   key={`${turn.question}-${index}`}
                   turn={turn}
                   liveState={turn.streaming ? octaState : undefined}
-                  liveLabel={turn.streaming ? (octaFlash ?? OCTA_STATUS[octaState].label) : undefined}
+                  liveLabel={turn.streaming ? (octaFlash ?? livePhase?.label ?? OCTA_STATUS[octaState].label) : undefined}
                   busy={busy}
                   onClarify={(text) => handleUnifiedAssistant(undefined, text)}
                 />

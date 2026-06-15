@@ -13,6 +13,8 @@ const eslintConfig = [
       "*.config.js",
       "*.config.mjs",
       "**/*.tsbuildinfo",
+      // Node-runnable presenter tests (run via `npm test`, not linted/built).
+      "**/*.test.mts",
     ],
   },
   ...next,
