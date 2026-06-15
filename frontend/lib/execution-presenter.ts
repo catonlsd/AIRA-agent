@@ -188,9 +188,22 @@ export function summarizeEvidence(
   return chips;
 }
 
-/** Clean provenance line for document-first answers (no vector internals). */
-export function provenanceLabel(answeredFrom: string | undefined): string | null {
-  if (answeredFrom === "uploaded_documents") return "Answered from your uploaded files";
+/** Clean provenance line for document-first answers (no vector internals).
+ *  The optional evidence strength turns the line into an honest trust signal —
+ *  strong reads plainly; partial/weak qualify; conflicting flags disagreement. */
+export function provenanceLabel(
+  answeredFrom: string | undefined,
+  strength?: string
+): string | null {
+  if (answeredFrom === "uploaded_documents") {
+    if (strength === "conflicting")
+      return "Your uploaded files appear inconsistent on this point";
+    if (strength === "partial")
+      return "Answered from your uploaded files — partial coverage";
+    if (strength === "weak")
+      return "Answered from your uploaded files — limited support";
+    return "Answered from your uploaded files";
+  }
   if (answeredFrom === "web_fallback")
     return "Your files didn't cover this — broader research was used";
   if (answeredFrom === "insufficient_documents")

@@ -131,6 +131,26 @@ download URLs and directories.
 - **Documents** are ingested with an `owner` and retrieval filters by it, so
   one user's uploads never surface in another's document-first answers.
 
+## Document-grounded answer quality
+
+Uploaded-document answers run a small, swappable retrieval pipeline above the
+vector store (Chroma stays behind its adapter):
+
+- **Chunking** is section/page-aware (`app/rag/chunker.py`): never crosses page
+  boundaries, splits on heading/paragraph boundaries, carries the heading into
+  each chunk for context, and overlaps within a section. Metadata keeps file,
+  document id, owner, page, and section.
+- **Reranking** (`app/rag/reranker.py`, `RERANK_CANDIDATE_K`, default 12): a wide
+  candidate pool is reranked by blended vector + query-term relevance and
+  de-duplicated, then trimmed to `RETRIEVAL_K`. A chunk's score stays the raw
+  vector similarity, so the sufficiency threshold keeps its meaning.
+- **Evidence strength** (`app/rag/evidence.py`): grounded answers are tagged
+  `strong` / `partial` / `weak` / `conflicting` (and `none` → honest
+  insufficiency + web fallback). Strength drives a subtle, honest qualifier in
+  the answer and the provenance line ("Answered from your uploaded files",
+  "… — partial coverage", "appear inconsistent on this point"). Raw scores,
+  chunk ids, and collection internals never reach the UI; they live in meta.
+
 Today the principal is session-derived (no login yet); the abstraction is built
 so real accounts / OAuth / team workspaces extend `resolve_principal` and
 `Principal` without changing the call sites.

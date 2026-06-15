@@ -957,7 +957,7 @@ function ResearchTurnCard({ turn, liveState, liveLabel, busy = false, onClarify 
     meta.turn_status === "completed" || meta.turn_status === "failed"
       ? summarizeEvidence(meta)
       : [];
-  const provenance = provenanceLabel(meta.answered_from);
+  const provenance = provenanceLabel(meta.answered_from, meta.evidence_strength);
   const artifact = presentArtifact(meta);
   const taskCount = multiTask?.metadata?.task_count ?? 0;
   const failedTasks = multiTask?.metadata?.failed_tasks ?? [];

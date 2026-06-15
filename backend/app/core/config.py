@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     chunk_size: int = 1000
     chunk_overlap: int = 150
     retrieval_k: int = 6
+    # Pull a wider candidate pool from the vector store, then rerank + dedupe down
+    # to retrieval_k before answer composition (better evidence, same final size).
+    rerank_candidate_k: int = 12
     memory_limit: int = 10
 
     max_upload_size_mb: int = 10

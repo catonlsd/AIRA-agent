@@ -17,6 +17,7 @@ class RetrievedChunk(BaseModel):
     document_name: str
     chunk_index: int
     page: int | None = None
+    section: str | None = None
     text: str
     score: float = 0.0
 

@@ -18,6 +18,14 @@ from uuid import uuid4
 from app.core.config import settings
 from app.rag.chunker import chunk_pages
 from app.rag.embedding_provider import EmbeddingProvider, get_embedding_provider
+from app.rag.evidence import (
+    STRENGTH_CONFLICTING,
+    STRENGTH_NONE,
+    STRENGTH_PARTIAL,
+    STRENGTH_WEAK,
+    assess_evidence,
+)
+from app.rag.reranker import Reranker, get_reranker
 from app.rag.schemas import Citation, RetrievedChunk
 from app.services.vector_store_service import VectorStore, get_document_vector_store
 from app.turn_classifier import DOCUMENT_QA_MODE
@@ -44,6 +52,31 @@ _BROAD_REQUEST_K = 8
 def _is_broad_document_request(query: str) -> bool:
     lowered = query.lower()
     return any(pattern in lowered for pattern in _BROAD_REQUEST_PATTERNS)
+
+
+# Honest, subtle qualifiers added to grounded answers when the evidence is not
+# strong. Kept short and human — never leaking scores, chunks, or vector terms.
+_CONFLICTING_LEAD = (
+    "Your uploaded files appear inconsistent on this point — here's what they say:"
+)
+_PARTIAL_NOTE = (
+    "Note: your uploaded files only partially cover this, so verify the specifics directly."
+)
+_WEAK_NOTE = (
+    "Note: your uploaded files contain only limited information on this — treat the above as tentative."
+)
+
+
+def _apply_trust_qualifier(answer: str, strength: str) -> str:
+    """Lead/append an honest qualifier based on evidence strength (strong = none)."""
+    answer = (answer or "").strip()
+    if strength == STRENGTH_CONFLICTING:
+        return f"{_CONFLICTING_LEAD}\n\n{answer}"
+    if strength == STRENGTH_PARTIAL:
+        return f"{answer}\n\n_{_PARTIAL_NOTE}_"
+    if strength == STRENGTH_WEAK:
+        return f"{answer}\n\n_{_WEAK_NOTE}_"
+    return answer
 
 
 def _citations_from_chunks(chunks: list[RetrievedChunk]) -> list[dict]:
@@ -74,10 +107,12 @@ class DocumentQnAService:
         *,
         embeddings: Optional[EmbeddingProvider] = None,
         store: Optional[VectorStore] = None,
+        reranker: Optional[Reranker] = None,
         min_evidence_score: float = DEFAULT_MIN_EVIDENCE_SCORE,
     ) -> None:
         self.embeddings = embeddings or get_embedding_provider()
         self.store = store if store is not None else get_document_vector_store()
+        self.reranker = reranker or get_reranker()
         self.min_evidence_score = min_evidence_score
 
     # ── Ingestion ────────────────────────────────────────────────────────────
@@ -116,6 +151,8 @@ class DocumentQnAService:
             }
             if chunk.get("page") is not None:
                 metadata["page"] = chunk["page"]
+            if chunk.get("section"):
+                metadata["section"] = chunk["section"]
             metadatas.append(metadata)
 
         embeddings = self.embeddings.embed_documents(texts)
@@ -144,6 +181,7 @@ class DocumentQnAService:
                     document_name=str(metadata.get("document_name", "")),
                     chunk_index=int(metadata.get("chunk_index", 0)),
                     page=metadata.get("page"),
+                    section=metadata.get("section"),
                     text=text,
                     score=float(score),
                 )
@@ -164,12 +202,19 @@ class DocumentQnAService:
         if broad_request:
             retrieve_k = max(retrieve_k, _BROAD_REQUEST_K)
 
-        chunks = self.retrieve(query, retrieve_k, owner=owner)
-        top_score = chunks[0].score if chunks else 0.0
-        # For summarize/overview requests, having any document chunks is enough;
-        # for specific questions, require the content-similarity threshold so we
-        # stay honest when the answer genuinely isn't in the documents.
-        has_evidence = bool(chunks) and (broad_request or top_score >= self.min_evidence_score)
+        # Pull a wider candidate pool, then rerank + dedupe down to retrieve_k so
+        # answer composition sees the best, most diverse evidence — not just the
+        # nearest vectors. Each chunk keeps its RAW vector score (the sufficiency
+        # threshold below keeps its original meaning).
+        candidate_k = max(retrieve_k, settings.rerank_candidate_k)
+        candidates = self.retrieve(query, candidate_k, owner=owner)
+        chunks = self.reranker.rerank(query, candidates, top_k=retrieve_k)
+
+        assessment = assess_evidence(
+            query, chunks, broad=broad_request, min_score=self.min_evidence_score
+        )
+        top_score = assessment.top_score
+        has_evidence = assessment.has_evidence
 
         if not has_evidence:
             message = (
@@ -185,6 +230,7 @@ class DocumentQnAService:
                 has_evidence=False,
                 top_score=top_score,
                 chunk_count=len(chunks),
+                strength=assessment.strength,
             )
 
         # Summarize/overview requests need a summarization prompt, not the
@@ -200,23 +246,29 @@ class DocumentQnAService:
                 has_evidence=True,
                 top_score=top_score,
                 chunk_count=len(chunks),
+                strength=assessment.strength,
             )
 
-        # Specific question: grounded answer + citations via the answer agent.
+        # Specific question: grounded answer + citations via the answer agent,
+        # composed from the reranked top evidence. The decision stays
+        # `document_qa_completed`; the evidence *strength* drives an honest, subtle
+        # qualifier (and a clear framing when the documents disagree).
         from app.agents.answer_generation import AnswerGenerationAgent
         from app.agents.citation_verification import CitationVerificationAgent
 
         answer = AnswerGenerationAgent().answer(query, chunks, [], list(history or []), {})
         answer = CitationVerificationAgent().verify(answer)
         citations = [citation.model_dump() for citation in answer.citations]
+        message = _apply_trust_qualifier(answer.answer, assessment.strength)
 
         return self._result(
             decision="document_qa_completed",
-            message=answer.answer,
+            message=message,
             sources=citations,
             has_evidence=True,
             top_score=top_score,
             chunk_count=len(chunks),
+            strength=assessment.strength,
         )
 
     def _summarize_chunks(self, query: str, chunks: list[RetrievedChunk]) -> str:
@@ -245,6 +297,7 @@ class DocumentQnAService:
         has_evidence: bool,
         top_score: float,
         chunk_count: int,
+        strength: str = STRENGTH_NONE,
     ) -> dict[str, Any]:
         return {
             "run_id": uuid4().hex,
@@ -263,6 +316,9 @@ class DocumentQnAService:
                 "has_artifacts": False,
                 "requires_approval": False,
                 "has_evidence": has_evidence,
+                # Evidence strength is an honest trust signal (strong / partial /
+                # weak / conflicting / none). Raw scores stay out of the UI.
+                "evidence_strength": strength,
                 "top_score": round(top_score, 4),
                 "chunk_count": chunk_count,
             },
