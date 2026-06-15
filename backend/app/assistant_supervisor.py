@@ -683,6 +683,7 @@ class AssistantSupervisor:
             generate=lambda **kwargs: LLMClient().generate(**kwargs),
             context=context,
             owner_token=owner_token_for(ctx.owner),
+            preferences=ctx.preferences,
         )
         artifact_store.set(ctx.owner, pending)
         ctx.trace.event("stage", stage="plan_ready", artifact_kind=kind)

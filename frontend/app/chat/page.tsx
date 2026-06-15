@@ -885,10 +885,14 @@ function ArtifactCard({ artifact }: { artifact: ArtifactView }) {
         {artifact.subtitle && <p className="artifact-subtitle">{artifact.subtitle}</p>}
         <p className="artifact-meta">
           {artifact.type} · {artifact.summary}
+          {artifact.imageNote && <span> · {artifact.imageNote}</span>}
           {artifact.sizeLabel && <span> · {artifact.sizeLabel}</span>}
           {artifact.validated && <span className="artifact-valid"> · ✓ validated</span>}
         </p>
-        <p className="artifact-loc">{artifact.saveLocation}</p>
+        <p className="artifact-loc">
+          {artifact.theme && <span>{artifact.theme} theme · </span>}
+          {artifact.saveLocation}
+        </p>
         {artifact.externalNote && <p className="artifact-note">{artifact.externalNote}</p>}
       </div>
       {href && (

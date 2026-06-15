@@ -96,6 +96,24 @@ never spawns real servers. Failures are classified (`node_startup_failed`,
 "works" that wasn't actually booted. When a target isn't runnable or can't be
 safely validated, AIRA-X says what it verified and what it skipped, and why.
 
+## Artifact themes & polish
+
+Artifact generation (PPTX/DOCX/XLSX) runs through one pipeline (plan → content →
+generate → validate → deliver) with a small, curated theme catalogue
+(`app/artifacts/styles.py`): `professional_clean`, `presentation_dark`,
+`modern_report`, `executive_brief`, `spreadsheet_clean`. Themes are kind-scoped
+(a deck theme can't be applied to a sheet) and only change appearance —
+typography, palette, spacing, header/zebra treatment — never structure, so
+validation is unaffected.
+
+Theme resolution is preference-aware with current-turn override: an explicit cue
+in the request ("make it **dark / modern / executive**") wins, else the saved
+`artifact_style` preference applies, else the kind default. Images stay optional
+and safe — a deck only reports images when one was actually inserted
+(`image_count`), never a fake "rich visuals" claim. The artifact card surfaces
+the theme name, structural counts, image count (when > 0), size, and validation
+status — clean metadata, no internals.
+
 ## Guided-flow state (durable)
 
 Pending approval / clarification / plan / runtime-action / artifact state is

@@ -275,15 +275,17 @@ def test_xlsx_gets_meaningful_sheet_name():
 def test_default_style_profiles_resolve():
     from app.artifacts.styles import get_style
 
-    assert get_style("pptx").name == "presentation_default"
-    assert get_style("docx").name == "report_default"
-    assert get_style("xlsx").name == "spreadsheet_default"
+    # Named theme presets are the kind defaults (legacy names alias to them).
+    assert get_style("pptx").name == "professional_clean"
+    assert get_style("docx").name == "executive_brief"
+    assert get_style("xlsx").name == "spreadsheet_clean"
+    assert get_style("pptx", "presentation_default").name == "professional_clean"
 
 
 def test_generated_artifact_records_style_and_summary():
     out = _build_and_generate("xlsx", "Generate an XLSX sales tracker")
     art = out["artifact"]
-    assert art["style"] == "spreadsheet_default"
+    assert art["style"] == "spreadsheet_clean"
     assert "rows" in art["summary"] and "columns" in art["summary"]
     assert art["size_bytes"] > 0
 

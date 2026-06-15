@@ -54,7 +54,15 @@ export type ArtifactView = {
   validated: boolean;
   saveLocation: string;
   externalNote: string | null;
+  theme: string | null; // human theme name, e.g. "Professional Clean"
+  imageNote: string | null; // "2 images" — only when images were actually inserted
 };
+
+function _imageNote(count: unknown): string | null {
+  const n = typeof count === "number" ? count : 0;
+  if (n <= 0) return null;
+  return `${n} image${n === 1 ? "" : "s"}`;
+}
 
 function _humanSize(bytes: unknown): string | null {
   const n = typeof bytes === "number" ? bytes : 0;
@@ -89,6 +97,8 @@ export function presentArtifact(meta: Meta | undefined): ArtifactView | null {
     validated: Boolean(art.validation?.valid),
     saveLocation: art.location === "external" ? "Workspace download area" : "Saved to workspace",
     externalNote,
+    theme: typeof art.theme === "string" && art.theme ? art.theme : null,
+    imageNote: _imageNote(art.image_count),
   };
 }
 

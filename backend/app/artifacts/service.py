@@ -26,7 +26,7 @@ from app.artifacts.spec import (
     kind_noun,
     slugify,
 )
-from app.artifacts.styles import get_style
+from app.artifacts.styles import get_style, resolve_theme
 from app.artifacts.validator import ArtifactValidator
 from app.guided_flow_store import GuidedFlowAdapter
 
@@ -108,10 +108,17 @@ class ArtifactService:
         generate: Optional[Callable[..., str]] = None,
         context: Optional[str] = None,
         owner_token: str = "shared",
+        preferences: Optional[dict] = None,
     ) -> tuple[PendingArtifact, str]:
-        """Prepare content + delivery into a pending plan and a plan message."""
+        """Prepare content + delivery into a pending plan and a plan message.
+
+        Theme resolution is preference-aware: a saved artifact-style preference
+        applies as a default, but an explicit cue in the request ("make it dark /
+        modern / executive") overrides it — the current turn always wins.
+        """
+        theme = resolve_theme(kind, goal, (preferences or {}).get("artifact_style"))
         spec = self.builder.build(
-            goal, kind, generate=generate, context=context, style=get_style(kind).name
+            goal, kind, generate=generate, context=context, style=theme.name
         )
         filename = f"{slugify(spec.title)}{spec.extension}"
         target = self.delivery.resolve(goal, filename, owner_token)
@@ -153,6 +160,11 @@ class ArtifactService:
                 "validation": validation,
             }
 
+        # Images are only reported when a real image was actually inserted (the
+        # generator records the resolved path back on the slide). No images
+        # available -> 0, never a fake "rich visuals" claim.
+        image_count = sum(1 for s in spec.slides if getattr(s, "image_path", None)) if spec.kind == "pptx" else 0
+
         artifact = {
             "type": spec.kind,
             "title": spec.title,
@@ -163,11 +175,30 @@ class ArtifactService:
             "location": target.location,
             "requested_path": target.requested_path,
             "style": style.name,
+            "theme": style.display_name,
             "summary": self._summary(spec, validation),
             "size_bytes": validation.get("size_bytes"),
+            "counts": self._counts(spec, validation),
+            "image_count": image_count,
             "validation": validation,
         }
         return {"status": "completed", "artifact": artifact, "validation": validation}
+
+    @staticmethod
+    def _counts(spec: ArtifactSpec, validation: dict) -> dict[str, int]:
+        """Compact structural counts for the artifact card (no internals)."""
+        details = validation.get("details", {})
+        if spec.kind == "pptx":
+            return {"slides": int(details.get("slides", len(spec.slides)))}
+        if spec.kind == "docx":
+            return {
+                "sections": len(spec.sections),
+                "paragraphs": int(details.get("paragraphs", 0)),
+            }
+        return {
+            "rows": int(details.get("rows", len(spec.rows))),
+            "columns": len(spec.headers),
+        }
 
     @staticmethod
     def _summary(spec: ArtifactSpec, validation: dict) -> str:
@@ -184,7 +215,8 @@ class ArtifactService:
     def _render_plan(self, spec: ArtifactSpec, target: DeliveryTarget) -> str:
         noun = kind_noun(spec.kind)
         outline = spec.outline()
-        lines = [f"I'll create a {spec.kind.upper()} {noun}: “{spec.title}”."]
+        theme = get_style(spec.kind, spec.style or None)
+        lines = [f"I'll create a {spec.kind.upper()} {noun}: “{spec.title}” ({theme.display_name} theme)."]
         if outline:
             lines.append("")
             lines.append("Planned content:")
