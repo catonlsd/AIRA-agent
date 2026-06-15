@@ -476,9 +476,10 @@ def build_runtime_actions(plan: ExecutablePlan, report: ExecutionReport) -> list
             f"python -m compileall -q {plan.project_dir}",
             "Compile-check the generated Python project",
         )
-    if any(p.endswith((".ts", ".tsx")) for p in files) and any(
-        p.endswith("package.json") for p in files
-    ):
+    # Any JS/TS project with a package.json gets a build/type-check. `--if-present`
+    # makes it a safe no-op when there is no build script (plain Express service),
+    # and runs the real build for Next.js/TS projects that need one before start.
+    if any(p.endswith("package.json") for p in files):
         _add(
             "build",
             f"npm run build --if-present --prefix {plan.project_dir}",
@@ -699,23 +700,58 @@ def execute_runtime_validation(
 
 
 def _startup_repair_target(
-    classification: str, output: str, plan_files: list[str], entry_file: str
+    classification: str,
+    output: str,
+    plan_files: list[str],
+    entry_file: str,
+    framework: str = "",
 ) -> Optional[str]:
-    """Pick the file a startup failure most likely lives in (evidence-driven)."""
-    # A traceback path is the strongest signal.
+    """Pick the file a startup failure most likely lives in (evidence-driven).
+
+    Repairs stay bounded and explainable — a concrete file or manifest, never
+    blind regeneration. Node/Next failures lean on package.json for missing
+    deps; Docker failures (only reachable when validation is enabled) target the
+    Dockerfile/compose file.
+    """
+    is_node = framework in ("node", "next", "express", "fastify", "nest", "koa")
+
+    # A traceback / stack path is the strongest signal.
     traceback_target = _repair_target(output, plan_files)
     if traceback_target:
         return traceback_target
+
     if classification == "missing_runtime_dependency":
-        return next((p for p in plan_files if p.endswith("requirements.txt")), None)
+        # Node: a missing npm module is a manifest problem → package.json.
+        manifest = "package.json" if is_node else "requirements.txt"
+        return next((p for p in plan_files if p.endswith(manifest)), None)
+
+    if classification in ("docker_startup_failed", "docker_startup_timeout"):
+        return next(
+            (p for p in plan_files if p.split("/")[-1] in ("docker-compose.yml", "compose.yml", "Dockerfile")),
+            entry_file if entry_file in plan_files else None,
+        )
+
     if classification in (
         "process_crashed",
         "startup_command_failed",
         "startup_timeout",
         "readiness_failed",
+        "probe_failed",
         "healthcheck_failed",
+        "node_startup_failed",
+        "node_startup_timeout",
+        "next_startup_failed",
+        "next_startup_timeout",
     ):
-        return entry_file if entry_file in plan_files else (plan_files[0] if plan_files else None)
+        # The crash is most likely in the server entry; fall back to package.json
+        # for Node projects (config/script issues) before the first file.
+        if entry_file in plan_files:
+            return entry_file
+        if is_node:
+            manifest = next((p for p in plan_files if p.endswith("package.json")), None)
+            if manifest:
+                return manifest
+        return plan_files[0] if plan_files else None
     return None
 
 
@@ -743,7 +779,7 @@ def _run_startup_step(
 
     classification = startup.get("classification", "unrecoverable_startup_failure")
     repair_target = _startup_repair_target(
-        classification, startup.get("output", ""), plan_files, target.entry_file
+        classification, startup.get("output", ""), plan_files, target.entry_file, target.framework
     )
     if not repair_target:
         startup["repairs"] = []
@@ -794,6 +830,18 @@ _TYPE_LABELS = {
     "healthcheck": "healthcheck",
 }
 
+_FRAMEWORK_LABELS = {
+    "fastapi": "FastAPI service",
+    "flask": "Flask app",
+    "node": "Node service",
+    "next": "Next.js app",
+    "docker": "Docker service",
+}
+
+
+def _framework_label(framework: str) -> str:
+    return _FRAMEWORK_LABELS.get(framework, f"{framework} app" if framework else "app")
+
 
 def render_runtime_report(evidence: dict[str, Any]) -> str:
     """Honest, readable runtime summary — no raw log dumps in the main answer."""
@@ -816,7 +864,7 @@ def render_runtime_report(evidence: dict[str, Any]) -> str:
             status = startup.get("probe_status")
             secs = startup.get("startup_seconds")
             lines.append(
-                f"Startup check passed: the {startup.get('framework', 'app')} booted "
+                f"Startup check passed: the {_framework_label(startup.get('framework', ''))} booted "
                 f"and {startup.get('health_url', 'its health endpoint')} responded "
                 f"{status}" + (f" in {secs}s." if secs is not None else ".")
             )
@@ -849,7 +897,7 @@ def render_runtime_report(evidence: dict[str, Any]) -> str:
         passed = ", ".join(dict.fromkeys(passed_types))
         if passed:
             lines.append(f"- earlier checks passed: {passed}")
-        lines.append(f"- failing step: start {startup.get('framework', 'app')} and probe {startup.get('health_url', '')}")
+        lines.append(f"- failing step: start the {_framework_label(startup.get('framework', ''))} and probe {startup.get('health_url', '')}")
         excerpt = (startup.get("output") or startup.get("error") or "").strip()
         if excerpt:
             lines.append(f"- error excerpt: {excerpt[:240]}")

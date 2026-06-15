@@ -18,7 +18,9 @@ processes, and operators can disable boot validation entirely via config.
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
 import socket
 import time
 from dataclasses import asdict, dataclass
@@ -28,32 +30,48 @@ from app.core.config import settings
 from tools.tool_router import ToolRouter
 
 # Startup/runtime failure taxonomy (extends the runtime-validation classes).
+# Generic Python classes plus broader-framework classes (Node/Next/Docker).
 STARTUP_FAILURE_CLASSES = (
     "startup_command_failed",
     "startup_timeout",
     "healthcheck_failed",
     "readiness_failed",
+    "probe_failed",
     "port_bind_failed",
     "missing_runtime_dependency",
     "process_crashed",
+    "node_startup_failed",
+    "node_startup_timeout",
+    "next_startup_failed",
+    "next_startup_timeout",
+    "docker_unavailable",
+    "docker_startup_failed",
+    "docker_startup_timeout",
     "startup_repair_failed",
     "unrecoverable_startup_failure",
 )
 
+# Node-family frameworks share startup/repair behaviour (npm-driven server).
+_NODE_FAMILY = {"node", "express", "fastify", "nest", "koa"}
+_NODE_SERVER_DEPS = ("express", "fastify", "@nestjs/core", "koa", "hapi", "@hapi/hapi", "restify")
+_NODE_ENTRY_NAMES = ("server.js", "server.ts", "index.js", "index.ts", "app.js", "app.ts", "main.js", "main.ts")
+
 _FASTAPI_APP = re.compile(r"(\w+)\s*=\s*FastAPI\s*\(")
 _FLASK_APP = re.compile(r"(\w+)\s*=\s*Flask\s*\(")
 _HEALTH_ROUTE = re.compile(r"[\"'](/(?:health|ready|healthz|livez)\w*)[\"']")
+# A health route in a JS server, e.g. app.get('/health', ...) or '/healthz'.
+_JS_HEALTH_ROUTE = re.compile(r"[\"'`](/(?:health|ready|healthz|livez)\w*)[\"'`]")
 
 
 @dataclass
 class BootTarget:
-    framework: str          # fastapi | flask
+    framework: str          # fastapi | flask | node | next | docker
     project_dir: str
-    entry_file: str         # generated/p/app/main.py
-    entry_module: str       # main:app  (module:attr)
-    app_attr: str           # app
+    entry_file: str         # the file a startup failure most likely lives in
+    entry_module: str       # main:app  (module:attr) — Python only, else ""
+    app_attr: str           # app — Python only, else ""
     health_path: str        # /health  (or / as a basic ping)
-    command: list[str]      # launch argv with a {port} placeholder
+    command: list[str]      # launch argv with a {port} placeholder ([] for docker)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -69,13 +87,22 @@ def detect_boot_target(
     *,
     read_file: Optional[Callable[..., dict]] = None,
 ) -> Optional[BootTarget]:
-    """Return a safe boot plan when the output is a runnable Python service.
+    """Return a safe boot plan when the output is a runnable service.
 
-    Conservative by design: only when a clear app instance and entry module can
-    be derived. Otherwise None — startup validation is skipped honestly.
+    Conservative by design and ordered cheapest-first: a Python web app, then a
+    Node/Next service, then a Dockerized service. Only when a clear runnable
+    target AND a derivable startup command + probe exist. Otherwise None —
+    startup validation is skipped honestly rather than guessed.
     """
     read = read_file or (lambda path: ToolRouter.run("file_tool", "read_file", {"path": path}))
+    for detector in (_detect_python_target, _detect_node_target, _detect_docker_target):
+        target = detector(project_dir, files, read)
+        if target is not None:
+            return target
+    return None
 
+
+def _detect_python_target(project_dir: str, files: list[str], read: Callable[..., dict]) -> Optional[BootTarget]:
     entry = next(
         (f for f in files if f.endswith("main.py")),
         next((f for f in files if f.endswith("app.py")), None),
@@ -92,10 +119,8 @@ def detect_boot_target(
     if not fastapi and not flask:
         return None  # not an obviously runnable web service
 
-    # Module path relative to the project dir (so the launcher can import it).
     rel = entry[len(project_dir) + 1 :] if entry.startswith(project_dir) else entry
     module = rel[:-3].replace("/", ".").replace("\\", ".")
-
     health_match = _HEALTH_ROUTE.search(content)
     health_path = health_match.group(1) if health_match else "/"
 
@@ -119,6 +144,96 @@ def detect_boot_target(
         app_attr=attr,
         health_path=health_path,
         command=["python", rel],
+    )
+
+
+def _detect_node_target(project_dir: str, files: list[str], read: Callable[..., dict]) -> Optional[BootTarget]:
+    """Node/JS/TS service or Next.js app: runnable only when a start command is
+    derivable (a `start` script, or a recognized server dependency + entry)."""
+    pkg_path = next((f for f in files if f.endswith("package.json")), None)
+    if not pkg_path:
+        return None
+    result = read(pkg_path)
+    if not result.get("success"):
+        return None
+    try:
+        pkg = json.loads(result.get("content") or "{}")
+    except (ValueError, TypeError):
+        return None  # unparsable package.json → skip honestly, don't guess
+    if not isinstance(pkg, dict):
+        return None
+
+    deps = {**(pkg.get("dependencies") or {}), **(pkg.get("devDependencies") or {})}
+    scripts = pkg.get("scripts") or {}
+    has_start = isinstance(scripts.get("start"), str) and scripts["start"].strip() != ""
+    is_next = "next" in deps
+    is_node_server = any(dep in deps for dep in _NODE_SERVER_DEPS)
+
+    # Locate a plausible server entry file (best-effort, for repair targeting).
+    entry_file = next((f for f in files if f.split("/")[-1].split("\\")[-1] in _NODE_ENTRY_NAMES), None)
+
+    # Next.js: needs a start script (production server boots `next start`).
+    if is_next:
+        if not has_start:
+            return None  # dev-only / no derivable bounded boot → skip honestly
+        return BootTarget(
+            framework="next",
+            project_dir=project_dir,
+            entry_file=entry_file or pkg_path,
+            entry_module="",
+            app_attr="",
+            health_path="/",
+            command=["npm", "run", "start", "--prefix", project_dir],
+        )
+
+    # Plain Node service: a start script OR a known server dep + an entry file.
+    if not (has_start or (is_node_server and entry_file)):
+        return None  # ambiguous (library / tooling) → skip honestly
+
+    health_path = "/"
+    if entry_file:
+        entry_read = read(entry_file)
+        if entry_read.get("success"):
+            match = _JS_HEALTH_ROUTE.search(entry_read.get("content") or "")
+            if match:
+                health_path = match.group(1)
+
+    if has_start:
+        command = ["npm", "run", "start", "--prefix", project_dir]
+    else:
+        rel = entry_file[len(project_dir) + 1 :] if entry_file.startswith(project_dir) else entry_file
+        command = ["node", rel]
+
+    return BootTarget(
+        framework="node",
+        project_dir=project_dir,
+        entry_file=entry_file or pkg_path,
+        entry_module="",
+        app_attr="",
+        health_path=health_path,
+        command=command,
+    )
+
+
+def _detect_docker_target(project_dir: str, files: list[str], read: Callable[..., dict]) -> Optional[BootTarget]:
+    """Dockerized service: detected when a Dockerfile/compose file is present.
+    Live boot is gated/skipped at probe time — this only records the target."""
+    compose = next(
+        (f for f in files if f.split("/")[-1].split("\\")[-1] in ("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")),
+        None,
+    )
+    dockerfile = next((f for f in files if f.split("/")[-1].split("\\")[-1] == "Dockerfile"), None)
+    target_file = compose or dockerfile
+    if not target_file:
+        return None
+    return BootTarget(
+        framework="docker",
+        project_dir=project_dir,
+        entry_file=target_file,
+        entry_module="",
+        app_attr="",
+        health_path="/",
+        command=[],
     )
 
 
@@ -192,6 +307,9 @@ def run_startup_probe(
             "reason": "boot validation disabled by configuration",
         }
 
+    if target.framework == "docker":
+        return _docker_probe(target, emit)
+
     port = _free_port()
     command = [str(port) if part == "{port}" else part for part in target.command]
     url = f"http://127.0.0.1:{port}{target.health_path}"
@@ -225,7 +343,7 @@ def run_startup_probe(
         while time.monotonic() < deadline:
             # If the process died, it's a crash — don't keep polling.
             if process.poll() is not None:
-                evidence["classification"] = "process_crashed"
+                evidence["classification"] = _crash_class(target.framework)
                 evidence["exit_code"] = process.returncode
                 evidence["output"] = _drain(process)[:2000]
                 evidence["startup_seconds"] = round(time.monotonic() - started, 2)
@@ -243,7 +361,7 @@ def run_startup_probe(
         # Never became ready within the bounded window.
         evidence["probe_status"] = last_status
         evidence["startup_seconds"] = round(time.monotonic() - started, 2)
-        evidence["classification"] = "startup_timeout"
+        evidence["classification"] = _timeout_class(target.framework)
         evidence["output"] = _drain(process)[:2000]
         return evidence
     finally:
@@ -260,12 +378,63 @@ def _drain(process) -> str:
     return ""
 
 
+def _timeout_class(framework: str) -> str:
+    if framework == "next":
+        return "next_startup_timeout"
+    if framework in _NODE_FAMILY:
+        return "node_startup_timeout"
+    return "startup_timeout"
+
+
+def _crash_class(framework: str) -> str:
+    if framework == "next":
+        return "next_startup_failed"
+    if framework in _NODE_FAMILY:
+        return "node_startup_failed"
+    return "process_crashed"
+
+
 def _classify_crash(evidence: dict[str, Any]) -> dict[str, Any]:
     out = (evidence.get("output") or "").lower()
-    if "no module named" in out or "modulenotfounderror" in out or "importerror" in out:
+    # Missing dependency — Python and Node forms.
+    if (
+        "no module named" in out
+        or "modulenotfounderror" in out
+        or "importerror" in out
+        or "cannot find module" in out
+        or "err_module_not_found" in out
+    ):
         evidence["classification"] = "missing_runtime_dependency"
-    elif "address already in use" in out or "errno 98" in out or "bind" in out:
+    elif "address already in use" in out or "errno 98" in out or "eaddrinuse" in out or "bind" in out:
         evidence["classification"] = "port_bind_failed"
+    return evidence
+
+
+def _docker_probe(target: BootTarget, emit: Callable[..., None]) -> dict[str, Any]:
+    """Docker/compose validation hook — bounded and honest.
+
+    Live container boot is gated behind ``enable_docker_validation`` (off by
+    default) because it is heavy and environment-dependent. This is the seam a
+    real bounded compose boot plugs into later; for now we detect + report
+    honestly rather than ever claiming a container "validated" without evidence.
+    """
+    evidence: dict[str, Any] = {
+        "attempted": False,
+        "framework": "docker",
+        "target_file": target.entry_file,
+    }
+    emit("startup_validation_started", command=f"docker target: {target.entry_file}")
+    if not settings.enable_docker_validation:
+        evidence["reason"] = "Docker startup validation is not enabled for this deployment"
+        return evidence
+    if shutil.which("docker") is None:
+        evidence["classification"] = "docker_unavailable"
+        evidence["reason"] = "Docker is not available on this host"
+        return evidence
+    # Docker is enabled and present, but a live multi-service boot is out of
+    # scope for now — skip honestly rather than fake a successful container boot.
+    evidence["reason"] = "Docker detected and available; live container boot is not performed by AIRA-X yet"
+    evidence["docker_available"] = True
     return evidence
 
 

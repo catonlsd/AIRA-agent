@@ -14,6 +14,7 @@ Backend (`backend/.env`, full reference in `backend/.env.example`):
 | `CHROMA_DIR`, `DATABASE_URL`, `AIRA_TRACE_LOG` | no | Storage paths are auto-created at startup (`ensure_storage`). |
 | `API_KEY`, `CORS_ORIGINS`, `RATE_LIMIT_PER_MINUTE` | recommended for public deploys | Defaults: auth off, localhost CORS + `*.vercel.app` regex, 60 req/min. Set `API_KEY` and explicit `CORS_ORIGINS` for anything public. |
 | `QUOTAS_ENABLED`, `QUOTA_WINDOW_SECONDS`, `MAX_PENDING_FLOWS_PER_OWNER`, `EXECUTION_STARTS_PER_WINDOW`, `ARTIFACT_GENERATIONS_PER_WINDOW`, `STARTUP_VALIDATIONS_PER_WINDOW` | no | Per-principal usage quotas (defaults: on, 3600 s window, 5 / 30 / 20 / 20). Must be positive integers — startup fails clearly otherwise. |
+| `ENABLE_BOOT_VALIDATION`, `BOOT_READY_TIMEOUT_SECONDS`, `ENABLE_DOCKER_VALIDATION` | no | Startup/boot verification (defaults: boot on, 8 s readiness timeout, **Docker off**). Docker/compose targets are detected and reported as an honest skip unless this is enabled and Docker is present. |
 
 Frontend: `NEXT_PUBLIC_API_URL` (browser-reachable backend URL, **build-time**).
 
@@ -69,8 +70,31 @@ dependency install (`pip install -r …` / `npm install`), compile checks
 (`compileall`, `npm run build --if-present`), and an import/startup smoke test
 for the Python entry module. Failures are classified
 (`dependency_install_failed`, `compile_failed`, `import_failed`, …), repaired
-once with evidence-targeted regeneration, and reported honestly. It does **not**
-yet boot long-running apps or ping HTTP endpoints.
+once with evidence-targeted regeneration, and reported honestly.
+
+**Bounded startup/boot verification** goes further when a runnable target is
+detected and a safe start command + readiness probe can be derived:
+
+- **Python** — FastAPI (uvicorn) / Flask: launched on an ephemeral port, probed
+  at a detected health route (or `/`).
+- **Node / JS / TS** — Express/Fastify/Nest/etc. with a `start` script or a
+  recognized server dependency + entry file: `npm run start` (or `node <entry>`)
+  on an ephemeral port, probed at a detected health route.
+- **Next.js** — when a production `start` script exists: built, then `next start`
+  on an ephemeral port, probed at `/`.
+- **Docker / compose** — detected from `Dockerfile`/`compose.yml`, but **skipped
+  honestly** by default (live container boot is gated behind
+  `ENABLE_DOCKER_VALIDATION` and requires Docker present).
+
+Every launch is bounded by `BOOT_READY_TIMEOUT_SECONDS`, the process is killed in
+a `finally` block (never orphaned), and the launcher/prober are injectable so CI
+never spawns real servers. Failures are classified (`node_startup_failed`,
+`node_startup_timeout`, `next_startup_failed`, `missing_runtime_dependency`,
+`docker_unavailable`, …), repaired once against the evidence-targeted file
+(`package.json` for a missing npm module, the server entry for a crash,
+`compose.yml`/`Dockerfile` for Docker), and reported without ever claiming an app
+"works" that wasn't actually booted. When a target isn't runnable or can't be
+safely validated, AIRA-X says what it verified and what it skipped, and why.
 
 ## Guided-flow state (durable)
 

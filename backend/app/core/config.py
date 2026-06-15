@@ -83,6 +83,11 @@ class Settings(BaseSettings):
     # permission, locked-down CI) — detection still runs and reports honestly.
     enable_boot_validation: bool = True
     boot_ready_timeout_seconds: float = 8.0
+    # Docker/compose live-boot validation is OFF by default: spinning up
+    # containers is heavy and environment-dependent. When disabled (or Docker is
+    # absent) Docker targets are detected and reported as an honest skip, never
+    # faked as "validated". Turn on only where a bounded local Docker boot is safe.
+    enable_docker_validation: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",
