@@ -48,16 +48,23 @@ def stub_llm(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _isolate_guided_flows():
-    """Guided-flow state and usage quotas are durable (DB-backed) — wipe them
-    between tests so pending approvals / quota counters never leak."""
+    """Guided-flow state, usage quotas, and memory are durable / process-local —
+    wipe them between tests so pending approvals, quota counters, and saved
+    preferences never leak across tests or owners."""
     from app.guided_flow_store import guided_flow_store
+    from app.memory.preference_memory import preference_memory
+    from app.memory.session_memory import session_memory
     from app.usage_limits import usage_limiter
 
     guided_flow_store.clear_all()
     usage_limiter.reset()
+    preference_memory.clear_all()
+    session_memory.clear_all()
     yield
     guided_flow_store.clear_all()
     usage_limiter.reset()
+    preference_memory.clear_all()
+    session_memory.clear_all()
 
 
 @pytest_asyncio.fixture

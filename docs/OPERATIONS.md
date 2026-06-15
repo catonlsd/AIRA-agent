@@ -155,6 +155,30 @@ Today the principal is session-derived (no login yet); the abstraction is built
 so real accounts / OAuth / team workspaces extend `resolve_principal` and
 `Principal` without changing the call sites.
 
+## Memory model (session + preference)
+
+Memory is intentional, scoped, and bounded — not indiscriminate recall:
+
+- **Preference memory** (`app/memory/preference_memory.py`, table `memory_entries`):
+  durable and **owner-scoped** (same principal model as guided flows/artifacts —
+  no cross-owner leakage). Only a fixed catalogue of product-shaping keys can ever
+  be written (answer length/format/style, artifact style, fallback default) — it
+  is structurally impossible to store names, identity, or arbitrary facts.
+- **Session memory** (`app/memory/session_memory.py`): ephemeral, process-local,
+  scoped to (owner, session) — the active working context. Never auto-promoted to
+  durable storage.
+- **Write policy** (`app/memory/preference_policy.py`): a preference is stored only
+  from a deliberate statement ("keep answers concise", "I prefer code-first") —
+  one-off questions never write. **Read/apply policy**: saved preferences shape the
+  answer-style system prompt and artifact generation **as defaults**, and the
+  directive states the current message overrides them — the current turn always
+  wins. Self-memory answers ("what do you remember about me?") report saved
+  preferences honestly and never invent personal details.
+
+Nothing about memory surfaces in the chat UI as a panel; preferences quietly
+improve output and self-memory answers are honest. The store interface is small
+and swappable for later settings/edit UI and team/workspace preferences.
+
 ## Known limitations (current)
 
 - SQLite + local ChromaDB are single-node; conversation memory is not

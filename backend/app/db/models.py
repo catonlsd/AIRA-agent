@@ -59,6 +59,27 @@ class UserPreference(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
 
+class MemoryEntry(Base):
+    """Owner-scoped, durable memory (preference memory).
+
+    Distinct from the legacy global `UserPreference`: every entry is tagged with
+    the owning principal, so preference memory respects the same ownership
+    boundaries as guided flows, artifacts, and document retrieval. One row per
+    (owner, category, key); `category` keeps memory classes separable
+    (`preference` today; room for more later without a schema change).
+    """
+
+    __tablename__ = "memory_entries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    category: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    key: Mapped[str] = mapped_column(String(64), nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
 class GuidedFlow(Base):
     """Durable, multi-process-safe pending state for guided flows.
 

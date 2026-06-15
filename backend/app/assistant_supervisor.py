@@ -45,6 +45,9 @@ from app.clarification import (
 from app.context_builder import TurnContext
 from app.core.llm import LLMClient
 from app.llm_answer_service import DirectAnswerService
+from app.memory import preference_policy
+from app.memory.preference_memory import preference_memory
+from app.memory.session_memory import session_memory
 from app.multi_question_handler import handle_multi_question_prompt
 from app.plan_executor import (
     ExecutablePlan,
@@ -145,8 +148,33 @@ class AssistantSupervisor:
             self._documents = get_document_qa_service()
         return self._documents
 
+    def _prime_memory(self, ctx: TurnContext) -> None:
+        """Load owner-scoped preference memory and capture any newly-stated ones.
+
+        Write policy: only deliberate, catalogue preferences are persisted (see
+        preference_policy) — never arbitrary personal facts. Read policy: saved
+        preferences become defaults on ctx.preferences; the current turn's
+        explicit instructions still win at answer time. Working context is noted
+        ephemerally to session memory and is never auto-promoted. Memory must
+        never break a turn, so this degrades silently on any error.
+        """
+        try:
+            owner = ctx.owner
+            stated = preference_policy.extract_preferences(ctx.message)
+            if stated:
+                preference_memory.set_many(owner, stated, source="stated_in_chat")
+                ctx.trace.event("preferences_remembered", keys=sorted(stated.keys()))
+            saved = preference_memory.get(owner)
+            if saved:
+                # Owner-scoped saved preferences take precedence over legacy globals.
+                ctx.preferences = {**(ctx.preferences or {}), **saved}
+            session_memory.note(owner, ctx.session_id, "last_request", ctx.message[:200])
+        except Exception:
+            pass
+
     async def run_turn(self, ctx: TurnContext) -> AssistantResponse:
         ctx.trace.event("turn_started", message_len=len(ctx.message))
+        self._prime_memory(ctx)
 
         result = await handle_multi_question_prompt(
             prompt=ctx.message,
@@ -173,6 +201,7 @@ class AssistantSupervisor:
         """
         try:
             ctx.trace.event("turn_started", message_len=len(ctx.message))
+            self._prime_memory(ctx)
             yield {"type": "trace", "data": {"event": "turn_started"}}
 
             if parse_prompt_for_questions(ctx.message).is_multi_question:
@@ -246,7 +275,10 @@ class AssistantSupervisor:
                 # service — no tools, no workflow noise.
                 chunks: list[str] = []
                 for piece in self.answers.stream(
-                    ctx.message, mode=classification.mode, history=ctx.history
+                    ctx.message,
+                    mode=classification.mode,
+                    history=ctx.history,
+                    preferences=ctx.preferences,
                 ):
                     chunks.append(piece)
                     yield {"type": "token", "data": {"text": piece}}
@@ -637,6 +669,11 @@ class AssistantSupervisor:
                     context = doc.get("message") or doc.get("final_answer")
             except Exception:
                 context = None
+
+        # A saved artifact-style preference shapes generation as a default note.
+        style_hint = preference_policy.artifact_style_hint(ctx.preferences)
+        if style_hint:
+            context = f"{style_hint}\n\n{context}" if context else style_hint
 
         from app.auth import owner_token_for
 
@@ -1094,7 +1131,10 @@ class AssistantSupervisor:
             # Direct-answer path: conversational/knowledge/self-memory turns
             # answer through the dedicated service, never the workflow.
             message = self.answers.answer(
-                goal, mode=classification.mode, history=ctx.history
+                goal,
+                mode=classification.mode,
+                history=ctx.history,
+                preferences=ctx.preferences,
             )
             return self._chat_result(classification, message)
 

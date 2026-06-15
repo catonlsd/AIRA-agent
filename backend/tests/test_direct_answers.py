@@ -65,7 +65,7 @@ async def test_general_chat_answers_through_direct_service(monkeypatch):
     called = {}
 
     class _Svc(DirectAnswerService):
-        def answer(self, goal, *, mode, history=None):
+        def answer(self, goal, *, mode, history=None, preferences=None):
             called["goal"], called["mode"] = goal, mode
             return "Hi! How can I help?"
 
@@ -114,7 +114,7 @@ def test_self_memory_prompt_carries_conversation_ungated(monkeypatch):
 
     assert captured["system"] == SELF_MEMORY_SYSTEM_PROMPT
     assert "Mokshit" in captured["prompt"]  # transcript present despite "new topic" shape
-    assert "ONLY memory" in captured["prompt"]
+    assert "memory of this user" in captured["prompt"]  # framed as the user's context
     assert answer == "You're Mokshit, building AIRA-X."
 
 

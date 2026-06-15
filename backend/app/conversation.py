@@ -10,7 +10,7 @@ replies instead of encyclopedic, headed, essay-style output.
 from __future__ import annotations
 
 import re
-from typing import Sequence
+from typing import Mapping, Sequence
 
 from app.core.llm import LLMClient
 
@@ -197,14 +197,20 @@ def _build_history_prompt(goal: str, history: Sequence[dict] | None) -> str:
 def generate_conversational_answer(
     goal: str,
     history: Sequence[dict] | None = None,
+    *,
+    preferences: Mapping[str, str] | None = None,
 ) -> str:
     """Answer a general-chat / daily-life question, using the LLM when available.
 
     When ``history`` (recent {role, content} turns) is provided, it is included
-    so the reply stays aware of what was just discussed.
+    so the reply stays aware of what was just discussed. Saved style preferences
+    are appended to the system prompt as defaults (the current message overrides
+    them — the directive says so explicitly).
     """
+    from app.memory.preference_policy import build_style_directive
+
     answer = LLMClient().generate(
-        system=AIRA_X_PERSONA_SYSTEM_PROMPT,
+        system=AIRA_X_PERSONA_SYSTEM_PROMPT + build_style_directive(dict(preferences or {})),
         prompt=_build_history_prompt(goal, history),
         temperature=0.7,
     )
