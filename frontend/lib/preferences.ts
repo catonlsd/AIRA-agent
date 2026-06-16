@@ -35,7 +35,18 @@ export type PreferenceItem = {
   value: string | null; // current saved value, or null when unset
 };
 
-export type PreferencesResponse = { preferences: PreferenceItem[] };
+export type PreferenceScope = { kind: string; label: string; is_workspace: boolean };
+
+export type PreferencesResponse = { preferences: PreferenceItem[]; scope?: PreferenceScope };
+
+// The scope the last preferences response was for (which scope you're editing —
+// "Personal" or a workspace). Captured so the card can label it without changing
+// the item-returning function signatures.
+let _lastScope: PreferenceScope | null = null;
+
+export function lastPreferenceScope(): PreferenceScope | null {
+  return _lastScope;
+}
 
 // ── Pure helpers (unit-tested) ───────────────────────────────────────────────
 
@@ -75,6 +86,7 @@ export function sanitizeItems(items: unknown): PreferenceItem[] {
 async function asPreferences(res: Response): Promise<PreferenceItem[]> {
   if (!res.ok) throw new Error(`Preferences request failed (${res.status})`);
   const body = (await res.json()) as PreferencesResponse;
+  _lastScope = body?.scope ?? null;
   return sanitizeItems(body?.preferences);
 }
 

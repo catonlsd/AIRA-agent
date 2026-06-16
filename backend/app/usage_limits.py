@@ -131,8 +131,20 @@ _LIMIT_MESSAGES = {
 }
 
 
+def _is_workspace_owner(owner: str) -> bool:
+    """Workspace usage is isolated by its owner key (`workspace:<id>`) and uses
+    independently-tunable workspace limits."""
+    return isinstance(owner, str) and owner.startswith("workspace:")
+
+
 class QuotaService:
-    """Operator-tunable quota policy, enforced in one place by the supervisor."""
+    """Operator-tunable quota policy, enforced in one place by the supervisor.
+
+    Quotas are scope-aware purely through the owner key: personal usage counts
+    under `account:<id>`/session and workspace usage under `workspace:<id>`, so
+    the two are isolated automatically. Workspace owners additionally resolve to
+    workspace-specific limits (defaulting to the personal limits).
+    """
 
     def __init__(self, limiter: UsageLimiter = usage_limiter) -> None:
         self._limiter = limiter
@@ -140,18 +152,29 @@ class QuotaService:
     def _window(self) -> int:
         return settings.quota_window_seconds
 
-    def _limit_for(self, kind: str) -> int:
+    def _limit_for(self, kind: str, owner: str = "") -> int:
+        if _is_workspace_owner(owner):
+            return {
+                KIND_EXECUTION: settings.workspace_execution_starts_per_window,
+                KIND_ARTIFACT: settings.workspace_artifact_generations_per_window,
+                KIND_STARTUP: settings.workspace_startup_validations_per_window,
+            }[kind]
         return {
             KIND_EXECUTION: settings.execution_starts_per_window,
             KIND_ARTIFACT: settings.artifact_generations_per_window,
             KIND_STARTUP: settings.startup_validations_per_window,
         }[kind]
 
+    def _pending_cap(self, owner: str) -> int:
+        if _is_workspace_owner(owner):
+            return settings.workspace_max_pending_flows
+        return settings.max_pending_flows_per_owner
+
     def check_windowed(self, owner: str, kind: str) -> QuotaDecision:
         """Check a windowed quota WITHOUT recording (record on real action)."""
         if not settings.quotas_enabled:
             return QuotaDecision(True, kind)
-        if self._limiter.check(owner, kind, self._limit_for(kind), self._window()):
+        if self._limiter.check(owner, kind, self._limit_for(kind, owner), self._window()):
             return QuotaDecision(True, kind)
         self._log_rejection(owner, kind)
         return QuotaDecision(False, kind, _LIMIT_MESSAGES[kind])
@@ -164,7 +187,7 @@ class QuotaService:
         """Block creating a new guided flow when the owner has too many pending."""
         if not settings.quotas_enabled:
             return QuotaDecision(True, KIND_PENDING)
-        if guided_flow_store.count_pending(owner) < settings.max_pending_flows_per_owner:
+        if guided_flow_store.count_pending(owner) < self._pending_cap(owner):
             return QuotaDecision(True, KIND_PENDING)
         self._log_rejection(owner, KIND_PENDING)
         return QuotaDecision(False, KIND_PENDING, _LIMIT_MESSAGES[KIND_PENDING])

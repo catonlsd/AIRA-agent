@@ -89,6 +89,14 @@ class Settings(BaseSettings):
     execution_starts_per_window: int = 30
     artifact_generations_per_window: int = 20
     startup_validations_per_window: int = 20
+    # Workspace-scope quotas: counted separately from personal usage (the owner
+    # key already isolates them) and independently tunable. Default to the
+    # personal limits so behaviour is unchanged until an operator raises them for
+    # a shared team workspace.
+    workspace_max_pending_flows: int = 5
+    workspace_execution_starts_per_window: int = 30
+    workspace_artifact_generations_per_window: int = 20
+    workspace_startup_validations_per_window: int = 20
 
     # Boot/health validation actually launches a generated app in a bounded
     # subprocess. Operators can disable it in constrained environments (no spawn
@@ -140,6 +148,10 @@ class Settings(BaseSettings):
         "execution_starts_per_window",
         "artifact_generations_per_window",
         "startup_validations_per_window",
+        "workspace_max_pending_flows",
+        "workspace_execution_starts_per_window",
+        "workspace_artifact_generations_per_window",
+        "workspace_startup_validations_per_window",
     )
     @classmethod
     def _positive_quota(cls, value, info):

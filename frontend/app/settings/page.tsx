@@ -38,6 +38,7 @@ import { PERSONAL_SCOPE_LABEL } from "@/lib/scope";
 import {
   clearAllPreferences,
   fetchPreferences,
+  lastPreferenceScope,
   removePreference,
   savePreference,
   savedCount,
@@ -488,10 +489,13 @@ function PreferencesCard() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
 
+  const [scopeLabelText, setScopeLabelText] = useState("Personal");
+
   const load = useCallback(async () => {
     setStatus("loading");
     try {
       setItems(await fetchPreferences(getSessionId()));
+      setScopeLabelText(lastPreferenceScope()?.label || "Personal");
       setStatus("ready");
     } catch {
       setStatus("offline");
@@ -548,7 +552,7 @@ function PreferencesCard() {
       <SectionHeading
         icon={<SlidersHorizontal className="h-5 w-5" />}
         title="Assistant Preferences"
-        description="Stable preferences AIRA-X remembers and applies to your answers and generated files. Your current message always overrides them, and you can change or clear these anytime."
+        description={`Editing ${scopeLabelText} defaults. AIRA-X applies these to your answers and generated files; your current message always overrides them, and you can change or clear them anytime.`}
         action={
           count > 0 && status === "ready" ? (
             confirmClear ? (

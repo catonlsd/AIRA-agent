@@ -19,7 +19,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from app.auth import resolve_owner
+from app.auth import resolve_scope
 from app.memory.preference_memory import preference_memory
 from app.memory.preference_policy import (
     catalogue_with_values,
@@ -29,15 +29,12 @@ from app.memory.preference_policy import (
 router = APIRouter(prefix="/preferences", tags=["AIRA-X Preferences"])
 
 
-def _owner_for(request: Request | None, session_id: str | None) -> str:
-    """Resolve the durable owner for a preferences request.
-
-    Account-first: a signed account token owns "account:<id>"; otherwise the
-    session is the owner (a blank session resolves to "default"). This matches
-    exactly how a turn resolves its owner, so the preferences a user edits are
-    the ones the supervisor applies.
-    """
-    return resolve_owner(request, session_id) or "default"
+def _scope_for(request: Request | None, session_id: str | None):
+    """Resolve the active scope for a preferences request (account / workspace /
+    session). Editing always targets the ACTIVE scope, so a member acting in a
+    workspace edits the workspace's shared defaults, and a personal user edits
+    their own — explicit, never blurred."""
+    return resolve_scope(request, session_id)
 
 
 class PreferenceUpdate(BaseModel):
@@ -46,42 +43,48 @@ class PreferenceUpdate(BaseModel):
     value: str
 
 
-def _payload(owner: str) -> dict:
-    """The catalogue annotated with this owner's saved values (no raw internals)."""
+def _payload(scope) -> dict:
+    """The catalogue annotated with the ACTIVE scope's own values, plus which
+    scope is being edited (no raw internals)."""
+    owner = scope.owner_key or "default"
     saved = preference_memory.get(owner)
-    return {"preferences": catalogue_with_values(saved)}
+    return {
+        "preferences": catalogue_with_values(saved),
+        "scope": {"kind": scope.kind, "label": scope.label or scope.kind, "is_workspace": scope.is_workspace},
+    }
 
 
 @router.get("")
 def list_preferences(request: Request, session_id: str | None = None) -> dict:
-    """List the preference catalogue with the owner's current values."""
-    return _payload(_owner_for(request, session_id))
+    """List the preference catalogue with the active scope's current values."""
+    return _payload(_scope_for(request, session_id))
 
 
 @router.put("")
 def set_preference(update: PreferenceUpdate, request: Request) -> dict:
-    """Set/update one preference. Rejects keys/values outside the catalogue."""
+    """Set/update one preference in the active scope. Rejects keys/values outside
+    the catalogue."""
     if not is_valid_preference(update.key, update.value):
         raise HTTPException(
             status_code=400,
             detail="Unsupported preference. Only the listed preferences and values can be saved.",
         )
-    owner = _owner_for(request, update.session_id)
-    preference_memory.set(owner, update.key, update.value, source="settings_ui")
-    return _payload(owner)
+    scope = _scope_for(request, update.session_id)
+    preference_memory.set(scope.owner_key or "default", update.key, update.value, source="settings_ui")
+    return _payload(scope)
 
 
 @router.delete("/{key}")
 def clear_preference(key: str, request: Request, session_id: str | None = None) -> dict:
-    """Clear one saved preference (no error if it wasn't set)."""
-    owner = _owner_for(request, session_id)
-    preference_memory.delete(owner, key)
-    return _payload(owner)
+    """Clear one saved preference in the active scope (no error if unset)."""
+    scope = _scope_for(request, session_id)
+    preference_memory.delete(scope.owner_key or "default", key)
+    return _payload(scope)
 
 
 @router.delete("")
 def clear_all_preferences(request: Request, session_id: str | None = None) -> dict:
-    """Clear all of this owner's saved preferences."""
-    owner = _owner_for(request, session_id)
-    preference_memory.clear(owner)
-    return _payload(owner)
+    """Clear all of the active scope's saved preferences."""
+    scope = _scope_for(request, session_id)
+    preference_memory.clear(scope.owner_key or "default")
+    return _payload(scope)

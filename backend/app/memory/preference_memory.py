@@ -60,6 +60,17 @@ class PreferenceMemory:
             )
             return {row.key: row.value for row in rows}
 
+    def effective(self, owners: list[str | None]) -> dict[str, str]:
+        """Merge preferences across owners in precedence order — later owners
+        override earlier ones, key by key. Used to layer a workspace default
+        over the personal default (pass `[personal_owner, workspace_owner]`),
+        so a missing workspace key falls back to the personal value."""
+        merged: dict[str, str] = {}
+        for owner in owners:
+            if owner:
+                merged.update(self.get(owner))
+        return merged
+
     def set(self, owner: str | None, key: str, value: str, *, source: str | None = None) -> None:
         owner_key = _owner_key(owner)
         with self._session_factory() as session:

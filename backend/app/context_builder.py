@@ -70,6 +70,12 @@ class TurnContext:
     # route can pass an account-scoped owner instead.
     owner: str = ""
 
+    # The resolved ResourceScope (session/account/workspace) for this turn, when
+    # available. Carried so preference precedence (workspace over personal) can be
+    # applied; `owner` remains the active scope's durable key. Optional/duck-typed
+    # so context building stays usable without the auth layer (tests).
+    scope: Any = None
+
     history: list[dict] = field(default_factory=list)
     preferences: dict = field(default_factory=dict)
 
@@ -94,6 +100,7 @@ def build_turn_context(
     history: Optional[list[dict]] = None,
     history_limit: Optional[int] = None,
     owner: Optional[str] = None,
+    scope: Any = None,
 ) -> TurnContext:
     """Assemble the normalized context for one turn.
 
@@ -113,9 +120,11 @@ def build_turn_context(
     file_names = [name for name in (uploaded_file_names or []) if name]
 
     # Default owner is the session itself; an authenticated route passes the
-    # principal's owner_key instead. Ownership scopes guided flows, artifacts,
-    # and document retrieval.
-    resolved_owner = (owner or "").strip() or resolved_session
+    # principal's owner_key (or a scope) instead. Ownership scopes guided flows,
+    # artifacts, and document retrieval. An explicit owner wins; otherwise the
+    # scope's owner key; otherwise the session.
+    scope_owner = getattr(scope, "owner_key", None) if scope is not None else None
+    resolved_owner = (owner or scope_owner or "").strip() or resolved_session
 
     context = TurnContext(
         message=message,
@@ -123,6 +132,7 @@ def build_turn_context(
         run_id=run_id or uuid4().hex,
         trace=trace,
         owner=resolved_owner,
+        scope=scope,
         uploaded_file_names=file_names,
         has_uploaded_files=bool(file_names),
         resume_run_id=run_id,

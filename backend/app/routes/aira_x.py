@@ -14,7 +14,7 @@ from app.turn_classifier import (
     WEB_RESEARCH_MODE,
 )
 from app.assistant_supervisor import AssistantSupervisor
-from app.auth import resolve_owner
+from app.auth import resolve_scope
 from app.context_builder import build_turn_context
 from app.services.trace_service import TraceService
 
@@ -763,7 +763,7 @@ async def run_aira_x(request: AiraXRunRequest, http_request: Request = None):
     ctx = build_turn_context(
         request.goal,
         session_id=request.session_id,
-        owner=resolve_owner(http_request, request.session_id),
+        scope=resolve_scope(http_request, request.session_id),
         history=request.history,
         uploaded_file_names=request.uploaded_file_names,
     )
@@ -793,7 +793,7 @@ async def stream_aira_x(request: AiraXRunRequest, http_request: Request = None):
     ctx = build_turn_context(
         request.goal,
         session_id=request.session_id,
-        owner=resolve_owner(http_request, request.session_id),
+        scope=resolve_scope(http_request, request.session_id),
         history=request.history,
         uploaded_file_names=request.uploaded_file_names,
     )

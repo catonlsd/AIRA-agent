@@ -19,7 +19,7 @@ from app.db.models import Document, DocumentChunk
 from app.rag.schemas import RetrievedChunk
 from app.conversation import generate_conversational_answer
 from app.assistant_supervisor import AssistantSupervisor
-from app.auth import resolve_owner
+from app.auth import resolve_scope
 from app.context_builder import build_turn_context
 
 from app.routes.aira_x import serialize_state
@@ -836,14 +836,14 @@ def _supervisor_response_to_assistant(response: Any) -> AssistantRunResponse:
 
 
 async def _run_via_supervisor(
-    payload: AssistantRunRequest, db: Session, owner: str | None = None
+    payload: AssistantRunRequest, db: Session, scope: Any = None
 ) -> AssistantRunResponse:
     message = payload.message.strip()
     # Client-supplied history wins; otherwise use server-side memory (DB).
     ctx = build_turn_context(
         message,
         session_id=payload.session_id,
-        owner=owner,
+        scope=scope,
         db=db if payload.history is None else None,
         history=payload.history,
         uploaded_file_names=payload.uploaded_file_names,
@@ -879,10 +879,10 @@ async def run_assistant(
     if not message:
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
 
-    owner = resolve_owner(http_request, payload.session_id)
+    scope = resolve_scope(http_request, payload.session_id)
     if use_supervisor():
         try:
-            return await _run_via_supervisor(payload, db, owner=owner)
+            return await _run_via_supervisor(payload, db, scope=scope)
         except Exception:
             # The unified supervisor failed; fall back to the legacy engine so
             # the user still gets an answer.

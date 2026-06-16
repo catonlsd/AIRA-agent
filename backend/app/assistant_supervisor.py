@@ -182,14 +182,13 @@ class AssistantSupervisor:
         return self._documents
 
     def _prime_memory(self, ctx: TurnContext) -> None:
-        """Load owner-scoped preference memory and capture any newly-stated ones.
+        """Load scope-aware preference memory and capture any newly-stated ones.
 
-        Write policy: only deliberate, catalogue preferences are persisted (see
-        preference_policy) — never arbitrary personal facts. Read policy: saved
-        preferences become defaults on ctx.preferences; the current turn's
-        explicit instructions still win at answer time. Working context is noted
-        ephemerally to session memory and is never auto-promoted. Memory must
-        never break a turn, so this degrades silently on any error.
+        Precedence (low → high): product default < personal/account default <
+        workspace default (when acting in workspace scope) < current-turn
+        instruction (enforced at answer time). A deliberate preference stated this
+        turn is saved to the ACTIVE scope (a workspace default when in workspace
+        scope, else personal). Memory must never break a turn — degrades silently.
         """
         try:
             owner = ctx.owner
@@ -197,13 +196,27 @@ class AssistantSupervisor:
             if stated:
                 preference_memory.set_many(owner, stated, source="stated_in_chat")
                 ctx.trace.event("preferences_remembered", keys=sorted(stated.keys()))
-            saved = preference_memory.get(owner)
+            saved = self._effective_preferences(ctx)
             if saved:
-                # Owner-scoped saved preferences take precedence over legacy globals.
                 ctx.preferences = {**(ctx.preferences or {}), **saved}
             session_memory.note(owner, ctx.session_id, "last_request", ctx.message[:200])
         except Exception:
             pass
+
+    @staticmethod
+    def _effective_preferences(ctx: TurnContext) -> dict[str, str]:
+        """Resolve effective preferences for the active scope.
+
+        In workspace scope, the personal/account default is laid down first and
+        the workspace default overrides it key-by-key, so a workspace can set
+        shared defaults while a user's personal preference still fills any gap.
+        In personal/session scope it's simply the owner's own preferences.
+        """
+        scope = ctx.scope
+        if scope is not None and getattr(scope, "is_workspace", False) and getattr(scope, "account_id", None):
+            personal_owner = f"account:{scope.account_id}"
+            return preference_memory.effective([personal_owner, ctx.owner])
+        return preference_memory.get(ctx.owner)
 
     async def run_turn(self, ctx: TurnContext) -> AssistantResponse:
         ctx.trace.event("turn_started", message_len=len(ctx.message))

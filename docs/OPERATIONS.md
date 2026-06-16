@@ -230,6 +230,28 @@ scope just became explicit and extensible.
   to single-user account scope. The frontend plumbs an `X-Workspace-Id` header
   (`lib/scope.ts`) and shows a calm "Scope: Personal" line — no switcher yet.
 
+## Scope-aware preferences, quotas & documents
+
+Workspace behaviour is **additive and explicit**, never a rewrite of personal mode:
+
+- **Preference precedence** (low → high): product default < personal/account
+  default < workspace default (when acting in workspace scope) < current-turn
+  instruction. `preference_memory.effective([personal, workspace])` layers the
+  personal default under the workspace one, so a workspace sets shared defaults
+  while a user's personal preference still fills any gap. A preference *stated*
+  while acting in a workspace becomes a **workspace** default; in personal scope
+  it's personal. The current message always wins at answer time. The preferences
+  API/UI edits the **active scope** and labels it ("Editing Personal / Team
+  defaults").
+- **Quotas** are scope-aware through the owner key: personal usage counts under
+  `account:<id>`/session and workspace usage under `workspace:<id>`, so they're
+  isolated automatically. Workspace owners resolve to independently-tunable
+  workspace limits (`WORKSPACE_*_PER_WINDOW`, defaulting to the personal limits).
+- **Document collections** scope by owner too: uploads and document-first
+  retrieval in workspace scope use `workspace:<id>`, personal use stays
+  `account:<id>`/session — no cross-workspace or workspace/personal leakage, with
+  the Chroma `where` filter unchanged.
+
 Workspace-level preferences/quotas, shared documents/artifacts/runs, and roles
 all layer on this without changing the owner-key call sites.
 
