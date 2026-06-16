@@ -7,14 +7,19 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-// Self-contained bearer header (kept inline so this module stays dependency-free
-// for unit tests). Mirrors lib/auth's token key — account requests carry it so
-// the backend scopes preferences to the account when signed in.
+// Self-contained auth + scope headers (kept inline so this module stays
+// dependency-free for unit tests). Mirrors lib/auth + lib/scope storage keys:
+// the bearer token scopes to the account, and the workspace header scopes to a
+// workspace when one is active (the backend only honours it for members).
 function currentAuthHeaders(): Record<string, string> {
   if (typeof window === "undefined") return {};
   try {
     const token = window.localStorage.getItem("aira_auth_token");
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    const workspace = window.localStorage.getItem("aira_active_workspace");
+    return {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(workspace ? { "X-Workspace-Id": workspace } : {}),
+    };
   } catch {
     return {};
   }

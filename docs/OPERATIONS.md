@@ -206,9 +206,32 @@ AIRA-X has a real account model on top of the principal abstraction:
 
 The frontend Settings page has a minimal **Account** card (sign in / create
 account / sign out); when signed in, chat, uploads, and preferences send the
-bearer token automatically. The `Principal` / `resolve_owner` seam keeps real
-team **workspaces** (`workspace:<id>`), roles, and admin scopes a clean
-extension away — no call-site rewrites.
+bearer token automatically.
+
+## Resource scope & workspaces (foundation)
+
+Ownership is now an explicit **scope** (`ResourceScope` in `app/auth.py`):
+session, account, or workspace. `resolve_scope(request, session_id)` returns the
+active scope and `resolve_owner` delegates to it, so the durable owner key stays
+backward-compatible — a session owns its raw id, an account owns `account:<id>`,
+and a **workspace** owns `workspace:<id>`. Nothing downstream changed shape;
+scope just became explicit and extensible.
+
+- **Workspaces** (`workspaces` / `workspace_members` tables, `app/workspaces.py`):
+  a durable shared scope with an owner account and real membership rows.
+  Endpoints: `GET /workspaces` (mine), `POST /workspaces` (create; creator is
+  owner). No invitations/roles UI yet — foundations only.
+- **Membership-gated**: a request may act in a workspace by sending
+  `X-Workspace-Id`, but the header is honoured **only when the account is a
+  member** — otherwise it silently falls back to personal scope, never leaking
+  another team's data. Artifact downloads authorize against the set of owner
+  tokens an account can reach (personal + member workspaces).
+- **Default is Personal**: with no workspace header the experience is identical
+  to single-user account scope. The frontend plumbs an `X-Workspace-Id` header
+  (`lib/scope.ts`) and shows a calm "Scope: Personal" line — no switcher yet.
+
+Workspace-level preferences/quotas, shared documents/artifacts/runs, and roles
+all layer on this without changing the owner-key call sites.
 
 ## Memory model (session + preference)
 

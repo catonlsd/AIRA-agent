@@ -80,6 +80,41 @@ class Account(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
 
+class Workspace(Base):
+    """A durable shared scope that can own resources alongside personal accounts.
+
+    Foundation only: a workspace has an owner account and a name. Resources tagged
+    with owner `workspace:<id>` are shared within the workspace; personal data
+    stays `account:<id>`. Membership lives in `WorkspaceMember`, so adding real
+    members/roles later is a row insert, not a schema or call-site rewrite.
+    """
+
+    __tablename__ = "workspaces"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    owner_account_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class WorkspaceMember(Base):
+    """An account's membership in a workspace (the access-check home).
+
+    The owner is auto-added as a member with role "owner". Roles are a plain
+    string today (owner/member) so role-based access can be layered on later
+    without changing the membership shape.
+    """
+
+    __tablename__ = "workspace_members"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    account_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    role: Mapped[str] = mapped_column(String(32), default="member", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
 class MemoryEntry(Base):
     """Owner-scoped, durable memory (preference memory).
 

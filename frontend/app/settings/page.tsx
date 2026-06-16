@@ -34,6 +34,7 @@ import {
   register,
   type Account,
 } from "@/lib/auth";
+import { PERSONAL_SCOPE_LABEL } from "@/lib/scope";
 import {
   clearAllPreferences,
   fetchPreferences,
@@ -413,6 +414,9 @@ function AccountCard() {
             <div>
               <p className="text-sm font-black text-[var(--text-strong)]">{account.display_name}</p>
               <p className="text-xs text-[var(--text-muted)]">{account.email}</p>
+              <p className="mt-0.5 text-[11px] font-semibold text-[var(--text-subtle)]">
+                Scope: {PERSONAL_SCOPE_LABEL}
+              </p>
             </div>
           </div>
           <button

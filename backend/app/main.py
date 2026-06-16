@@ -24,6 +24,7 @@ from app.routes.aira_x import router as aira_x_router
 from app.routes.assistant import router as assistant_router
 from app.routes.auth import router as auth_router
 from app.routes.preferences import router as preferences_router
+from app.routes.workspaces import router as workspaces_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,6 +65,7 @@ app = FastAPI(
 )
 
 app.include_router(auth_router)
+app.include_router(workspaces_router)
 app.include_router(aira_x_router)
 app.include_router(assistant_router)
 app.include_router(preferences_router)
@@ -118,16 +120,21 @@ def download_artifact(owner: str, filename: str, request: Request):
     from fastapi import HTTPException
     from fastapi.responses import FileResponse
 
-    from app.auth import principal_from_request, resolve_account_principal
+    from app.auth import (
+        accessible_owner_tokens,
+        principal_from_request,
+        resolve_account_principal,
+    )
 
     # Reject any path-segment tampering up front.
     if "/" in owner or "\\" in owner or ".." in owner or "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(status_code=404, detail="Artifact not found.")
 
-    # An authenticated account may only reach its own scope (enforced regardless
-    # of the api-key gate). The api-key-authenticated case is also enforced.
+    # An authenticated account may reach its own personal scope OR any workspace
+    # it belongs to (scope-aware). Cross-scope access is denied, regardless of
+    # the api-key gate.
     account = resolve_account_principal(request)
-    if account is not None and account.owner_token != owner:
+    if account is not None and owner not in accessible_owner_tokens(account.account_id):
         logger.info('{"event": "artifact_access_denied", "owner": "%s"}', owner)
         raise HTTPException(status_code=404, detail="Artifact not found.")
     if settings.api_key and account is None:

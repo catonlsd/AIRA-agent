@@ -177,16 +177,127 @@ def resolve_account_principal(request) -> Optional[Principal]:
     return Principal(kind="account", subject=account_id, authenticated=True, account_id=account_id)
 
 
-def resolve_owner(request, session_id: Optional[str] = None) -> Optional[str]:
-    """The durable owner scope for a request.
+# ── Resource scope (session / account / workspace) ───────────────────────────
 
-    Account identity is primary: when a valid account token is present the owner
-    is `account:<id>` (durable, cross-device). Otherwise the session is the owner
-    (unchanged local/anonymous behaviour) — session stays a real, honest scope,
-    just secondary to an account.
+WORKSPACE_HEADER = "X-Workspace-Id"
+
+SCOPE_SESSION = "session"
+SCOPE_ACCOUNT = "account"
+SCOPE_WORKSPACE = "workspace"
+SCOPE_ANONYMOUS = "anonymous"
+
+
+@dataclass(frozen=True)
+class ResourceScope:
+    """The explicit scope that owns the resources of a request.
+
+    One object answers every ownership question the system needs: which durable
+    key to store/retrieve under (`owner_key`), whether the resource is personal
+    or workspace-shared, and which account is acting. The owner key strings are
+    backward-compatible — a session still owns its raw id, an account owns
+    `account:<id>` — and a workspace owns `workspace:<id>`. Nothing downstream
+    changes shape; scope just becomes explicit and extensible.
     """
-    if request is not None:
-        account = resolve_account_principal(request)
-        if account is not None:
-            return account.owner_key
-    return (session_id or "").strip() or None
+
+    kind: str                          # session | account | workspace | anonymous
+    subject: str                       # session id | account id | workspace id
+    account_id: Optional[str] = None   # the acting account (account/workspace scope)
+    workspace_id: Optional[str] = None  # set only for workspace scope
+    label: str = ""                    # human label ("Personal", workspace name)
+
+    @property
+    def owner_key(self) -> str:
+        # Session keeps its RAW id (backward-compatible durable owner); account
+        # and workspace are namespaced and distinct.
+        if self.kind == SCOPE_SESSION:
+            return self.subject or ANONYMOUS_OWNER
+        return f"{self.kind}:{self.subject}" if self.subject else ANONYMOUS_OWNER
+
+    @property
+    def owner_token(self) -> str:
+        return owner_token_for(self.owner_key)
+
+    @property
+    def is_account(self) -> bool:
+        return self.kind == SCOPE_ACCOUNT
+
+    @property
+    def is_workspace(self) -> bool:
+        return self.kind == SCOPE_WORKSPACE
+
+    @property
+    def is_personal(self) -> bool:
+        """Personal scope = anything not shared across a workspace."""
+        return self.kind != SCOPE_WORKSPACE
+
+
+def _workspace_header(request) -> Optional[str]:
+    try:
+        value = request.headers.get(WORKSPACE_HEADER)
+    except Exception:
+        return None
+    return value.strip() if value and value.strip() else None
+
+
+def resolve_scope(request, session_id: Optional[str] = None) -> ResourceScope:
+    """Resolve the active resource scope for a request.
+
+    Precedence: an authenticated account acting in a workspace it belongs to ->
+    workspace scope; otherwise the account's personal scope; otherwise the
+    session; otherwise anonymous. A workspace header is honoured ONLY when the
+    account is a member — an unknown/forbidden workspace silently falls back to
+    personal scope, never leaking another team's data.
+    """
+    account = resolve_account_principal(request) if request is not None else None
+    if account is not None:
+        workspace_id = _workspace_header(request)
+        if workspace_id:
+            from app.workspaces import workspace_service
+
+            ws = workspace_service.get_if_member(workspace_id, account.account_id or "")
+            if ws is not None:
+                return ResourceScope(
+                    kind=SCOPE_WORKSPACE,
+                    subject=workspace_id,
+                    account_id=account.account_id,
+                    workspace_id=workspace_id,
+                    label=ws.get("name", "Workspace"),
+                )
+        return ResourceScope(
+            kind=SCOPE_ACCOUNT, subject=account.account_id or "",
+            account_id=account.account_id, label="Personal",
+        )
+    sid = (session_id or "").strip()
+    if sid:
+        return ResourceScope(kind=SCOPE_SESSION, subject=sid, label="This device")
+    return ResourceScope(kind=SCOPE_ANONYMOUS, subject="", label="Anonymous")
+
+
+def resolve_owner(request, session_id: Optional[str] = None) -> Optional[str]:
+    """The durable owner key for a request (scope-aware).
+
+    Thin wrapper over `resolve_scope` for the many call sites that just need the
+    storage key. Behaviour is unchanged for personal/session use; a workspace
+    header (for a member) returns the workspace owner key instead.
+    """
+    scope = resolve_scope(request, session_id)
+    if scope.kind == SCOPE_ANONYMOUS:
+        return None
+    return scope.owner_key
+
+
+def accessible_owner_tokens(account_id: Optional[str]) -> set[str]:
+    """Owner tokens an account may access: its own personal scope plus every
+    workspace it belongs to. Used to authorize capability URLs (artifact
+    downloads) without reversing the opaque token."""
+    if not account_id:
+        return set()
+    tokens = {owner_token_for(f"{SCOPE_ACCOUNT}:{account_id}")}
+    try:
+        from app.workspaces import workspace_service
+
+        for workspace_id in workspace_service.member_workspace_ids(account_id):
+            tokens.add(owner_token_for(f"{SCOPE_WORKSPACE}:{workspace_id}"))
+    except Exception:
+        pass
+    return tokens

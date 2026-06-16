@@ -1,5 +1,6 @@
 import { parseSSEBlock, splitSSEBuffer } from "./sse";
 import { currentAuthHeaders } from "./auth";
+import { currentScopeHeaders } from "./scope";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -528,7 +529,7 @@ export async function uploadDocuments(
 
   const response = await fetch(`${API_URL}/upload`, {
     method: "POST",
-    headers: currentAuthHeaders(),
+    headers: { ...currentAuthHeaders(), ...currentScopeHeaders() },
     body,
   });
 
@@ -600,7 +601,7 @@ export async function streamAiraX(
 ): Promise<void> {
   const response = await fetch(`${API_URL}/aira-x/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...currentAuthHeaders() },
+    headers: { "Content-Type": "application/json", ...currentAuthHeaders(), ...currentScopeHeaders() },
     body: JSON.stringify({
       goal,
       session_id: options?.sessionId ?? null,
