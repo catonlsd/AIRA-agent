@@ -136,12 +136,15 @@ class ArtifactPlanBuilder:
             "pptx": (
                 '{"subtitle": "one-line subtitle", "slides": [{"title": "...", '
                 '"bullets": ["full, informative point", "..."], "notes": '
-                '"2-3 sentences of speaker notes expanding the slide", '
-                '"image_query": "concrete visual subject for this slide, or null"}]}'
-                "  — 6-8 content slides. Each bullet must be a COMPLETE, specific "
-                "point of ~10-18 words (a real fact, figure, example, or "
-                "explanation) — NEVER one- or two-word fragments. 3-5 bullets per "
-                "slide. Always include substantive `notes`."
+                '"3-4 sentences of speaker notes (a real paragraph) expanding the '
+                'slide with explanation, context, and detail", "image_query": '
+                '"a concrete, depictable visual subject for THIS slide"}]}'
+                "  — 6-9 content slides. Each bullet must be a COMPLETE, specific "
+                "point of ~12-20 words (a real fact, figure, example, or "
+                "explanation) — NEVER one- or two-word fragments. 4-5 bullets per "
+                "slide. ALWAYS include substantive `notes` (a full paragraph) and, "
+                "for any slide describing a physical/visual subject, a concrete "
+                "`image_query` (e.g. the specific plant, place, or object)."
             ),
             "docx": (
                 '{"subtitle": "...", "sections": [{"heading": "...", '

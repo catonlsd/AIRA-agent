@@ -111,9 +111,14 @@ in the request ("make it **dark / modern / executive**") wins, else the saved
 `artifact_style` preference applies, else the kind default.
 
 **Content depth**: artifact content is generated as substantive bullets (full,
-specific points — not 1-2 word fragments) plus speaker notes, and is **grounded
-in a bounded web-research pass** (`ARTIFACT_RESEARCH_GROUNDING`, default on) when
-there are no uploaded documents — so decks/reports carry real facts and figures.
+specific points — not 1-2 word fragments) plus paragraph-length speaker notes,
+and is **grounded in a bounded web-research pass** (`ARTIFACT_RESEARCH_GROUNDING`,
+default on) when there are no uploaded documents — so decks/reports carry real
+facts and figures. A follow-up that revises the last artifact ("add more detail
+to each slide", "include images for each item") regenerates a richer version
+through the same pipeline rather than no-opping. When an execution turn can't
+find a concrete action it says so honestly (a clarification) — never a fake
+"Execution complete".
 
 **Images** are optional and safe (`ENABLE_ARTIFACT_IMAGES`, default on;
 `MAX_ARTIFACT_IMAGES`, `ARTIFACT_IMAGE_TIMEOUT_SECONDS`). The provider

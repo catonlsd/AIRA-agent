@@ -88,6 +88,7 @@ from app.turn_classifier import (
 
 import json
 import logging
+import re
 
 # Operational lifecycle log (ops-facing, never shown in the chat UI). One
 # structured line per significant supervisor event, correlated by
@@ -112,6 +113,26 @@ MAX_QUESTIONS = 20
 
 # Modes answered directly by the LLM (history-aware), not by a tool/research path.
 CONVERSATIONAL_MODES = (GENERAL_CHAT_MODE, SELF_MEMORY_MODE)
+
+# A follow-up that revises the last artifact ("add more content / images",
+# "make every slide longer") — needs both an edit verb and an artifact-ish noun,
+# so a fresh, unrelated request never trips it.
+_REVISION_VERB = re.compile(
+    r"\b(add|increase|include|expand|elaborate|make|more|redo|regenerate|improve|lengthen|enrich|put|give)\b",
+    re.IGNORECASE,
+)
+_REVISION_NOUN = re.compile(
+    r"\b(content|detail|details|slide|slides|image|images|picture|pictures|deck|"
+    r"presentation|ppt|pptx|document|report|paragraph|paragraphs|longer|each|every)\b",
+    re.IGNORECASE,
+)
+# The honest sentinel the execution planner emits when it can't find an action.
+_NOOP_EXECUTION_SENTINEL = "specific executable action"
+
+
+def _is_artifact_revision(goal: str) -> bool:
+    text = goal or ""
+    return bool(_REVISION_VERB.search(text) and _REVISION_NOUN.search(text))
 
 
 def _stage_for_mode(mode: str, reasoning: TurnReasoning | None) -> str | None:
@@ -359,6 +380,15 @@ class AssistantSupervisor:
                 goal, classification, classification.artifact_type, ctx
             )
 
+        # Follow-up that revises the artifact we just made ("add more content /
+        # images", "make every slide longer") -> regenerate a richer version
+        # through the same artifact pipeline, instead of generic execution.
+        revision = self._artifact_revision_request(goal, ctx)
+        if revision is not None:
+            return self._present_artifact_plan(
+                revision["goal"], classification, revision["kind"], ctx
+            )
+
         # Capability composition: the question spans documents AND the web.
         if reasoning is not None and reasoning.capabilities == [
             CAP_DOCUMENT_QA,
@@ -427,7 +457,65 @@ class AssistantSupervisor:
         ctx.trace.event("execution_started")
         result = await self.execution.run(goal, mode=classification.mode)
         ctx.trace.event("execution_completed", status=result.get("status"))
+        # The execution planner couldn't find a concrete action: report that
+        # honestly as a clarification, NOT as a completed workflow (no fake
+        # "Execution complete" when nothing actually ran).
+        if self._is_noop_execution(result):
+            ctx.trace.event("execution_noop")
+            return self._needs_action_result(classification)
         return self._with_classification(result, classification)
+
+    @staticmethod
+    def _is_noop_execution(result: dict[str, Any]) -> bool:
+        text = (result.get("final_answer") or result.get("message") or "").lower()
+        return _NOOP_EXECUTION_SENTINEL in text
+
+    def _artifact_revision_request(self, goal: str, ctx: TurnContext) -> dict[str, Any] | None:
+        """If this is a revision of the artifact we just made, build a richer
+        regeneration goal for the same kind. Returns None when it isn't one."""
+        last = session_memory.value(ctx.owner, ctx.session_id, "last_artifact")
+        if not isinstance(last, dict) or not last.get("kind"):
+            return None
+        if not _is_artifact_revision(goal):
+            return None
+        base = (last.get("goal") or last.get("title") or "").strip()
+        combined = (
+            f"{base}. Apply this revision: {goal.strip()}. Produce richer, more "
+            "detailed content for every slide/section and include relevant images."
+        )
+        ctx.trace.event("artifact_revision", kind=last["kind"])
+        return {"goal": combined, "kind": last["kind"]}
+
+    def _needs_action_result(self, classification) -> dict[str, Any]:
+        message = (
+            "I couldn't pin down a concrete action for that. If you meant to revise "
+            "something I just created — like a presentation or document — tell me "
+            "what to change (e.g. “add more detail to each slide and include images”). "
+            "Otherwise, ask me to run a specific command, run code, or work with a file."
+        )
+        return {
+            "run_id": uuid4().hex,
+            "status": "completed",
+            "decision": "needs_action_clarification",
+            "mode": GENERAL_CHAT_MODE,
+            "message": message,
+            "final_answer": message,
+            "sources": [],
+            "artifacts": [],
+            "approval_summary": None,
+            "meta": {
+                "is_multi_question": False,
+                "question_count": 1,
+                "has_sources": False,
+                "has_artifacts": False,
+                "requires_approval": False,
+                "turn_classification": {
+                    "mode": classification.mode,
+                    "reason": getattr(classification, "reason", ""),
+                    "confidence": getattr(classification, "confidence", ""),
+                },
+            },
+        }
 
     async def _compose_document_and_research(
         self, goal: str, classification, ctx: TurnContext
@@ -791,6 +879,13 @@ class AssistantSupervisor:
         )
         _ops_log("artifact_generation_finished", ctx, status="completed",
                  kind=pending.kind, filename=artifact["filename"])
+        # Remember the last artifact so a follow-up revision ("add more detail /
+        # images") can regenerate a richer version instead of falling into the
+        # generic execution path. Ephemeral, session-scoped.
+        session_memory.note(
+            ctx.owner, ctx.session_id, "last_artifact",
+            {"kind": pending.kind, "goal": pending.goal, "title": artifact.get("title", "")},
+        )
         message = self._render_artifact_success(artifact)
         return self._artifact_response(
             "completed", "artifact_generated", message, pending, ctx,

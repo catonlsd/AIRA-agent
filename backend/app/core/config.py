@@ -101,7 +101,7 @@ class Settings(BaseSettings):
     # bounded and fully guarded — generation never depends on or fails for images.
     enable_artifact_images: bool = True
     artifact_image_provider: str = "openverse"   # openverse | none
-    max_artifact_images: int = 4
+    max_artifact_images: int = 6
     artifact_image_timeout_seconds: float = 5.0
 
     model_config = SettingsConfigDict(
