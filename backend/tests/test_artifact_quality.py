@@ -178,3 +178,45 @@ def test_plan_message_names_the_theme():
     service = ArtifactService()
     _, message = service.plan("Make a clean PPT on solar", "pptx")
     assert "Professional Clean theme" in message
+
+
+# ── Clean titles + image-query fallback ──────────────────────────────────────
+
+
+def test_derive_title_prefers_a_quoted_topic():
+    from app.artifacts.spec import derive_title
+
+    title = derive_title("Topic “Semiconductors”. Sure to include main points, growth, etc.", "pptx")
+    assert title == "Semiconductors"
+
+
+def test_image_query_falls_back_to_slide_title(monkeypatch):
+    # The model omits image_query; the builder derives one from the slide title.
+    import json as _json
+
+    import app.core.llm as llm_module
+
+    payload = _json.dumps({
+        "subtitle": "x",
+        "slides": [{"title": "Clay Soil", "bullets": ["Clay holds water well across seasons."], "notes": "n"}],
+    })
+    monkeypatch.setattr(llm_module.LLMClient, "generate", lambda self, system, prompt, temperature=0.2: payload)
+
+    service = ArtifactService()
+    pending, _ = service.plan(
+        "Make a PPT on soil", "pptx",
+        generate=lambda **kw: llm_module.LLMClient().generate(**kw),
+    )
+    clay = next(s for s in pending.spec["slides"] if s["title"] == "Clay Soil")
+    assert clay["image_query"]  # derived even though the model gave none
+
+
+def test_revision_keeps_clean_title_via_override():
+    service = ArtifactService()
+    # A messy revision goal, but an explicit clean title override wins.
+    pending, message = service.plan(
+        "A pptx about Semiconductors. add more detail and images. richer content.",
+        "pptx", title="Semiconductors",
+    )
+    assert pending.spec["title"] == "Semiconductors"
+    assert "Semiconductors" in message

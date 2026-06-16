@@ -115,15 +115,24 @@ MAX_QUESTIONS = 20
 CONVERSATIONAL_MODES = (GENERAL_CHAT_MODE, SELF_MEMORY_MODE)
 
 # A follow-up that revises the last artifact ("add more content / images",
-# "make every slide longer") — needs both an edit verb and an artifact-ish noun,
-# so a fresh, unrelated request never trips it.
-_REVISION_VERB = re.compile(
-    r"\b(add|increase|include|expand|elaborate|make|more|redo|regenerate|improve|lengthen|enrich|put|give)\b",
-    re.IGNORECASE,
-)
+# "make every slide longer", "you made no changes, redo it"). Only ever consulted
+# when a recent artifact exists for the session, so a fresh request can't trip it:
+# it fires when the message names an artifact thing AND either asks for an edit or
+# voices a complaint about the result.
 _REVISION_NOUN = re.compile(
     r"\b(content|detail|details|slide|slides|image|images|picture|pictures|deck|"
-    r"presentation|ppt|pptx|document|report|paragraph|paragraphs|longer|each|every)\b",
+    r"presentation|ppt|pptx|document|report|paragraph|paragraphs|page|pages)\b",
+    re.IGNORECASE,
+)
+_REVISION_VERB = re.compile(
+    r"\b(add|increase|include|expand|elaborate|make|made|more|redo|regenerate|"
+    r"improve|lengthen|enrich|put|give|change|changed|fix|correct|update|revise|"
+    r"longer|each|every|get|got)\b",
+    re.IGNORECASE,
+)
+_REVISION_COMPLAINT = re.compile(
+    r"\b(no|not|n't|same|again|wrong|missing|without|nothing|barely|hardly|still|"
+    r"didn'?t|did not|don'?t)\b|this time",
     re.IGNORECASE,
 )
 # The honest sentinel the execution planner emits when it can't find an action.
@@ -132,7 +141,9 @@ _NOOP_EXECUTION_SENTINEL = "specific executable action"
 
 def _is_artifact_revision(goal: str) -> bool:
     text = goal or ""
-    return bool(_REVISION_VERB.search(text) and _REVISION_NOUN.search(text))
+    if not _REVISION_NOUN.search(text):
+        return False
+    return bool(_REVISION_VERB.search(text) or _REVISION_COMPLAINT.search(text))
 
 
 def _stage_for_mode(mode: str, reasoning: TurnReasoning | None) -> str | None:
@@ -386,7 +397,8 @@ class AssistantSupervisor:
         revision = self._artifact_revision_request(goal, ctx)
         if revision is not None:
             return self._present_artifact_plan(
-                revision["goal"], classification, revision["kind"], ctx
+                revision["goal"], classification, revision["kind"], ctx,
+                title_override=revision["title"],
             )
 
         # Capability composition: the question spans documents AND the web.
@@ -472,19 +484,27 @@ class AssistantSupervisor:
 
     def _artifact_revision_request(self, goal: str, ctx: TurnContext) -> dict[str, Any] | None:
         """If this is a revision of the artifact we just made, build a richer
-        regeneration goal for the same kind. Returns None when it isn't one."""
+        regeneration goal for the same kind. Returns None when it isn't one.
+
+        The original (clean) title is preserved via a separate override, so the
+        revision instruction shapes the CONTENT and never pollutes the title or
+        first slide.
+        """
         last = session_memory.value(ctx.owner, ctx.session_id, "last_artifact")
         if not isinstance(last, dict) or not last.get("kind"):
             return None
         if not _is_artifact_revision(goal):
             return None
-        base = (last.get("goal") or last.get("title") or "").strip()
-        combined = (
-            f"{base}. Apply this revision: {goal.strip()}. Produce richer, more "
-            "detailed content for every slide/section and include relevant images."
+        title = (last.get("title") or "").strip() or "the topic"
+        directive = goal.strip()
+        # Content goal: the clean topic + the revision as a content directive.
+        content_goal = (
+            f"A {last['kind']} about {title}. {directive}. Produce richer, more "
+            "detailed content for every slide/section, with full bullet points and "
+            "a relevant image for each visual slide."
         )
         ctx.trace.event("artifact_revision", kind=last["kind"])
-        return {"goal": combined, "kind": last["kind"]}
+        return {"goal": content_goal, "kind": last["kind"], "title": title}
 
     def _needs_action_result(self, classification) -> dict[str, Any]:
         message = (
@@ -742,7 +762,8 @@ class AssistantSupervisor:
         }
 
     def _present_artifact_plan(
-        self, goal: str, classification, kind: str, ctx: TurnContext
+        self, goal: str, classification, kind: str, ctx: TurnContext,
+        *, title_override: str | None = None,
     ) -> dict[str, Any]:
         """Prepare artifact content + delivery, park a plan awaiting approval."""
         cap = quota_service.check_pending_flows(ctx.owner)
@@ -793,6 +814,7 @@ class AssistantSupervisor:
             context=context,
             owner_token=owner_token_for(ctx.owner),
             preferences=ctx.preferences,
+            title=title_override,
         )
         artifact_store.set(ctx.owner, pending)
         ctx.trace.event("stage", stage="plan_ready", artifact_kind=kind)

@@ -28,12 +28,16 @@ def test_revision_phrases_are_detected():
     assert _is_artifact_revision("make the slides longer")
     assert _is_artifact_revision("add more detail and pictures")
     assert _is_artifact_revision("expand each slide")
+    # Frustrated re-revision / complaint about the result is also a revision.
+    assert _is_artifact_revision("you made no changes to the slides, get it right this time")
+    assert _is_artifact_revision("there are no images in the presentation")
 
 
 def test_non_revision_messages_are_ignored():
     assert not _is_artifact_revision("what are medicinal herbs?")
     assert not _is_artifact_revision("tell me more about chamomile")  # no artifact noun
     assert not _is_artifact_revision("hello there")
+    assert not _is_artifact_revision("explain how semiconductors work")  # noun absent
 
 
 # ── Revision routes to artifact regeneration ─────────────────────────────────
@@ -61,6 +65,10 @@ async def test_revision_after_artifact_regenerates_not_generic_execution(monkeyp
     assert result["decision"] == "artifact_plan_ready"
     assert result["meta"]["artifact_pending"] is True
     assert result["meta"]["artifact_kind"] == "pptx"
+    # The clean original title is preserved — the revision instruction never
+    # pollutes the title or the plan message.
+    assert "Medicinal Herbs" in result["message"]
+    assert "Apply this revision" not in result["message"]
 
 
 @pytest.mark.asyncio

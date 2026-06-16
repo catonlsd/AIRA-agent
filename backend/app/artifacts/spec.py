@@ -80,14 +80,43 @@ def kind_noun(kind: str) -> str:
     return _KIND_NOUNS.get(kind, "file")
 
 
+# Generic slide titles that shouldn't drive an image search.
+_NON_VISUAL_TITLES = ("agenda", "summary", "conclusion", "overview", "introduction", "references")
+
+
+def _image_query_from_title(slide_title: str, deck_title: str) -> str | None:
+    """A concrete image subject derived from a slide title (fallback when the
+    model omits one). Strips filler prefixes; falls back to the deck topic."""
+    cleaned = _TITLE_PREFIXES.sub("", (slide_title or "").strip()).strip()
+    lowered = cleaned.lower()
+    if not cleaned or any(word == lowered for word in _NON_VISUAL_TITLES):
+        # Generic divider slide → use the deck topic instead of a vague word.
+        deck = (deck_title or "").strip()
+        return deck or None
+    return cleaned
+
+
 def slugify(text: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "_", (text or "").lower()).strip("_")
     return slug[:48] or "artifact"
 
 
+_TITLE_PREFIXES = re.compile(
+    r"^(introduction to|overview of|significance of|importance of|what is an?|what is|"
+    r"types of|kinds of|applications of|advantages of|benefits of|growth in|the|an?)\s+",
+    re.IGNORECASE,
+)
+
+
 def derive_title(goal: str, kind: str) -> str:
     """A clean title from the request ("Make me a PPT on X" -> "X")."""
     text = (goal or "").strip()
+    # A quoted topic ("Topic 'Semiconductors'...") is the strongest, cleanest signal.
+    quoted = re.search(r"[\"“‘']([^\"”’']{2,60})[\"”’']", text)
+    if quoted and quoted.group(1).strip():
+        topic = quoted.group(1).strip()
+        topic = re.sub(r"\s+", " ", topic).strip(" .,-")
+        return topic.title() if topic else kind_noun(kind).title()
     match = re.search(r"\b(?:on|about|for|of|titled|called)\s+(.+)", text, re.IGNORECASE)
     topic = match.group(1) if match else text
     topic = re.sub(
@@ -113,10 +142,13 @@ class ArtifactPlanBuilder:
         generate: Optional[Callable[..., str]] = None,
         context: Optional[str] = None,
         style: str = "",
+        title: Optional[str] = None,
     ) -> ArtifactSpec:
-        title = derive_title(goal, kind)
-        data = self._prepare_content(goal, kind, title, generate, context)
-        spec = self._spec_from_data(kind, title, data)
+        # `title` lets a revision keep the original clean title instead of
+        # re-deriving it from a goal that now carries revision instructions.
+        resolved_title = title or derive_title(goal, kind)
+        data = self._prepare_content(goal, kind, resolved_title, generate, context)
+        spec = self._spec_from_data(kind, resolved_title, data)
         spec.style = style
         return spec
 
@@ -218,6 +250,10 @@ class ArtifactPlanBuilder:
                 image_query = item.get("image_query")
                 image_query = str(image_query).strip() if image_query else None
                 notes = str(item.get("notes") or "").strip()
+                # If the model didn't supply an image subject, derive one from the
+                # slide title so visual slides still get a relevant image.
+                if not image_query:
+                    image_query = _image_query_from_title(stitle, title)
                 content.append(
                     Slide(
                         title=stitle, bullets=bullets[:6], layout="content",

@@ -69,11 +69,17 @@ class PptxArtifactGenerator:
             self._style_title(s.shapes.title, style.slide_title_size_pt, heading, style.title_font)
 
             # Optional image: inserted only if a real local path resolved, and
-            # only within the per-deck image budget. Record the resolved path back
-            # on the slide so real usage can be reported (never a fake claim).
-            image_path = slide.image_path or (
-                resolve_image(slide.image_query) if image_budget > 0 else None
-            )
+            # only within the per-deck image budget. Try the slide's image query
+            # first, then a concrete topic derived from its title — so a verbose
+            # or unmatched query still yields a relevant image. Record the
+            # resolved path back on the slide so real usage is reported honestly.
+            image_path = slide.image_path
+            if image_path is None and image_budget > 0:
+                image_path = resolve_image(slide.image_query)
+                if image_path is None:
+                    from app.artifacts.spec import _image_query_from_title
+
+                    image_path = resolve_image(_image_query_from_title(slide.title, spec.title))
             placed = False
             if image_path:
                 try:

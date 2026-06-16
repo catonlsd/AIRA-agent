@@ -109,16 +109,19 @@ class ArtifactService:
         context: Optional[str] = None,
         owner_token: str = "shared",
         preferences: Optional[dict] = None,
+        title: Optional[str] = None,
     ) -> tuple[PendingArtifact, str]:
         """Prepare content + delivery into a pending plan and a plan message.
 
         Theme resolution is preference-aware: a saved artifact-style preference
         applies as a default, but an explicit cue in the request ("make it dark /
         modern / executive") overrides it — the current turn always wins.
+        `title` keeps a clean title across a revision (it isn't re-derived from a
+        goal that now carries revision instructions).
         """
         theme = resolve_theme(kind, goal, (preferences or {}).get("artifact_style"))
         spec = self.builder.build(
-            goal, kind, generate=generate, context=context, style=theme.name
+            goal, kind, generate=generate, context=context, style=theme.name, title=title
         )
         filename = f"{slugify(spec.title)}{spec.extension}"
         target = self.delivery.resolve(goal, filename, owner_token)

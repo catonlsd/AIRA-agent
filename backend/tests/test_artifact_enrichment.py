@@ -154,6 +154,27 @@ def test_image_provider_returns_path_on_success(tmp_path):
     assert provider("clay soil") == str(png)
 
 
+def test_verbose_image_prompt_is_simplified_to_keywords():
+    from app.artifacts.image_providers import simplify_query
+
+    assert simplify_query("a silicon wafer with microelectronic components") == "silicon wafer microelectronic"
+    assert simplify_query("a diagram of n-type and p-type semiconductors").startswith("n-type")
+    assert simplify_query("a graph showing the increasing demand for chips") == "increasing demand chips"
+
+
+def test_provider_searches_with_the_simplified_query():
+    seen = {}
+
+    def _search(q):
+        seen["q"] = q
+        return "https://x/y.png"
+
+    OpenverseImageProvider(search=_search, download=lambda u: "/tmp/y.png")(
+        "a close-up photo of a silicon wafer in a lab"
+    )
+    assert seen["q"] == "close-up silicon wafer"  # short, concrete keywords
+
+
 def test_image_provider_caches_per_query():
     calls = {"n": 0}
 

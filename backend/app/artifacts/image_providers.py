@@ -22,12 +22,34 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import urllib.parse
 import urllib.request
 from typing import Callable, Optional
 
 from app.core.config import settings
+
+# Models love verbose image prompts ("a silicon wafer with microelectronic
+# components"); image search wants 2-3 concrete keywords. Trim filler and keep
+# the salient terms so the query actually matches stock/CC libraries.
+_QUERY_FILLER = re.compile(
+    r"^(a|an|the)\s+|\b(diagram|photo|photograph|image|picture|illustration|graph|chart|map|drawing|render|rendering|close[- ]?up)\s+(of|showing)\s+|\bshowing\s+",
+    re.IGNORECASE,
+)
+_QUERY_STOP = {
+    "with", "and", "of", "in", "for", "to", "on", "at", "as", "by", "from",
+    "a", "an", "the", "various", "some", "its", "their", "between", "into",
+    "that", "this", "these", "those", "where", "while",
+}
+
+
+def simplify_query(query: str) -> str:
+    """Reduce a verbose image prompt to a few concrete search keywords."""
+    text = (query or "").strip().lower()
+    text = _QUERY_FILLER.sub("", text)
+    words = [w for w in re.findall(r"[a-z0-9][a-z0-9\-]+", text) if w not in _QUERY_STOP]
+    return " ".join(words[:3])
 
 _OPENVERSE_API = "https://api.openverse.org/v1/images/"
 _USER_AGENT = "AIRA-X/1.0 (artifact image sourcing)"
@@ -53,36 +75,48 @@ class OpenverseImageProvider:
     def __call__(self, query: str) -> Optional[str]:
         if not query:
             return None
-        if query in self._cache:
-            return self._cache[query]
+        key = simplify_query(query) or query.strip().lower()
+        if key in self._cache:
+            return self._cache[key]
         path: Optional[str] = None
         try:
-            url = self._search(query)
-            if url:
+            result = self._search(key)
+            # `_search` may return a single URL (test injection) or a ranked list
+            # of candidates. Try them in order — Openverse thumbnails sometimes
+            # 424 (dead upstream), so the next candidate keeps the slide visual.
+            candidates = [result] if isinstance(result, str) else list(result or [])
+            for url in candidates[:6]:
+                if not url:
+                    continue
                 path = self._download(url)
+                if path:
+                    break
         except Exception:
             path = None  # any failure -> text-only, never break generation
-        self._cache[query] = path
+        self._cache[key] = path
         return path
 
     # ── default network implementations (injectable for tests) ───────────────
 
-    def _default_search(self, query: str) -> Optional[str]:
+    def _default_search(self, query: str) -> list[str]:
         params = urllib.parse.urlencode(
-            {"q": query, "page_size": 3, "license_type": "commercial", "mature": "false"}
+            {"q": query, "page_size": 5, "license_type": "commercial", "mature": "false"}
         )
         request = urllib.request.Request(
             f"{_OPENVERSE_API}?{params}", headers={"User-Agent": _USER_AGENT}
         )
         with urllib.request.urlopen(request, timeout=self._timeout) as response:
             data = json.loads(response.read().decode("utf-8", "ignore"))
+        urls: list[str] = []
         for item in data.get("results", []) or []:
-            # Prefer the Openverse-hosted thumbnail (reliable + slide-sized).
+            # Prefer the Openverse-hosted thumbnail (slide-sized), then the
+            # original — collected across several results so one dead link
+            # doesn't cost us the image.
             for key in ("thumbnail", "url"):
                 candidate = item.get(key)
                 if isinstance(candidate, str) and candidate.startswith("http"):
-                    return candidate
-        return None
+                    urls.append(candidate)
+        return urls
 
     def _default_download(self, url: str) -> Optional[str]:
         request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
