@@ -18,6 +18,7 @@ from typing import Protocol
 from app.artifacts.images import resolve_image
 from app.artifacts.spec import ArtifactSpec
 from app.artifacts.styles import ArtifactStyle, get_style
+from app.core.config import settings
 
 
 class ArtifactGenerator(Protocol):
@@ -39,6 +40,7 @@ class PptxArtifactGenerator:
         heading = RGBColor(*style.heading_rgb)
         body_color = RGBColor(*style.body_rgb)
         subtitle_color = RGBColor(*style.subtitle_rgb)
+        image_budget = max(0, int(settings.max_artifact_images))
 
         for slide in spec.slides:
             layout = slide.layout
@@ -66,14 +68,18 @@ class PptxArtifactGenerator:
             s.shapes.title.text = slide.title
             self._style_title(s.shapes.title, style.slide_title_size_pt, heading, style.title_font)
 
-            # Optional image: inserted only if a real local path resolved. Record
-            # the resolved path back on the slide so usage can be reported.
-            image_path = slide.image_path or resolve_image(slide.image_query)
+            # Optional image: inserted only if a real local path resolved, and
+            # only within the per-deck image budget. Record the resolved path back
+            # on the slide so real usage can be reported (never a fake claim).
+            image_path = slide.image_path or (
+                resolve_image(slide.image_query) if image_budget > 0 else None
+            )
             placed = False
             if image_path:
                 try:
                     s.shapes.add_picture(image_path, Inches(6.6), Inches(1.8), width=Inches(3.0))
                     placed = True
+                    image_budget -= 1
                 except Exception:
                     placed = False  # never let a bad image break the slide
             slide.image_path = image_path if placed else None
@@ -93,6 +99,13 @@ class PptxArtifactGenerator:
                         run.font.color.rgb = body_color
                     except Exception:
                         pass
+
+            # Speaker notes — presenter detail that makes the deck usable.
+            if slide.notes:
+                try:
+                    s.notes_slide.notes_text_frame.text = slide.notes
+                except Exception:
+                    pass  # notes are best-effort; never break the deck
 
         path.parent.mkdir(parents=True, exist_ok=True)
         prs.save(str(path))

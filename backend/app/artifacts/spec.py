@@ -34,6 +34,7 @@ class Slide:
     title: str
     bullets: list[str] = field(default_factory=list)
     layout: str = "content"  # title | agenda | section | content | summary
+    notes: str = ""                 # speaker notes (presenter detail)
     image_query: str | None = None  # what an image, if any, should depict
     image_path: str | None = None   # resolved local image path (else text-only)
 
@@ -134,34 +135,44 @@ class ArtifactPlanBuilder:
         schema = {
             "pptx": (
                 '{"subtitle": "one-line subtitle", "slides": [{"title": "...", '
-                '"bullets": ["concise point", "..."], "image_query": "optional '
-                'subject for an image, or null"}]}  — 5-8 content slides. Keep '
-                "bullets short (max 6 per slide, under ~12 words each); no walls "
-                "of text."
+                '"bullets": ["full, informative point", "..."], "notes": '
+                '"2-3 sentences of speaker notes expanding the slide", '
+                '"image_query": "concrete visual subject for this slide, or null"}]}'
+                "  — 6-8 content slides. Each bullet must be a COMPLETE, specific "
+                "point of ~10-18 words (a real fact, figure, example, or "
+                "explanation) — NEVER one- or two-word fragments. 3-5 bullets per "
+                "slide. Always include substantive `notes`."
             ),
             "docx": (
                 '{"subtitle": "...", "sections": [{"heading": "...", '
-                '"paragraphs": ["..."], "bullets": ["optional key points"]}]}  — '
-                "start with an Executive Summary section, then 4-6 substantive "
-                "sections, ending with a Conclusion."
+                '"paragraphs": ["2-4 full, substantive sentences each"], '
+                '"bullets": ["optional supporting points"]}]}  — start with an '
+                "Executive Summary, then 4-6 substantive sections each with real "
+                "explanatory paragraphs (not one-liners), ending with a Conclusion."
             ),
             "xlsx": (
                 '{"sheet_name": "short tab name", "headers": ["...", "..."], '
                 '"rows": [["...", "..."]]}  — a clear, consistent column order and '
-                "useful sample rows."
+                "useful, realistic sample rows (aim for 8-15 rows)."
             ),
         }[kind]
-        grounding = f"\n\nUse this source material where relevant:\n{context}" if context else ""
+        grounding = (
+            "\n\nGround the content in this researched source material — use its "
+            f"facts, figures, and specifics:\n{context}"
+            if context
+            else ""
+        )
         try:
             raw = generate(
                 system=(
                     "You are AIRA-X's artifact content planner. Produce ONLY a JSON "
                     f"object for a professional {kind_noun(kind)} titled '{title}'. "
-                    f"Shape: {schema}. Be substantive, well-structured, and concise. "
-                    "No markdown fences, no prose outside the JSON."
+                    f"Shape: {schema}. Be substantive, specific, and informative — "
+                    "real content a professional would present, with concrete "
+                    "detail. No markdown fences, no prose outside the JSON."
                 ),
                 prompt=f"{goal}{grounding}",
-                temperature=0.4,
+                temperature=0.5,
             )
         except Exception:
             return None
@@ -203,8 +214,12 @@ class ArtifactPlanBuilder:
                 bullets = [str(b).strip() for b in (item.get("bullets") or []) if str(b).strip()]
                 image_query = item.get("image_query")
                 image_query = str(image_query).strip() if image_query else None
+                notes = str(item.get("notes") or "").strip()
                 content.append(
-                    Slide(title=stitle, bullets=bullets[:6], layout="content", image_query=image_query)
+                    Slide(
+                        title=stitle, bullets=bullets[:6], layout="content",
+                        notes=notes, image_query=image_query,
+                    )
                 )
         if not content:  # deterministic fallback content
             for heading in ("Overview", "Key Points", "Details"):

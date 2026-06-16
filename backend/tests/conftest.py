@@ -51,10 +51,17 @@ def _isolate_guided_flows():
     """Guided-flow state, usage quotas, and memory are durable / process-local —
     wipe them between tests so pending approvals, quota counters, and saved
     preferences never leak across tests or owners."""
+    from app.artifacts.images import set_image_provider
+    from app.core.config import settings
     from app.guided_flow_store import guided_flow_store
     from app.memory.preference_memory import preference_memory
     from app.memory.session_memory import session_memory
     from app.usage_limits import usage_limiter
+
+    # Keep tests hermetic: no live web grounding, no network image sourcing.
+    settings.artifact_research_grounding = False
+    settings.enable_artifact_images = False
+    set_image_provider(None)
 
     guided_flow_store.clear_all()
     usage_limiter.reset()
@@ -65,6 +72,7 @@ def _isolate_guided_flows():
     usage_limiter.reset()
     preference_memory.clear_all()
     session_memory.clear_all()
+    set_image_provider(None)
 
 
 @pytest_asyncio.fixture

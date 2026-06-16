@@ -44,6 +44,7 @@ from app.clarification import (
 )
 from app.context_builder import TurnContext
 from app.core.llm import LLMClient
+from app.core.config import settings
 from app.llm_answer_service import DirectAnswerService
 from app.memory import preference_policy
 from app.memory.preference_memory import preference_memory
@@ -667,6 +668,26 @@ class AssistantSupervisor:
                 doc = self._document_service().answer(goal, history=ctx.history, owner=ctx.owner)
                 if doc.get("meta", {}).get("has_evidence"):
                     context = doc.get("message") or doc.get("final_answer")
+            except Exception:
+                context = None
+
+        # No document grounding -> pull real substance from a bounded web-research
+        # pass so the artifact carries facts, figures, and specifics rather than
+        # thin stubs. Safe + optional: any failure falls back to ungrounded content.
+        if context is None and settings.artifact_research_grounding:
+            ctx.trace.event("stage", stage="collecting_sources")
+            try:
+                research = self.research.run(
+                    goal,
+                    history=ctx.history,
+                    preferences=ctx.preferences,
+                    want_web=True,
+                    want_documents=False,
+                    mode=WEB_RESEARCH_MODE,
+                )
+                grounded = (research.get("message") or research.get("final_answer") or "").strip()
+                if len(grounded) > 80:
+                    context = grounded
             except Exception:
                 context = None
 

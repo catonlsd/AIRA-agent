@@ -92,6 +92,18 @@ class Settings(BaseSettings):
     # faked as "validated". Turn on only where a bounded local Docker boot is safe.
     enable_docker_validation: bool = False
 
+    # ── Artifact enrichment (content depth + web grounding + images) ──
+    # Ground artifact content in a bounded web-research pass when there are no
+    # uploaded documents, so decks/reports carry real substance, not stubs.
+    artifact_research_grounding: bool = True
+    # Optional, safe image sourcing for artifacts. Off-by-default in tests (set
+    # via env) but on for the running app. Uses CC-licensed Openverse results,
+    # bounded and fully guarded — generation never depends on or fails for images.
+    enable_artifact_images: bool = True
+    artifact_image_provider: str = "openverse"   # openverse | none
+    max_artifact_images: int = 4
+    artifact_image_timeout_seconds: float = 5.0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

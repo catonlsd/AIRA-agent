@@ -34,6 +34,15 @@ logger = logging.getLogger("aira_x")
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    # Register the safe, optional artifact image provider (Openverse, guarded).
+    # Tests keep AIRA_ENABLE_ARTIFACT_IMAGES off, so this stays a no-op there.
+    try:
+        from app.artifacts.image_providers import build_default_provider
+        from app.artifacts.images import set_image_provider
+
+        set_image_provider(build_default_provider())
+    except Exception:
+        pass
     logger.info(
         "AIRA-X API started (auth=%s, rate_limit=%s/min)",
         "on" if settings.api_key else "off",

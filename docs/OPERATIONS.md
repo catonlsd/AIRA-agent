@@ -108,11 +108,22 @@ validation is unaffected.
 
 Theme resolution is preference-aware with current-turn override: an explicit cue
 in the request ("make it **dark / modern / executive**") wins, else the saved
-`artifact_style` preference applies, else the kind default. Images stay optional
-and safe — a deck only reports images when one was actually inserted
-(`image_count`), never a fake "rich visuals" claim. The artifact card surfaces
-the theme name, structural counts, image count (when > 0), size, and validation
-status — clean metadata, no internals.
+`artifact_style` preference applies, else the kind default.
+
+**Content depth**: artifact content is generated as substantive bullets (full,
+specific points — not 1-2 word fragments) plus speaker notes, and is **grounded
+in a bounded web-research pass** (`ARTIFACT_RESEARCH_GROUNDING`, default on) when
+there are no uploaded documents — so decks/reports carry real facts and figures.
+
+**Images** are optional and safe (`ENABLE_ARTIFACT_IMAGES`, default on;
+`MAX_ARTIFACT_IMAGES`, `ARTIFACT_IMAGE_TIMEOUT_SECONDS`). The provider
+(`app/artifacts/image_providers.py`, Openverse — CC-licensed, commercial filter)
+is registered at startup, bounded (short timeout, capped size, PNG/JPG/GIF only),
+per-query cached, and fully guarded: any failure falls back to text-only and
+generation never breaks. A deck only reports images when one was **actually
+inserted** (`image_count`), never a fake "rich visuals" claim. The artifact card
+surfaces the theme name, structural counts, image count (when > 0), size, and
+validation status — clean metadata, no internals.
 
 ## Guided-flow state (durable)
 
