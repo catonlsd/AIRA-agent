@@ -50,6 +50,7 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { getSessionId } from "@/lib/session";
+import { isWorkflowResult, type FinalLike } from "@/lib/turn-routing";
 import {
   describeRuntimeAction,
   presentArtifact,
@@ -2828,12 +2829,10 @@ export default function ChatPage() {
       const final = finalData as AssistantRunResponse & Record<string, unknown>;
       const mode = String((final as Record<string, unknown>).mode ?? "");
 
-      // Execution / approval turns render as a workflow card.
-      const isWorkflow =
-        mode === "execution" ||
-        mode === "research_then_execution" ||
-        (final as Record<string, unknown>).requires_approval === true ||
-        (final as Record<string, unknown>).status === "requires_approval";
+      // Only a real run (or a workflow-level approval gate) renders as a workflow
+      // card. Plan/clarification/artifact turns awaiting approval stay in the
+      // answer card, which carries their Approve/Reject controls.
+      const isWorkflow = isWorkflowResult(final as FinalLike);
 
       if (isWorkflow) {
         const run = assistantWorkflowToAiraXRun(final as unknown as Parameters<typeof assistantWorkflowToAiraXRun>[0]);
