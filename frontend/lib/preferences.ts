@@ -7,6 +7,19 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+// Self-contained bearer header (kept inline so this module stays dependency-free
+// for unit tests). Mirrors lib/auth's token key — account requests carry it so
+// the backend scopes preferences to the account when signed in.
+function currentAuthHeaders(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const token = window.localStorage.getItem("aira_auth_token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
 export type PreferenceOption = { value: string; label: string };
 
 export type PreferenceItem = {
@@ -64,6 +77,7 @@ export async function fetchPreferences(sessionId: string): Promise<PreferenceIte
   return asPreferences(
     await fetch(`${API_URL}/preferences?session_id=${encodeURIComponent(sessionId)}`, {
       cache: "no-store",
+      headers: currentAuthHeaders(),
     })
   );
 }
@@ -76,7 +90,7 @@ export async function savePreference(
   return asPreferences(
     await fetch(`${API_URL}/preferences`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...currentAuthHeaders() },
       body: JSON.stringify({ session_id: sessionId, key, value }),
     })
   );
@@ -89,7 +103,7 @@ export async function removePreference(
   return asPreferences(
     await fetch(
       `${API_URL}/preferences/${encodeURIComponent(key)}?session_id=${encodeURIComponent(sessionId)}`,
-      { method: "DELETE" }
+      { method: "DELETE", headers: currentAuthHeaders() }
     )
   );
 }
@@ -98,6 +112,7 @@ export async function clearAllPreferences(sessionId: string): Promise<Preference
   return asPreferences(
     await fetch(`${API_URL}/preferences?session_id=${encodeURIComponent(sessionId)}`, {
       method: "DELETE",
+      headers: currentAuthHeaders(),
     })
   );
 }

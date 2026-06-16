@@ -15,8 +15,11 @@ and `Principal` — not rewriting the call sites that ask `principal.owner_key`.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
+import json
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -29,13 +32,33 @@ _OWNER_SECRET = (settings.api_key or "aira-x-local-owner-secret").encode("utf-8"
 ANONYMOUS_OWNER = "anonymous"
 
 
+def _auth_secret() -> bytes:
+    return (settings.auth_secret or settings.api_key or "aira-x-local-auth-secret").encode("utf-8")
+
+
 @dataclass(frozen=True)
 class Principal:
-    """The current actor and its ownership scope."""
+    """The current actor and its ownership scope.
 
-    kind: str           # "api_key" | "session" | "anonymous"
-    subject: str        # the raw identifier (key fingerprint or session id)
+    Identity has three layers, kept distinct on purpose:
+      * an authenticated **account** (durable, cross-device) — kind "account";
+      * a **session** (transport/local continuity) — kind "session";
+      * a service **api_key** gate or **anonymous** — neither a durable identity.
+
+    `owner_key` is the durable scope used to tag resources. An account owns
+    "account:<id>"; a session owns "session:<id>". This makes the session-vs-
+    account distinction explicit and keeps the door open for a future
+    `workspace:<id>` scope without changing the call sites.
+    """
+
+    kind: str           # "account" | "api_key" | "session" | "anonymous"
+    subject: str        # account id | key fingerprint | session id
     authenticated: bool
+    account_id: Optional[str] = None  # set only for authenticated accounts
+
+    @property
+    def is_account(self) -> bool:
+        return self.kind == "account" and bool(self.account_id)
 
     @property
     def owner_key(self) -> str:
@@ -77,10 +100,93 @@ def resolve_principal(
 
 
 def principal_from_request(request, *, session_id: Optional[str] = None) -> Principal:
-    """FastAPI-friendly resolver from a Starlette/FastAPI request."""
+    """FastAPI-friendly resolver from a Starlette/FastAPI request.
+
+    Precedence: a valid account token (durable identity) wins; then the service
+    api-key gate; then the session; then anonymous.
+    """
+    account = resolve_account_principal(request)
+    if account is not None:
+        return account
     api_key = None
     try:
         api_key = request.headers.get(settings.api_key_header)
     except Exception:
         api_key = None
     return resolve_principal(api_key=api_key, session_id=session_id)
+
+
+# ── Account session tokens (stateless, HMAC-signed) ──────────────────────────
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _b64url_decode(data: str) -> bytes:
+    pad = "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(data + pad)
+
+
+def make_account_token(account_id: str, *, ttl_seconds: Optional[int] = None) -> str:
+    """Sign a compact, expiring token that resolves to an account.
+
+    Stateless and dependency-free: `payload.signature`, HMAC-SHA256 over the
+    payload. No DB round-trip to verify; rotation/expiry is handled by `exp`.
+    """
+    ttl = ttl_seconds if ttl_seconds is not None else settings.auth_token_ttl_seconds
+    payload = {"sub": account_id, "iat": int(time.time()), "exp": int(time.time()) + int(ttl)}
+    body = _b64url(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+    sig = _b64url(hmac.new(_auth_secret(), body.encode("ascii"), hashlib.sha256).digest())
+    return f"{body}.{sig}"
+
+
+def verify_account_token(token: Optional[str]) -> Optional[str]:
+    """Return the account id for a valid, unexpired token, else None."""
+    if not token or "." not in token:
+        return None
+    body, _, sig = token.partition(".")
+    expected = _b64url(hmac.new(_auth_secret(), body.encode("ascii"), hashlib.sha256).digest())
+    if not hmac.compare_digest(sig, expected):
+        return None
+    try:
+        payload = json.loads(_b64url_decode(body))
+    except (ValueError, json.JSONDecodeError):
+        return None
+    if int(payload.get("exp", 0)) < int(time.time()):
+        return None
+    sub = payload.get("sub")
+    return sub if isinstance(sub, str) and sub else None
+
+
+def _bearer_token(request) -> Optional[str]:
+    try:
+        header = request.headers.get("Authorization") or ""
+    except Exception:
+        return None
+    if header.lower().startswith("bearer "):
+        return header[7:].strip()
+    return None
+
+
+def resolve_account_principal(request) -> Optional[Principal]:
+    """Resolve an authenticated account from the request's bearer token, or None."""
+    account_id = verify_account_token(_bearer_token(request))
+    if not account_id:
+        return None
+    return Principal(kind="account", subject=account_id, authenticated=True, account_id=account_id)
+
+
+def resolve_owner(request, session_id: Optional[str] = None) -> Optional[str]:
+    """The durable owner scope for a request.
+
+    Account identity is primary: when a valid account token is present the owner
+    is `account:<id>` (durable, cross-device). Otherwise the session is the owner
+    (unchanged local/anonymous behaviour) — session stays a real, honest scope,
+    just secondary to an account.
+    """
+    if request is not None:
+        account = resolve_account_principal(request)
+        if account is not None:
+            return account.owner_key
+    return (session_id or "").strip() or None

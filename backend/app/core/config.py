@@ -63,8 +63,17 @@ class Settings(BaseSettings):
     # unset for local development (auth disabled).
     api_key: str | None = None
     api_key_header: str = "X-API-Key"
-    # Paths that never require auth or rate limiting.
-    public_paths: list[str] = ["/", "/health", "/ready", "/docs", "/redoc", "/openapi.json"]
+    # Account auth: signs the stateless session token that resolves a request to
+    # a durable account principal. Set a strong secret in production; a stable
+    # local default keeps dev working. TTL bounds how long a login stays valid.
+    auth_secret: str | None = None
+    auth_token_ttl_seconds: int = 60 * 60 * 24 * 14  # 14 days
+    # Paths that never require auth or rate limiting. Account auth endpoints are
+    # public (you can't send an account token before you have one).
+    public_paths: list[str] = [
+        "/", "/health", "/ready", "/docs", "/redoc", "/openapi.json",
+        "/auth/register", "/auth/login",
+    ]
 
     rate_limit_enabled: bool = True
     rate_limit_per_minute: int = 60

@@ -1,7 +1,7 @@
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -372,9 +372,16 @@ def upload_documents(
     files: list[UploadFile] = File(...),
     session_id: str | None = Form(default=None),
     db: Session = Depends(get_db),
+    http_request: Request = None,
 ) -> dict:
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded.")
+
+    # Account-first ownership: ingested chunks are scoped to the authenticated
+    # account when present, otherwise the session (matches the chat's ctx.owner).
+    from app.auth import resolve_owner
+
+    owner = resolve_owner(http_request, session_id)
 
     uploaded = []
     vector_store = VectorStore()
@@ -455,14 +462,14 @@ def upload_documents(
             try:
                 from app.services.document_qa_service import get_document_qa_service
 
-                # Scope ingested chunks to the uploader so document-first
-                # retrieval stays within the owner (matches the chat's ctx.owner,
-                # which defaults to the session id).
+                # Scope ingested chunks to the resolved owner (account when
+                # authenticated, else session) so document-first retrieval stays
+                # within the same scope the chat turn uses.
                 get_document_qa_service().ingest(
                     document_id=document.id,
                     document_name=document.original_filename,
                     pages=pages,
-                    owner=session_id or None,
+                    owner=owner,
                 )
             except Exception:
                 pass

@@ -59,6 +59,27 @@ class UserPreference(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
 
+class Account(Base):
+    """A durable human account — the authenticated identity that owns resources.
+
+    The product is moving from session-scoped ownership ("this browser owns the
+    data") toward account-scoped ownership ("this account owns the data, across
+    devices"). `workspace_id` is reserved now so team/workspace ownership can be
+    added later without a migration or a rewrite of the owner-scoped call sites.
+    """
+
+    __tablename__ = "accounts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Reserved for future team/workspace ownership (NULL = personal scope today).
+    workspace_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
 class MemoryEntry(Base):
     """Owner-scoped, durable memory (preference memory).
 

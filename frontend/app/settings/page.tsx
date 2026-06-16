@@ -14,17 +14,26 @@ import {
   LockKeyhole,
   Palette,
   RefreshCw,
+  LogOut,
   Server,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Trash2,
+  UserCircle,
   Wrench,
   XCircle,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 import { getSessionId } from "@/lib/session";
+import {
+  fetchMe,
+  login,
+  logout,
+  register,
+  type Account,
+} from "@/lib/auth";
 import {
   clearAllPreferences,
   fetchPreferences,
@@ -337,6 +346,133 @@ function RuntimeHealthCard() {
         <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-4 text-sm leading-6 text-[var(--danger)]">
           <strong>Runtime issue:</strong> {error}
         </div>
+      )}
+    </section>
+  );
+}
+
+function AccountCard() {
+  const [account, setAccount] = useState<Account | null>(null);
+  const [ready, setReady] = useState(false);
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchMe().then((a) => {
+      setAccount(a);
+      setReady(true);
+    });
+  }, []);
+
+  const submit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setBusy(true);
+      setError("");
+      try {
+        const res = mode === "login" ? await login(email, password) : await register(email, password, name);
+        setAccount(res.account);
+        setPassword("");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Something went wrong.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [mode, email, password, name]
+  );
+
+  const onSignOut = useCallback(() => {
+    logout();
+    setAccount(null);
+    setEmail("");
+  }, []);
+
+  return (
+    <section className="sarvam-card rounded-[1.5rem] p-5">
+      <SectionHeading
+        icon={<UserCircle className="h-5 w-5" />}
+        title="Account"
+        description="Sign in so your preferences, documents, and generated files follow you across devices. Without an account, AIRA-X keeps everything to this browser session."
+      />
+
+      {!ready ? (
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4 text-sm text-[var(--text-muted)]">
+          Checking your session…
+        </div>
+      ) : account ? (
+        <div className="flex flex-col gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--accent-soft)] text-[var(--accent)] font-black">
+              {(account.display_name || account.email).slice(0, 1).toUpperCase()}
+            </div>
+            <div>
+              <p className="text-sm font-black text-[var(--text-strong)]">{account.display_name}</p>
+              <p className="text-xs text-[var(--text-muted)]">{account.email}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onSignOut}
+            className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Sign out
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={submit} className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+          <div className="mb-3 flex gap-2">
+            {(["login", "register"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => { setMode(m); setError(""); }}
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-xs font-black transition",
+                  mode === m
+                    ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
+                    : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:text-[var(--text-strong)]"
+                )}
+              >
+                {m === "login" ? "Sign in" : "Create account"}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid gap-2.5">
+            {mode === "register" && (
+              <input
+                type="text" value={name} onChange={(e) => setName(e.target.value)}
+                placeholder="Name (optional)" autoComplete="name"
+                className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--text-strong)] outline-none focus:border-[var(--accent)]"
+              />
+            )}
+            <input
+              type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com" autoComplete="email"
+              className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--text-strong)] outline-none focus:border-[var(--accent)]"
+            />
+            <input
+              type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password (min 8 characters)" autoComplete={mode === "login" ? "current-password" : "new-password"}
+              className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--text-strong)] outline-none focus:border-[var(--accent)]"
+            />
+          </div>
+
+          {error && <p className="mt-2 text-xs font-semibold text-[var(--danger)]">{error}</p>}
+
+          <button
+            type="submit" disabled={busy || !email || password.length < 1}
+            className="mt-3 inline-flex items-center gap-2 rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-4 py-2 text-xs font-black text-[var(--accent)] transition hover:brightness-105 disabled:opacity-60"
+          >
+            {busy ? "Working…" : mode === "login" ? "Sign in" : "Create account"}
+          </button>
+        </form>
       )}
     </section>
   );
@@ -759,6 +895,8 @@ export default function SettingsPage() {
           </div>
         </div>
       </section>
+
+      <AccountCard />
 
       <PreferencesCard />
 

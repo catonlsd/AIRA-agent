@@ -4,7 +4,7 @@ from uuid import uuid4
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -14,6 +14,7 @@ from app.turn_classifier import (
     WEB_RESEARCH_MODE,
 )
 from app.assistant_supervisor import AssistantSupervisor
+from app.auth import resolve_owner
 from app.context_builder import build_turn_context
 from app.services.trace_service import TraceService
 
@@ -756,12 +757,13 @@ def _build_web_research_placeholder_response(goal: str, classification) -> dict[
 
 
 @router.post("/run")
-async def run_aira_x(request: AiraXRunRequest):
+async def run_aira_x(request: AiraXRunRequest, http_request: Request = None):
     """Thin adapter: build context, hand the turn to the supervisor, return one
     normalized response. Routing/answering logic lives in the supervisor."""
     ctx = build_turn_context(
         request.goal,
         session_id=request.session_id,
+        owner=resolve_owner(http_request, request.session_id),
         history=request.history,
         uploaded_file_names=request.uploaded_file_names,
     )
@@ -783,7 +785,7 @@ def _format_sse(event: dict[str, Any]) -> str:
 
 
 @router.post("/stream")
-async def stream_aira_x(request: AiraXRunRequest):
+async def stream_aira_x(request: AiraXRunRequest, http_request: Request = None):
     """Stream a turn as Server-Sent Events: trace, token, source, final, error.
 
     Mirrors /run but emits incremental events. /run remains the non-streaming
@@ -791,6 +793,7 @@ async def stream_aira_x(request: AiraXRunRequest):
     ctx = build_turn_context(
         request.goal,
         session_id=request.session_id,
+        owner=resolve_owner(http_request, request.session_id),
         history=request.history,
         uploaded_file_names=request.uploaded_file_names,
     )

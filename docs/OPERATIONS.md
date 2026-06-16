@@ -185,9 +185,30 @@ vector store (Chroma stays behind its adapter):
   "… — partial coverage", "appear inconsistent on this point"). Raw scores,
   chunk ids, and collection internals never reach the UI; they live in meta.
 
-Today the principal is session-derived (no login yet); the abstraction is built
-so real accounts / OAuth / team workspaces extend `resolve_principal` and
-`Principal` without changing the call sites.
+## Accounts & identity (account-first ownership)
+
+AIRA-X has a real account model on top of the principal abstraction:
+
+- **Accounts** (`accounts` table, `app/accounts.py`): email + bcrypt password +
+  display name, with a reserved `workspace_id` for future team scope. Endpoints:
+  `POST /auth/register`, `POST /auth/login`, `GET /auth/me`, `POST /auth/logout`.
+- **Stateless tokens** (`app/auth.py`): login returns an HMAC-signed, expiring
+  token (`AUTH_SECRET`, `AUTH_TOKEN_TTL_SECONDS`). A request carrying
+  `Authorization: Bearer <token>` resolves to an **account principal**, owner
+  scope `account:<id>` — durable and cross-device.
+- **Account-first, session-secondary**: `resolve_owner(request, session_id)`
+  returns the account owner when authenticated, otherwise the session id
+  (unchanged anonymous/local behaviour). Turns, preferences, uploaded documents,
+  guided flows, and artifacts all use this owner, so signed-in data follows the
+  user across devices while anonymous use stays session-scoped — an explicit,
+  honest distinction. The artifact download route additionally enforces the
+  account's `owner_token`.
+
+The frontend Settings page has a minimal **Account** card (sign in / create
+account / sign out); when signed in, chat, uploads, and preferences send the
+bearer token automatically. The `Principal` / `resolve_owner` seam keeps real
+team **workspaces** (`workspace:<id>`), roles, and admin scopes a clean
+extension away — no call-site rewrites.
 
 ## Memory model (session + preference)
 

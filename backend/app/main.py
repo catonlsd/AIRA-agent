@@ -22,6 +22,7 @@ from app.middleware import (
 )
 from app.routes.aira_x import router as aira_x_router
 from app.routes.assistant import router as assistant_router
+from app.routes.auth import router as auth_router
 from app.routes.preferences import router as preferences_router
 
 logging.basicConfig(
@@ -62,6 +63,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.include_router(auth_router)
 app.include_router(aira_x_router)
 app.include_router(assistant_router)
 app.include_router(preferences_router)
@@ -116,14 +118,19 @@ def download_artifact(owner: str, filename: str, request: Request):
     from fastapi import HTTPException
     from fastapi.responses import FileResponse
 
-    from app.auth import principal_from_request
+    from app.auth import principal_from_request, resolve_account_principal
 
     # Reject any path-segment tampering up front.
     if "/" in owner or "\\" in owner or ".." in owner or "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(status_code=404, detail="Artifact not found.")
 
-    # When auth is on, an authenticated caller may only reach their own scope.
-    if settings.api_key:
+    # An authenticated account may only reach its own scope (enforced regardless
+    # of the api-key gate). The api-key-authenticated case is also enforced.
+    account = resolve_account_principal(request)
+    if account is not None and account.owner_token != owner:
+        logger.info('{"event": "artifact_access_denied", "owner": "%s"}', owner)
+        raise HTTPException(status_code=404, detail="Artifact not found.")
+    if settings.api_key and account is None:
         principal = principal_from_request(request)
         if principal.authenticated and principal.owner_token != owner:
             logger.info('{"event": "artifact_access_denied", "owner": "%s"}', owner)
