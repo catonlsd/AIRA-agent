@@ -20,6 +20,27 @@ test("an artifact plan awaiting approval is NOT a workflow card", () => {
   );
 });
 
+test("a COMPLETED artifact turn is NOT a workflow card (renders the download card)", () => {
+  // Regression: the generated deck must render the clickable artifact card, not a
+  // workflow shell that dumps the raw download path as text.
+  assert.equal(
+    isWorkflowResult({
+      mode: "research_then_execution",
+      status: "completed",
+      decision: "artifact_generated",
+      meta: { has_artifacts: true, artifact: { type: "pptx", download_url: "/artifacts/x/y.pptx" } },
+    }),
+    false
+  );
+});
+
+test("a failed artifact turn is NOT a workflow card", () => {
+  assert.equal(
+    isWorkflowResult({ mode: "research_then_execution", status: "failed", decision: "artifact_generation_failed" }),
+    false
+  );
+});
+
 test("a code plan awaiting approval is NOT a workflow card", () => {
   assert.equal(
     isWorkflowResult({ mode: "execution_planning", status: "plan_ready", meta: { approval_required: true } }),

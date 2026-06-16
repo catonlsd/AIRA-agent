@@ -178,7 +178,8 @@ async def test_supervisor_plans_then_generates_on_approval(monkeypatch):
 
     assert Path(done["artifacts"][0]["path"]).exists()
     assert done["meta"]["artifact"]["validation"]["valid"] is True
-    assert "Download:" in done["message"]
+    assert "ready below" in done["message"]  # clickable card carries the download
+    assert done["meta"]["artifact"]["download_url"]  # url still in metadata
     assert artifact_store.get(_SESSION) is None  # consumed
 
 

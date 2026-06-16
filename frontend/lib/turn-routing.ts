@@ -12,6 +12,7 @@
 export type FinalLike = {
   mode?: unknown;
   status?: unknown;
+  decision?: unknown;
   requires_approval?: unknown;
   meta?: Record<string, unknown> | null;
 };
@@ -20,15 +21,21 @@ export type FinalLike = {
 export function isWorkflowResult(final: FinalLike): boolean {
   const mode = String(final?.mode ?? "");
   const status = String(final?.status ?? "");
+  const decision = String(final?.decision ?? "");
   const meta = (final?.meta ?? {}) as Record<string, unknown>;
 
-  // Plan / clarification / artifact turns awaiting approval are answer-card turns.
-  const isAwaitingPlan =
+  // Plan / clarification turns awaiting approval, and ANY artifact turn (pending,
+  // generated, rejected, or failed) belong in the answer card — that's where the
+  // plan-approval controls and the clickable artifact card live.
+  const isAnswerCardTurn =
     status === "plan_ready" ||
     status === "awaiting_action_approval" ||
     mode === "clarification" ||
-    Boolean(meta.artifact_pending);
-  if (isAwaitingPlan) return false;
+    Boolean(meta.artifact_pending) ||
+    Boolean(meta.artifact) ||
+    Boolean(meta.has_artifacts) ||
+    decision.startsWith("artifact_");
+  if (isAnswerCardTurn) return false;
 
   // A genuine execution run, or a workflow-level approval gate (git preflight).
   return (

@@ -790,11 +790,13 @@ class AssistantSupervisor:
         if artifact.get("location") == "external" and artifact.get("requested_path"):
             note = (
                 f" You asked to save it to {artifact['requested_path']}; for safety "
-                "it's in the workspace download area — download it from there."
+                "it's in the workspace download area."
             )
+        # The clickable artifact card carries the download — keep the prose clean
+        # (no raw URL). The download_url stays in the artifact metadata.
         return (
             f"Created “{artifact['title']}” ({kind.upper()}, {extent}) and validated "
-            f"it opens correctly.{note} Download: {artifact['download_url']}"
+            f"it opens correctly.{note} Your download is ready below."
         )
 
     def _artifact_response(

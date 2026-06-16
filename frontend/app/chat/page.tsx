@@ -31,11 +31,7 @@ import {
 } from "lucide-react";
 import { AssistantAnswerContent } from "@/components/assistant-answer";
 import { CitationList } from "@/components/citation-list";
-import {
-  TechnicalDetailRow,
-  TechnicalDetailsGrid,
-  TechnicalDetailsPanel,
-} from "@/components/technical-details";
+import { TechnicalDetailsPanel } from "@/components/technical-details";
 import {
   type AssistantRunResponse,
   type ChatResponse,
@@ -614,23 +610,6 @@ function CleanupActions({ memory }: { memory: any }) {
   );
 }
 
-// ─── Technical Detail Panels ──────────────────────────────────────────────────
-
-function collectWorkflowTechnicalRows(response: AiraXResponse) {
-  const rows: Array<{ label: string; value: string; mono?: boolean }> = [
-    { label: "Status", value: response.status || "unknown" },
-    { label: "Decision", value: response.decision || "unknown" },
-  ];
-  if (response.run_id) rows.push({ label: "Run ID", value: response.run_id, mono: true });
-
-  const agents = [...new Set((response.plan || []).map((s) => s.assigned_agent).filter(Boolean))];
-  if (agents.length > 0) rows.push({ label: "Agents", value: agents.join(", ") });
-
-  const toolActions = [...new Set((response.plan || []).filter((s) => s.tool_name && s.tool_action).map((s) => `${s.tool_name}:${s.tool_action}`))];
-  if (toolActions.length > 0) rows.push({ label: "Tool actions", value: toolActions.join(" · "), mono: true });
-
-  return rows;
-}
 
 // ─── Turn Card ────────────────────────────────────────────────────────────────
 
@@ -1273,79 +1252,8 @@ function WorkflowResultCard({ response, approvalLoading, rejectionLoading, onApp
         </div>
       )}
 
-      {/* Technical rows */}
-      <TechnicalDetailsPanel className="mt-4">
-        <TechnicalDetailsGrid>
-          {collectWorkflowTechnicalRows(response).map((row) => (
-            <TechnicalDetailRow key={row.label} label={row.label} value={row.value} mono={row.mono} />
-          ))}
-        </TechnicalDetailsGrid>
-      </TechnicalDetailsPanel>
-
       <CleanupActions memory={response.memory} />
     </div>
-  );
-}
-
-// ─── Execution Plan Card ──────────────────────────────────────────────────────
-
-function ExecutionPlanCard({ steps }: { steps: AiraXStep[] }) {
-  return (
-    <TechnicalDetailsPanel
-      className="aira-card mt-2 p-5"
-      summary={`Execution plan · ${steps.length} step${steps.length === 1 ? "" : "s"}`}
-    >
-      <PanelHeader
-        icon={<GitBranch className="h-4 w-4" />}
-        title="Execution Plan"
-        description="Step-by-step trace for this workflow run."
-      />
-      <div className="space-y-2.5">
-        {steps.map((step) => (
-          <div
-            key={step.id}
-            className={cn(
-              "aira-step-card",
-              (step.status === "failed" || step.status === "blocked" || step.status === "rejected")
-                ? "aira-step-card--failed"
-                : ""
-            )}
-          >
-            <div className="flex items-start justify-between gap-3 mb-2">
-              <p className="text-sm font-semibold text-[var(--text-strong)]">
-                <span className="text-[var(--accent)] mr-1.5">{step.id}.</span>{step.title}
-              </p>
-              <RunBadge className={getWorkflowStatusClass(step.status)}>{step.status}</RunBadge>
-            </div>
-            <p className="text-xs text-[var(--text-muted)] mb-3">{step.description}</p>
-
-            {step.result ? (
-              <div className="aira-step-result">
-                <AssistantAnswerContent answer={step.result} />
-              </div>
-            ) : (
-              <p className="text-xs text-[var(--text-subtle)]">No result yet</p>
-            )}
-
-            {(step.assigned_agent || step.tool_name || step.tool_action) && (
-              <TechnicalDetailsPanel className="mt-3" summary="Step details">
-                <TechnicalDetailsGrid>
-                  {step.assigned_agent && <TechnicalDetailRow label="Agent" value={step.assigned_agent} />}
-                  {step.tool_name && <TechnicalDetailRow label="Tool" value={step.tool_name} />}
-                  {step.tool_action && <TechnicalDetailRow label="Action" value={step.tool_action} mono />}
-                </TechnicalDetailsGrid>
-              </TechnicalDetailsPanel>
-            )}
-
-            {step.error && (
-              <div className="mt-2.5 rounded-lg border border-[color-mix(in_srgb,var(--danger)_28%,transparent)] bg-[var(--danger-soft)] px-3 py-2 text-xs text-[var(--danger)]">
-                <strong>Error:</strong> {step.error}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </TechnicalDetailsPanel>
   );
 }
 
@@ -3067,16 +2975,13 @@ export default function ChatPage() {
 
               {/* Workflow result */}
               {airaXResponse && (
-                <>
-                  <WorkflowResultCard
-                    response={airaXResponse}
-                    approvalLoading={approvalLoading}
-                    rejectionLoading={rejectionLoading}
-                    onApprove={handleApproveAiraX}
-                    onReject={handleRejectAiraX}
-                  />
-                  <ExecutionPlanCard steps={airaXResponse.plan} />
-                </>
+                <WorkflowResultCard
+                  response={airaXResponse}
+                  approvalLoading={approvalLoading}
+                  rejectionLoading={rejectionLoading}
+                  onApprove={handleApproveAiraX}
+                  onReject={handleRejectAiraX}
+                />
               )}
 
               <div ref={threadBottomRef} />
