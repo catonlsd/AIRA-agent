@@ -23,10 +23,11 @@ def _account_and_workspace():
     return acct, ws
 
 
-def _workspace_scope(account_id, workspace_id, name="Team"):
+def _workspace_scope(account_id, workspace_id, name="Team", role="owner"):
+    # The account created the workspace, so it acts as owner here.
     return ResourceScope(
         kind=SCOPE_WORKSPACE, subject=workspace_id,
-        account_id=account_id, workspace_id=workspace_id, label=name,
+        account_id=account_id, workspace_id=workspace_id, label=name, role=role,
     )
 
 

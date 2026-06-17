@@ -61,6 +61,12 @@ class Principal:
         return self.kind == "account" and bool(self.account_id)
 
     @property
+    def is_operator(self) -> bool:
+        """A service/operator principal (the configured API key), distinct from a
+        normal account or workspace user. Operator-only paths require this."""
+        return self.kind == "api_key" and self.authenticated
+
+    @property
     def owner_key(self) -> str:
         """Stable ownership scope for this principal (used to tag resources)."""
         return f"{self.kind}:{self.subject}" if self.subject else ANONYMOUS_OWNER
@@ -177,6 +183,21 @@ def resolve_account_principal(request) -> Optional[Principal]:
     return Principal(kind="account", subject=account_id, authenticated=True, account_id=account_id)
 
 
+def resolve_operator_principal(request) -> Optional[Principal]:
+    """Resolve a service/operator principal from a valid configured API key, else
+    None. The operator is intentionally separate from account/workspace users."""
+    if not settings.api_key:
+        return None
+    try:
+        api_key = request.headers.get(settings.api_key_header)
+    except Exception:
+        api_key = None
+    if api_key and hmac.compare_digest(api_key, settings.api_key):
+        principal = resolve_principal(api_key=api_key)
+        return principal if principal.is_operator else None
+    return None
+
+
 # ── Resource scope (session / account / workspace) ───────────────────────────
 
 WORKSPACE_HEADER = "X-Workspace-Id"
@@ -204,6 +225,7 @@ class ResourceScope:
     account_id: Optional[str] = None   # the acting account (account/workspace scope)
     workspace_id: Optional[str] = None  # set only for workspace scope
     label: str = ""                    # human label ("Personal", workspace name)
+    role: Optional[str] = None         # the account's role in this workspace scope
 
     @property
     def owner_key(self) -> str:
@@ -262,6 +284,7 @@ def resolve_scope(request, session_id: Optional[str] = None) -> ResourceScope:
                     account_id=account.account_id,
                     workspace_id=workspace_id,
                     label=ws.get("name", "Workspace"),
+                    role=ws.get("role"),
                 )
         return ResourceScope(
             kind=SCOPE_ACCOUNT, subject=account.account_id or "",

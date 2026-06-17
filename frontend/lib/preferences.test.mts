@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  isForbiddenError,
   isSet,
   sanitizeItems,
   savedCount,
@@ -55,6 +56,13 @@ test("sanitizeItems drops malformed entries and non-arrays", () => {
   ]);
   assert.equal(cleaned.length, 1);
   assert.equal(cleaned[0].key, "answer_length");
+});
+
+test("isForbiddenError detects a permission-denied error only", () => {
+  assert.equal(isForbiddenError(new Error("FORBIDDEN")), true);
+  assert.equal(isForbiddenError(new Error("Preferences request failed (500)")), false);
+  assert.equal(isForbiddenError("FORBIDDEN"), false); // not an Error instance
+  assert.equal(isForbiddenError(null), false);
 });
 
 test("a single-option (toggle) preference still labels cleanly", () => {

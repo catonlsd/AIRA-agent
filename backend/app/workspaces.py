@@ -20,11 +20,9 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 from uuid import uuid4
 
+from app.authz import ROLE_OWNER, ROLE_VIEWER, normalize_role
 from app.db.database import Base, SessionLocal, engine
 from app.db.models import Workspace, WorkspaceMember
-
-ROLE_OWNER = "owner"
-ROLE_MEMBER = "member"
 
 
 def _now() -> datetime:
@@ -98,25 +96,63 @@ class WorkspaceService:
 
     # ── access checks ────────────────────────────────────────────────────────
 
-    def is_member(self, workspace_id: str, account_id: str) -> bool:
+    def _member_row(self, session, workspace_id: str, account_id: str) -> Optional[WorkspaceMember]:
         if not workspace_id or not account_id:
-            return False
-        with self._session_factory() as session:
-            return (
-                session.query(WorkspaceMember)
-                .filter(
-                    WorkspaceMember.workspace_id == workspace_id,
-                    WorkspaceMember.account_id == account_id,
-                )
-                .first()
-                is not None
+            return None
+        return (
+            session.query(WorkspaceMember)
+            .filter(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.account_id == account_id,
             )
+            .first()
+        )
+
+    def is_member(self, workspace_id: str, account_id: str) -> bool:
+        with self._session_factory() as session:
+            return self._member_row(session, workspace_id, account_id) is not None
+
+    def get_role(self, workspace_id: str, account_id: str) -> Optional[str]:
+        """The account's role in the workspace (normalized), or None if not a member."""
+        with self._session_factory() as session:
+            row = self._member_row(session, workspace_id, account_id)
+            return normalize_role(row.role) if row else None
+
+    def membership(self, workspace_id: str, account_id: str) -> Optional[dict]:
+        """The workspace + the account's role, iff a member (one lookup)."""
+        with self._session_factory() as session:
+            row = self._member_row(session, workspace_id, account_id)
+            if row is None:
+                return None
+            ws = session.query(Workspace).filter(Workspace.id == workspace_id).first()
+            if ws is None:
+                return None
+            return {**self._public(ws), "role": normalize_role(row.role)}
 
     def get_if_member(self, workspace_id: str, account_id: str) -> Optional[dict]:
-        """The workspace iff the account is a member, else None (no leakage)."""
-        if not self.is_member(workspace_id, account_id):
-            return None
-        return self.get(workspace_id)
+        """The workspace (with the caller's role) iff a member, else None."""
+        return self.membership(workspace_id, account_id)
+
+    def add_member(self, workspace_id: str, account_id: str, role: str = ROLE_VIEWER) -> Optional[dict]:
+        """Add or update a member with a role (safe default: viewer). Foundation
+        for a future invitation flow — durable role on the membership record."""
+        role = normalize_role(role) or ROLE_VIEWER
+        with self._session_factory() as session:
+            existing = self._member_row(session, workspace_id, account_id)
+            if existing:
+                existing.role = role
+            else:
+                session.add(
+                    WorkspaceMember(
+                        id=uuid4().hex,
+                        workspace_id=workspace_id,
+                        account_id=account_id,
+                        role=role,
+                        created_at=_now(),
+                    )
+                )
+            session.commit()
+        return self.membership(workspace_id, account_id)
 
     def member_workspace_ids(self, account_id: str) -> list[str]:
         if not account_id:

@@ -252,8 +252,33 @@ Workspace behaviour is **additive and explicit**, never a rewrite of personal mo
   `account:<id>`/session — no cross-workspace or workspace/personal leakage, with
   the Chroma `where` filter unchanged.
 
-Workspace-level preferences/quotas, shared documents/artifacts/runs, and roles
-all layer on this without changing the owner-key call sites.
+## Roles, permissions & operator boundary
+
+Workspace access is **role-aware**, not flat membership (`app/authz.py`):
+
+- **Roles** (ranked): `viewer` < `editor` < `owner`. **Permissions**: `view`
+  (read) < `edit` (mutate content) < `manage` (change settings). viewer→{view},
+  editor→{view,edit}, owner→{view,edit,manage}. A member with no/unknown role is
+  denied everything (**safe default**); legacy "member" maps to viewer.
+- **Enforcement** (`can(scope, PERM_*)`): personal/account/session scope is full
+  self-access (single-user stays simple). In **workspace** scope, the member's
+  role (carried on `ResourceScope.role`, set by `resolve_scope`) drives real
+  decisions: editing workspace preferences → **manage** (owner); uploading
+  workspace documents, generating artifacts, and starting/approving guided flows
+  → **edit** (editor+); reading/downloading → **view** (any member). The
+  workspace creator is `owner`; `WorkspaceService.add_member` defaults new members
+  to **viewer**. A stated-in-chat preference only rewrites a workspace default
+  with manage rights. Denials are honest and state-preserving (a `403`, or a clean
+  `workspace_forbidden` turn result) — never a fake success.
+- **Operator boundary** (`/operator/*`, `app/routes/operator.py`): a
+  service/operator principal is the configured `API_KEY` holder — **distinct from
+  account/workspace users**. `GET /operator/overview` returns durable-resource
+  counts (no PII/content) and requires the service key; a normal account token is
+  rejected, and with no key configured the path is simply unavailable. This is the
+  seam for future support/audit/policy tooling — no admin dashboard.
+
+Invitations/membership management, shared runs/artifacts, role-based defaults, and
+admin surfaces all layer on this without changing the owner-key call sites.
 
 ## Memory model (session + preference)
 

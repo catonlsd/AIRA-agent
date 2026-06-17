@@ -48,6 +48,12 @@ export function lastPreferenceScope(): PreferenceScope | null {
   return _lastScope;
 }
 
+/** True when an error is a permission-denied (403) — used to show a calm,
+ *  honest note instead of an "offline" state when editing a restricted scope. */
+export function isForbiddenError(error: unknown): boolean {
+  return error instanceof Error && error.message === "FORBIDDEN";
+}
+
 // ── Pure helpers (unit-tested) ───────────────────────────────────────────────
 
 /** Human label for an item's current value, or a calm "Not set" when unset. */
@@ -84,6 +90,7 @@ export function sanitizeItems(items: unknown): PreferenceItem[] {
 // ── API client ───────────────────────────────────────────────────────────────
 
 async function asPreferences(res: Response): Promise<PreferenceItem[]> {
+  if (res.status === 403) throw new Error("FORBIDDEN");
   if (!res.ok) throw new Error(`Preferences request failed (${res.status})`);
   const body = (await res.json()) as PreferencesResponse;
   _lastScope = body?.scope ?? null;

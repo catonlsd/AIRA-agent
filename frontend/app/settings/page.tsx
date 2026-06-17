@@ -38,6 +38,7 @@ import { PERSONAL_SCOPE_LABEL } from "@/lib/scope";
 import {
   clearAllPreferences,
   fetchPreferences,
+  isForbiddenError,
   lastPreferenceScope,
   removePreference,
   savePreference,
@@ -490,6 +491,7 @@ function PreferencesCard() {
   const [confirmClear, setConfirmClear] = useState(false);
 
   const [scopeLabelText, setScopeLabelText] = useState("Personal");
+  const [restricted, setRestricted] = useState(false);
 
   const load = useCallback(async () => {
     setStatus("loading");
@@ -506,8 +508,20 @@ function PreferencesCard() {
     load();
   }, [load]);
 
+  // Mutations can be denied (e.g. a viewer editing workspace defaults). Show a
+  // calm note and reload, rather than an "offline" error.
+  const onMutationError = useCallback((err: unknown) => {
+    if (isForbiddenError(err)) {
+      setRestricted(true);
+      load();
+    } else {
+      setStatus("offline");
+    }
+  }, [load]);
+
   const onSelect = useCallback(async (key: string, value: string, current: string | null) => {
     setBusyKey(key);
+    setRestricted(false);
     try {
       // Clicking the active value clears it (toggle off); otherwise set it.
       const next =
@@ -515,31 +529,33 @@ function PreferencesCard() {
           ? await removePreference(getSessionId(), key)
           : await savePreference(getSessionId(), key, value);
       setItems(next);
-    } catch {
-      setStatus("offline");
+    } catch (err) {
+      onMutationError(err);
     } finally {
       setBusyKey(null);
     }
-  }, []);
+  }, [onMutationError]);
 
   const onRemove = useCallback(async (key: string) => {
     setBusyKey(key);
+    setRestricted(false);
     try {
       setItems(await removePreference(getSessionId(), key));
-    } catch {
-      setStatus("offline");
+    } catch (err) {
+      onMutationError(err);
     } finally {
       setBusyKey(null);
     }
-  }, []);
+  }, [onMutationError]);
 
   const onClearAll = useCallback(async () => {
     setBusyKey("__all__");
+    setRestricted(false);
     try {
       setItems(await clearAllPreferences(getSessionId()));
       setConfirmClear(false);
-    } catch {
-      setStatus("offline");
+    } catch (err) {
+      onMutationError(err);
     } finally {
       setBusyKey(null);
     }
@@ -591,6 +607,12 @@ function PreferencesCard() {
       {status === "offline" && (
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4 text-sm text-[var(--text-muted)]">
           Couldn&apos;t reach the assistant to load your preferences. They&apos;ll appear here when it&apos;s back online.
+        </div>
+      )}
+
+      {restricted && (
+        <div className="mb-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-semibold text-[var(--text-muted)]">
+          You have view-only access to these {scopeLabelText} defaults — an owner can change them.
         </div>
       )}
 

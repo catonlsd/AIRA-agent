@@ -44,6 +44,7 @@ from app.clarification import (
 )
 from app.context_builder import TurnContext
 from app.core.llm import LLMClient
+from app.authz import PERM_EDIT, PERM_MANAGE, can
 from app.core.config import settings
 from app.llm_answer_service import DirectAnswerService
 from app.memory import preference_policy
@@ -193,7 +194,11 @@ class AssistantSupervisor:
         try:
             owner = ctx.owner
             stated = preference_policy.extract_preferences(ctx.message)
-            if stated:
+            # Stating a preference saves it to the ACTIVE scope. In a workspace,
+            # that changes a shared default — only allowed with manage rights
+            # (an editor/viewer's phrasing still shapes their own turn, but never
+            # rewrites the team default).
+            if stated and (not getattr(ctx.scope, "is_workspace", False) or can(ctx.scope, PERM_MANAGE)):
                 preference_memory.set_many(owner, stated, source="stated_in_chat")
                 ctx.trace.event("preferences_remembered", keys=sorted(stated.keys()))
             saved = self._effective_preferences(ctx)
@@ -479,6 +484,10 @@ class AssistantSupervisor:
             ctx.trace.event("research_completed", sources=len(result.get("sources", [])))
             return self._with_classification(result, classification)
 
+        # Running tools in a workspace mutates shared state — requires edit rights.
+        forbidden = self._workspace_permission_block(ctx, PERM_EDIT)
+        if forbidden is not None:
+            return forbidden
         ctx.trace.event("execution_started")
         result = await self.execution.run(goal, mode=classification.mode)
         ctx.trace.event("execution_completed", status=result.get("status"))
@@ -779,6 +788,9 @@ class AssistantSupervisor:
         *, title_override: str | None = None,
     ) -> dict[str, Any]:
         """Prepare artifact content + delivery, park a plan awaiting approval."""
+        forbidden = self._workspace_permission_block(ctx, PERM_EDIT)
+        if forbidden is not None:
+            return forbidden
         cap = quota_service.check_pending_flows(ctx.owner)
         if not cap:
             return self._limit_result(cap.message, cap.kind)
@@ -869,6 +881,9 @@ class AssistantSupervisor:
         # Artifact-generation quota — checked before consuming so a blocked
         # approval leaves the artifact pending to retry later.
         if decision == "approve":
+            forbidden = self._workspace_permission_block(ctx, PERM_EDIT)
+            if forbidden is not None:
+                return forbidden
             quota = quota_service.check_windowed(ctx.owner, KIND_ARTIFACT)
             if not quota:
                 return self._limit_result(quota.message, quota.kind)
@@ -988,6 +1003,9 @@ class AssistantSupervisor:
         # Startup/runtime-validation quota — checked before consuming so a
         # blocked approval leaves the actions pending to retry later.
         if decision == "approve":
+            forbidden = self._workspace_permission_block(ctx, PERM_EDIT)
+            if forbidden is not None:
+                return forbidden
             quota = quota_service.check_windowed(ctx.owner, KIND_STARTUP)
             if not quota:
                 return self._limit_result(quota.message, quota.kind)
@@ -1057,6 +1075,9 @@ class AssistantSupervisor:
         # Execution-start quota — checked BEFORE consuming so a blocked approval
         # leaves the plan pending to retry once the window clears.
         if decision == "approve":
+            forbidden = self._workspace_permission_block(ctx, PERM_EDIT)
+            if forbidden is not None:
+                return forbidden
             quota = quota_service.check_windowed(ctx.owner, KIND_EXECUTION)
             if not quota:
                 return self._limit_result(quota.message, quota.kind)
@@ -1327,6 +1348,38 @@ class AssistantSupervisor:
                 "requires_approval": False,
                 "rate_limited": True,
                 "limit_kind": kind,
+            },
+        }
+
+    def _workspace_permission_block(self, ctx: TurnContext, permission: str) -> dict[str, Any] | None:
+        """Deny a workspace-scoped mutating action when the member's role lacks
+        the permission. Returns a clean, honest result (no state change) or None
+        when allowed. A no-op outside workspace scope, so personal use is untouched.
+        """
+        from app.authz import can
+
+        decision = can(ctx.scope, permission)
+        if decision:
+            return None
+        ctx.trace.event("workspace_permission_denied", permission=permission)
+        return {
+            "run_id": uuid4().hex,
+            "status": "completed",
+            "decision": "workspace_forbidden",
+            "mode": GENERAL_CHAT_MODE,
+            "message": decision.reason,
+            "final_answer": decision.reason,
+            "sources": [],
+            "artifacts": [],
+            "approval_summary": None,
+            "meta": {
+                "is_multi_question": False,
+                "question_count": 1,
+                "has_sources": False,
+                "has_artifacts": False,
+                "requires_approval": False,
+                "workspace_forbidden": True,
+                "required_permission": permission,
             },
         }
 

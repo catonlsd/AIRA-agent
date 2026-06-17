@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.auth import resolve_scope
+from app.authz import PERM_MANAGE, can
 from app.memory.preference_memory import preference_memory
 from app.memory.preference_policy import (
     catalogue_with_values,
@@ -27,6 +28,14 @@ from app.memory.preference_policy import (
 )
 
 router = APIRouter(prefix="/preferences", tags=["AIRA-X Preferences"])
+
+
+def _require_manage(scope) -> None:
+    """Editing shared defaults is a workspace-settings action (owner-only).
+    Personal scope is always self-managed."""
+    decision = can(scope, PERM_MANAGE)
+    if not decision:
+        raise HTTPException(status_code=403, detail=decision.reason)
 
 
 def _scope_for(request: Request | None, session_id: str | None):
@@ -70,6 +79,7 @@ def set_preference(update: PreferenceUpdate, request: Request) -> dict:
             detail="Unsupported preference. Only the listed preferences and values can be saved.",
         )
     scope = _scope_for(request, update.session_id)
+    _require_manage(scope)
     preference_memory.set(scope.owner_key or "default", update.key, update.value, source="settings_ui")
     return _payload(scope)
 
@@ -78,6 +88,7 @@ def set_preference(update: PreferenceUpdate, request: Request) -> dict:
 def clear_preference(key: str, request: Request, session_id: str | None = None) -> dict:
     """Clear one saved preference in the active scope (no error if unset)."""
     scope = _scope_for(request, session_id)
+    _require_manage(scope)
     preference_memory.delete(scope.owner_key or "default", key)
     return _payload(scope)
 
@@ -86,5 +97,6 @@ def clear_preference(key: str, request: Request, session_id: str | None = None) 
 def clear_all_preferences(request: Request, session_id: str | None = None) -> dict:
     """Clear all of the active scope's saved preferences."""
     scope = _scope_for(request, session_id)
+    _require_manage(scope)
     preference_memory.clear(scope.owner_key or "default")
     return _payload(scope)

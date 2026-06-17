@@ -379,9 +379,15 @@ def upload_documents(
 
     # Account-first ownership: ingested chunks are scoped to the authenticated
     # account when present, otherwise the session (matches the chat's ctx.owner).
-    from app.auth import resolve_owner
+    # Uploading into a workspace mutates shared content -> requires edit rights.
+    from app.auth import resolve_scope
+    from app.authz import PERM_EDIT, can
 
-    owner = resolve_owner(http_request, session_id)
+    scope = resolve_scope(http_request, session_id)
+    decision = can(scope, PERM_EDIT)
+    if not decision:
+        raise HTTPException(status_code=403, detail=decision.reason)
+    owner = scope.owner_key or None
 
     uploaded = []
     vector_store = VectorStore()
