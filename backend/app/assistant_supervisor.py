@@ -1240,6 +1240,7 @@ class AssistantSupervisor:
                 mode=response.mode,
                 latency_ms=ctx.trace.elapsed_ms(),
                 final_status=response.status,
+                owner=ctx.owner,
                 trace_events=ctx.trace.events,
                 conversation_type=reasoned.get("conversation_type"),
                 selected_route=reasoned.get("selected_route"),

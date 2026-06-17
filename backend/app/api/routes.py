@@ -426,6 +426,7 @@ def upload_documents(
                 file_type=suffix.replace(".", ""),
                 path=str(stored_path),
                 chunk_count=len(chunks),
+                owner=owner,  # scope the document row like its vector chunks
             )
 
             db.add(document)

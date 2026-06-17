@@ -297,8 +297,30 @@ A small, real collaboration loop sits on the role model — no admin console:
   forbidden selection silently falls back to Personal — the switcher and backend
   never drift. Personal scope behaves exactly as before.
 
-Invitation tokens/emails, join-accept flows, shared runs/artifacts, and audit
-trails all layer on this without changing the owner-key call sites.
+## Shared resources (recent artifacts, documents, runs)
+
+A small, read-only discovery surface over resources that already exist and are
+already owner-scoped — so workspace members can find shared outputs without deep
+links, and a solo user sees their own recent items.
+
+- **API** (`GET /resources/recent`, `app/routes/resources.py` →
+  `app/shared_resources.py`): resolves the active scope (account-first; workspace
+  header honoured only for members) and returns `{ scope, artifacts, documents,
+  runs }`. Reading needs `view` (granted in every real scope), so a viewer can
+  discover/download while a non-member silently falls back to Personal — never
+  another team's data. Artifacts are read from the owner-token directory on disk;
+  documents from the (now scope-tagged) `documents` table; runs from owner-tagged
+  traces. Metadata is minimal and clean — title/type/size/time + the same opaque,
+  access-controlled download URL — **never owner keys, raw rows, or trace dumps**.
+- **Frontend**: a compact "Recent in {scope}" card in Settings (artifacts with a
+  Download, documents, and a lightweight activity list) — calm and chat-first, not
+  a file manager. It reflects the active scope and shows a clean empty state.
+- **Migration**: `documents` gains a nullable `owner` column, applied by
+  `ensure_runtime_columns()` (self-healing on existing SQLite DBs).
+
+Invitation tokens/emails, join-accept flows, shared run continuation, richer
+history/search, and audit trails all layer on this without changing the owner-key
+call sites.
 
 ## Memory model (session + preference)
 

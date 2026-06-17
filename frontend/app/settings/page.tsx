@@ -56,6 +56,13 @@ import {
   type Workspace,
 } from "@/lib/workspaces";
 import {
+  API_BASE,
+  fetchRecentResources,
+  isEmpty as resourcesEmpty,
+  relativeTime,
+  type RecentResources,
+} from "@/lib/resources";
+import {
   clearAllPreferences,
   fetchPreferences,
   isForbiddenError,
@@ -721,6 +728,103 @@ function WorkspaceCard() {
   );
 }
 
+function RecentResourcesCard() {
+  const [data, setData] = useState<RecentResources | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "hidden">("loading");
+
+  useEffect(() => {
+    fetchRecentResources(getSessionId())
+      .then((r) => {
+        setData(r);
+        setStatus("ready");
+      })
+      .catch(() => setStatus("hidden"));
+  }, []);
+
+  if (status === "hidden" || !data) return null;
+
+  const empty = resourcesEmpty(data);
+
+  return (
+    <section className="sarvam-card rounded-[1.5rem] p-5">
+      <SectionHeading
+        icon={<Layers3 className="h-5 w-5" />}
+        title={`Recent in ${data.scope.label}`}
+        description="Artifacts, documents, and runs in your active scope — pick up where you (or your workspace) left off."
+      />
+
+      {empty ? (
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4 text-sm text-[var(--text-muted)]">
+          Nothing here yet. Generate a deck or upload a document and it&apos;ll show up — for {data.scope.label.toLowerCase()} only.
+        </div>
+      ) : (
+        <div className="grid gap-3">
+          {data.artifacts.length > 0 && (
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+              <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Artifacts</p>
+              <div className="grid gap-2">
+                {data.artifacts.map((a) => (
+                  <div key={a.filename} className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <FileText className="h-4 w-4 shrink-0 text-[var(--accent)]" />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-[var(--text-strong)]">{a.title}</p>
+                        <p className="truncate text-xs text-[var(--text-muted)]">
+                          {a.type}{a.size ? ` · ${a.size}` : ""} · {relativeTime(a.created_at)}
+                        </p>
+                      </div>
+                    </div>
+                    <a
+                      href={`${API_BASE}${a.download_url}`} download={a.filename}
+                      className="shrink-0 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
+                    >
+                      Download
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {data.documents.length > 0 && (
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+              <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Documents</p>
+              <div className="grid gap-2">
+                {data.documents.map((d, i) => (
+                  <div key={`${d.name}-${i}`} className="flex items-center gap-2.5">
+                    <Database className="h-4 w-4 shrink-0 text-[var(--secondary)]" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[var(--text-strong)]">{d.name}</p>
+                      <p className="truncate text-xs text-[var(--text-muted)]">
+                        {d.type} · {d.chunks} chunk{d.chunks === 1 ? "" : "s"}{d.created_at ? ` · ${relativeTime(d.created_at)}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {data.runs.length > 0 && (
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+              <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Activity</p>
+              <div className="grid gap-1.5">
+                {data.runs.map((r, i) => (
+                  <p key={i} className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" aria-hidden="true" />
+                    <span className="font-semibold text-[var(--text-strong)]">{r.label}</span>
+                    <span>· {r.status}{r.created_at ? ` · ${relativeTime(r.created_at)}` : ""}</span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function PreferencesCard() {
   const [items, setItems] = useState<PreferenceItem[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "offline">("loading");
@@ -1166,6 +1270,8 @@ export default function SettingsPage() {
       <AccountCard />
 
       <WorkspaceCard />
+
+      <RecentResourcesCard />
 
       <PreferencesCard />
 

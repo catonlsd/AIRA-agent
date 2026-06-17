@@ -61,6 +61,7 @@ class TraceService:
         mode: Optional[str],
         latency_ms: float,
         final_status: Optional[str],
+        owner: Optional[str] = None,
         trace_events: Optional[list[dict]] = None,
         tokens: Optional[int] = None,
         source_type: Optional[str] = None,
@@ -75,6 +76,7 @@ class TraceService:
             "created_at": _utc_now_iso(),
             "session_id": session_id,
             "run_id": run_id,
+            "owner": owner,  # durable scope key — enables scope-filtered run history
             "mode": mode,
             "route": mode,
             "source_type": source_type or source_type_for_mode(mode),

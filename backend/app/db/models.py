@@ -19,6 +19,10 @@ class Document(Base):
     file_type: Mapped[str] = mapped_column(String(32), nullable=False)
     path: Mapped[str] = mapped_column(String(500), nullable=False)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Durable scope owner (account:<id> / workspace:<id> / session) so a document
+    # collection can be listed per scope (retrieval is already owner-scoped in the
+    # vector store). Nullable for legacy rows / self-healing migration.
+    owner: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
     chunks: Mapped[list["DocumentChunk"]] = relationship(
