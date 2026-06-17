@@ -95,12 +95,23 @@ def list_members(workspace_id: str, request: Request) -> dict:
 
 @router.post("/{workspace_id}/members")
 def add_member(workspace_id: str, body: AddMemberRequest, request: Request) -> dict:
-    _require_manage(request, workspace_id)
+    actor_id = _require_manage(request, workspace_id)
     account = account_service.get_by_email(body.email)
     if account is None:
         raise HTTPException(status_code=404, detail="No AIRA-X account uses that email.")
     role = normalize_role(body.role) or ROLE_VIEWER
     workspace_service.add_member(workspace_id, account["id"], role)
+    try:
+        from app.activity import WORKSPACE_MEMBER_ADDED, activity_service
+        from app.workspaces import workspace_owner_key
+
+        activity_service.record(
+            workspace_owner_key(workspace_id), WORKSPACE_MEMBER_ADDED,
+            f"Added {account['display_name']} as {role}", actor_id=actor_id,
+            resource_type="member", resource_id=account["id"],
+        )
+    except Exception:
+        pass
     return {"members": workspace_service.list_members(workspace_id)}
 
 

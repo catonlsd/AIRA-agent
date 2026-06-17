@@ -318,9 +318,31 @@ links, and a solo user sees their own recent items.
 - **Migration**: `documents` gains a nullable `owner` column, applied by
   `ensure_runtime_columns()` (self-healing on existing SQLite DBs).
 
+## Activity history (user-facing) vs operator logs
+
+Two deliberately separate layers:
+
+- **User-facing activity** (`activity_events` table, `app/activity.py`): a small,
+  curated set of **meaningful product events** — `artifact_created/failed`,
+  `document_uploaded`, `run_completed/failed`, `validation_passed/failed`,
+  `startup_verified/failed`, `preference_updated`, `workspace_member_added`.
+  Recorded best-effort at the action site (supervisor + upload/preferences/members
+  routes), scope-owned, with the acting account as actor. `GET /activity/recent`
+  resolves the active scope (account-first; workspace header honoured only for
+  members), requires `view`, and returns UI-ready fields only — title, actor,
+  type, status, severity, time — **never tool payloads, stack traces, trace dumps,
+  or owner keys**. The Settings "Recent in {scope}" card shows a compact, calm
+  activity list above the shared resources.
+- **Operator diagnostics** stay where they were — `aira_x.supervisor` JSON ops
+  logs (`_ops_log`) and the per-turn trace JSONL — never surfaced in the UI. The
+  user activity log is the clean summary; operator/audit tooling reads the raw
+  layers separately. This separation keeps future operator audit tools cheap
+  without muddying the user surface.
+- **Migration**: `activity_events` self-heals via `ActivityService._ensure_table`.
+
 Invitation tokens/emails, join-accept flows, shared run continuation, richer
-history/search, and audit trails all layer on this without changing the owner-key
-call sites.
+history/search/filtering, activity-driven notifications, and operator audit tools
+all layer on this without changing the owner-key call sites.
 
 ## Memory model (session + preference)
 

@@ -84,6 +84,31 @@ class Account(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
 
+class ActivityEvent(Base):
+    """A meaningful, user-facing product event (NOT a raw trace).
+
+    One row per noteworthy thing that happened in a scope — an artifact created,
+    a document uploaded, a run completed/failed, a workspace member added. Stored
+    durably and scope-owned (`owner` = account:<id> / workspace:<id> / session) so
+    a calm "recent activity" surface can answer "what happened lately, and who did
+    it?" without exposing tool payloads, stack traces, or trace dumps. Operator
+    diagnostics stay in the separate ops logs.
+    """
+
+    __tablename__ = "activity_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    actor_account_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    actor_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    type: Mapped[str] = mapped_column(String(48), index=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    resource_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    resource_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+
+
 class Workspace(Base):
     """A durable shared scope that can own resources alongside personal accounts.
 

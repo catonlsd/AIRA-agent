@@ -483,6 +483,17 @@ def upload_documents(
 
             db.commit()
 
+            # Meaningful, scope-owned activity event (user-facing; best-effort).
+            try:
+                from app.activity import DOCUMENT_UPLOADED, activity_service
+
+                activity_service.record(
+                    owner, DOCUMENT_UPLOADED, f"Uploaded {document.original_filename}",
+                    actor_id=scope.account_id, resource_type="document", resource_id=str(document.id),
+                )
+            except Exception:
+                pass
+
             uploaded.append(
                 {
                     "id": document.id,

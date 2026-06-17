@@ -44,6 +44,16 @@ from app.clarification import (
 )
 from app.context_builder import TurnContext
 from app.core.llm import LLMClient
+from app.activity import (
+    ARTIFACT_CREATED as ACTIVITY_ARTIFACT_CREATED,
+    ARTIFACT_FAILED as ACTIVITY_ARTIFACT_FAILED,
+    RUN_COMPLETED as ACTIVITY_RUN_COMPLETED,
+    RUN_FAILED as ACTIVITY_RUN_FAILED,
+    STARTUP_FAILED as ACTIVITY_STARTUP_FAILED,
+    STARTUP_VERIFIED as ACTIVITY_STARTUP_VERIFIED,
+    VALIDATION_FAILED as ACTIVITY_VALIDATION_FAILED,
+    VALIDATION_PASSED as ACTIVITY_VALIDATION_PASSED,
+)
 from app.authz import PERM_EDIT, PERM_MANAGE, can
 from app.core.config import settings
 from app.llm_answer_service import DirectAnswerService
@@ -108,6 +118,22 @@ def _ops_log(event: str, ctx, **fields) -> None:
         _ops_logger.info(json.dumps(payload, default=str))
     except Exception:
         pass
+
+
+def _activity(ctx, event_type: str, title: str, *, status: str | None = None,
+              resource_type: str | None = None, resource_id: str | None = None) -> None:
+    """Record a meaningful, user-facing product event for the active scope.
+
+    Separate from `_ops_log` (operator diagnostics): this feeds the calm "recent
+    activity" surface, scoped to the owner with the acting account as actor.
+    """
+    from app.activity import activity_service
+
+    activity_service.record(
+        getattr(ctx, "owner", None), event_type, title,
+        actor_id=getattr(getattr(ctx, "scope", None), "account_id", None),
+        status=status, resource_type=resource_type, resource_id=resource_id,
+    )
 
 
 MAX_QUESTIONS = 20
@@ -913,6 +939,8 @@ class AssistantSupervisor:
         if outcome["status"] != "completed":
             ctx.trace.event("execution_completed", status="failed", kind=pending.kind)
             _ops_log("artifact_generation_finished", ctx, status="failed", kind=pending.kind)
+            _activity(ctx, ACTIVITY_ARTIFACT_FAILED,
+                      f"Couldn't generate a {pending.kind.upper()}", status="failed", resource_type="artifact")
             message = (
                 f"I couldn't produce a valid {pending.kind.upper()} — {outcome.get('error', 'generation failed')}. "
                 "The file was not created; tell me what to adjust and I'll retry."
@@ -929,6 +957,9 @@ class AssistantSupervisor:
         )
         _ops_log("artifact_generation_finished", ctx, status="completed",
                  kind=pending.kind, filename=artifact["filename"])
+        _activity(ctx, ACTIVITY_ARTIFACT_CREATED,
+                  f"Created “{artifact.get('title') or pending.kind.upper()}” ({pending.kind.upper()})",
+                  status="completed", resource_type="artifact", resource_id=artifact.get("filename"))
         # Remember the last artifact so a follow-up revision ("add more detail /
         # images") can regenerate a richer version instead of falling into the
         # generic execution path. Ephemeral, session-scoped.
@@ -1042,6 +1073,18 @@ class AssistantSupervisor:
             _ops_log("runtime_validation_finished", ctx, status=status,
                      failure_class=evidence.get("failure_class"),
                      repairs=len(evidence.get("repairs", [])))
+            if status == "completed":
+                _activity(ctx, ACTIVITY_VALIDATION_PASSED, "Runtime validation passed", status="completed")
+            else:
+                _activity(ctx, ACTIVITY_VALIDATION_FAILED, "Runtime validation failed", status="failed")
+            startup = evidence.get("startup") or {}
+            if startup.get("attempted"):
+                if startup.get("success"):
+                    _activity(ctx, ACTIVITY_STARTUP_VERIFIED,
+                              f"Started the {startup.get('framework', 'app')} and its health check passed", status="completed")
+                else:
+                    _activity(ctx, ACTIVITY_STARTUP_FAILED,
+                              f"The {startup.get('framework', 'app')} didn't start cleanly", status="failed")
 
         return {
             "run_id": uuid4().hex,
@@ -1190,6 +1233,12 @@ class AssistantSupervisor:
         )
         _ops_log("execution_finished", ctx, status=status,
                  files_written=len(report.files_written), repairs=len(report.repairs))
+        if status == "completed":
+            _activity(ctx, ACTIVITY_RUN_COMPLETED,
+                      f"Workflow completed ({len(report.files_written)} file{'' if len(report.files_written) == 1 else 's'})",
+                      status="completed", resource_type="run")
+        else:
+            _activity(ctx, ACTIVITY_RUN_FAILED, "Workflow run could not complete", status="failed", resource_type="run")
         return {
             "run_id": uuid4().hex,
             "status": status,

@@ -81,6 +81,16 @@ def set_preference(update: PreferenceUpdate, request: Request) -> dict:
     scope = _scope_for(request, update.session_id)
     _require_manage(scope)
     preference_memory.set(scope.owner_key or "default", update.key, update.value, source="settings_ui")
+    try:
+        from app.activity import PREFERENCE_UPDATED, activity_service
+
+        label = next((e["label"] for e in catalogue_with_values({}) if e["key"] == update.key), update.key)
+        activity_service.record(
+            scope.owner_key, PREFERENCE_UPDATED, f"Updated default: {label}",
+            actor_id=getattr(scope, "account_id", None),
+        )
+    except Exception:
+        pass
     return _payload(scope)
 
 

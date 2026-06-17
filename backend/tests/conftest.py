@@ -51,6 +51,7 @@ def _isolate_guided_flows():
     """Guided-flow state, usage quotas, and memory are durable / process-local —
     wipe them between tests so pending approvals, quota counters, and saved
     preferences never leak across tests or owners."""
+    from app.activity import activity_service
     from app.artifacts.images import set_image_provider
     from app.core.config import settings
     from app.guided_flow_store import guided_flow_store
@@ -67,11 +68,13 @@ def _isolate_guided_flows():
     usage_limiter.reset()
     preference_memory.clear_all()
     session_memory.clear_all()
+    activity_service.clear_all()
     yield
     guided_flow_store.clear_all()
     usage_limiter.reset()
     preference_memory.clear_all()
     session_memory.clear_all()
+    activity_service.clear_all()
     set_image_provider(None)
 
 

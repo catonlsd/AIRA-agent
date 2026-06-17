@@ -63,6 +63,12 @@ import {
   type RecentResources,
 } from "@/lib/resources";
 import {
+  eventLine,
+  fetchRecentActivity,
+  isWarn,
+  type RecentActivity,
+} from "@/lib/activity";
+import {
   clearAllPreferences,
   fetchPreferences,
   isForbiddenError,
@@ -730,12 +736,15 @@ function WorkspaceCard() {
 
 function RecentResourcesCard() {
   const [data, setData] = useState<RecentResources | null>(null);
+  const [activity, setActivity] = useState<RecentActivity | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "hidden">("loading");
 
   useEffect(() => {
-    fetchRecentResources(getSessionId())
-      .then((r) => {
+    const sid = getSessionId();
+    Promise.all([fetchRecentResources(sid), fetchRecentActivity(sid).catch(() => null)])
+      .then(([r, a]) => {
         setData(r);
+        setActivity(a);
         setStatus("ready");
       })
       .catch(() => setStatus("hidden"));
@@ -743,14 +752,15 @@ function RecentResourcesCard() {
 
   if (status === "hidden" || !data) return null;
 
-  const empty = resourcesEmpty(data);
+  const events = activity?.events ?? [];
+  const empty = resourcesEmpty(data) && events.length === 0;
 
   return (
     <section className="sarvam-card rounded-[1.5rem] p-5">
       <SectionHeading
         icon={<Layers3 className="h-5 w-5" />}
         title={`Recent in ${data.scope.label}`}
-        description="Artifacts, documents, and runs in your active scope — pick up where you (or your workspace) left off."
+        description="What happened lately, and the artifacts, documents, and runs in your active scope — pick up where you (or your workspace) left off."
       />
 
       {empty ? (
@@ -759,6 +769,28 @@ function RecentResourcesCard() {
         </div>
       ) : (
         <div className="grid gap-3">
+          {events.length > 0 && (
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+              <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Activity</p>
+              <div className="grid gap-1.5">
+                {events.slice(0, 8).map((e, i) => (
+                  <p key={i} className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                    <span
+                      className={cn(
+                        "h-1.5 w-1.5 shrink-0 rounded-full",
+                        isWarn(e) ? "bg-[var(--warning)]" : "bg-[var(--accent)]"
+                      )}
+                      aria-hidden="true"
+                    />
+                    <span className="truncate">
+                      <span className="font-semibold text-[var(--text-strong)]">{eventLine(e)}</span>
+                      {e.created_at ? ` · ${relativeTime(e.created_at)}` : ""}
+                    </span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
           {data.artifacts.length > 0 && (
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
               <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Artifacts</p>
