@@ -109,6 +109,27 @@ class ActivityEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
 
 
+class PinnedItem(Base):
+    """A small, durable, scope-owned pin that keeps important work easy to find.
+
+    One row per (owner, ref_type, ref_id) — a reference plus a clean display
+    title, NEVER a copy of the underlying resource payload. Scope-owned (`owner` =
+    account:<id> / workspace:<id> / session) so pins list by the active scope and
+    respect the same boundaries as artifacts/documents/runs. The referenced
+    resource stays the single source of truth; a pin is just a durable shortcut.
+    """
+
+    __tablename__ = "pinned_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    ref_type: Mapped[str] = mapped_column(String(24), index=True, nullable=False)  # artifact|run|document
+    ref_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    subtitle: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+
+
 class Workspace(Base):
     """A durable shared scope that can own resources alongside personal accounts.
 

@@ -57,6 +57,7 @@ def _isolate_guided_flows():
     from app.guided_flow_store import guided_flow_store
     from app.memory.preference_memory import preference_memory
     from app.memory.session_memory import session_memory
+    from app.pins import pin_service
     from app.usage_limits import usage_limiter
 
     # Keep tests hermetic: no live web grounding, no network image sourcing.
@@ -69,12 +70,14 @@ def _isolate_guided_flows():
     preference_memory.clear_all()
     session_memory.clear_all()
     activity_service.clear_all()
+    pin_service.clear_all()
     yield
     guided_flow_store.clear_all()
     usage_limiter.reset()
     preference_memory.clear_all()
     session_memory.clear_all()
     activity_service.clear_all()
+    pin_service.clear_all()
     set_image_provider(None)
 
 

@@ -384,6 +384,45 @@ Richer history/search, bookmarking/pinning, activity-linked run detail, audit-sa
 operator run views, and resumable collaborative workflows all layer on this
 composition without touching the owner-key call sites.
 
+## Scoped search & pinned work
+
+Find the right prior work fast, and keep important items one click away — without
+a file manager.
+
+- **Search** (`app/search.py`, `GET /search?q=&type=`): a thin read-only
+  composition that scans the active scope's **artifacts, documents, runs, and
+  activity**, filters by a simple case-insensitive query, and returns one clean,
+  newest-first result list. No new storage — it reuses the already owner-scoped
+  readers (`recent_artifacts`, `recent_documents`, `run_history_service.recent`,
+  `activity_service.recent`). Each result carries UI-ready fields plus a
+  download/continue affordance and a **pin reference** where the resource supports
+  one (activity is a feed, so it is searchable but not pinnable). `?type=` narrows
+  the families (e.g. `type=artifact,run`). Never trace dumps, owner keys, DB rows,
+  vector internals, or payload blobs.
+- **Pins** (`app/pins.py`, `pinned_items` table; `GET/POST /pins`,
+  `DELETE /pins/{id}`): a small durable scope-owned store of **references**
+  (`ref_type` + `ref_id` + a clean display title) — never a copy of the underlying
+  payload, so the artifact/run/document stays the source of truth. Pinning is
+  idempotent per `(owner, ref_type, ref_id)`. On read, a pinned `artifact` is
+  enriched with its access-controlled download URL and a pinned `run` with its
+  live status + continue/resume affordance (a run no longer in recent history
+  reads as `archived` — honest, not a dead link).
+- **Permissions**: every route resolves the active scope like a turn (account-first;
+  workspace header member-only). Reading (`/search`, `GET /pins`) needs `view`, so
+  a non-member silently searches/sees only their own personal scope — never a
+  team's work. Mutating pins (`POST`/`DELETE`) needs `edit`, so a workspace viewer
+  can search and see shared pins but only editors/owners change them, while a
+  personal user (full self-access) always can.
+- **Frontend** (`frontend/lib/search.ts`, dependency-free): the Settings "Find &
+  pinned work" card — a compact search box, a lightweight results list, and a
+  "Pinned" section. Actions stay chat-connected: an artifact downloads, a run
+  Continues/Resumes/Retries via the same prepared-prompt handoff as run history,
+  a document opens as context. No giant search page, file browser, or dashboard.
+
+Richer filters/ranking, saved collections, activity-linked search, and
+cross-resource search all layer on this composition without changing the
+owner-key call sites.
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

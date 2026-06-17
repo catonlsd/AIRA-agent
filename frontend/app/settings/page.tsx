@@ -13,10 +13,12 @@ import {
   FileText,
   Layers3,
   LockKeyhole,
+  Bookmark,
   Palette,
   RefreshCw,
   LogOut,
   Plus,
+  Search,
   Server,
   ShieldCheck,
   SlidersHorizontal,
@@ -78,6 +80,17 @@ import {
   type RecentRuns,
   type RunItem,
 } from "@/lib/runs";
+import {
+  canPin,
+  fetchPins,
+  fetchSearch,
+  isResumable as resultResumable,
+  pinResult,
+  resultActionLabel,
+  unpin,
+  type Pin,
+  type SearchResult,
+} from "@/lib/search";
 import {
   clearAllPreferences,
   fetchPreferences,
@@ -744,6 +757,220 @@ function WorkspaceCard() {
   );
 }
 
+function LibraryCard() {
+  const router = useRouter();
+  const [scopeLabel, setScopeLabel] = useState("your scope");
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [pins, setPins] = useState<Pin[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const refreshPins = useCallback(async () => {
+    try {
+      const p = await fetchPins(getSessionId());
+      setPins(p.pins);
+      setScopeLabel(p.scope.label);
+    } catch {
+      /* calm: a pin read failure just hides the section */
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshPins();
+  }, [refreshPins]);
+
+  const runSearch = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = query.trim();
+    if (!q) {
+      setResults([]);
+      return;
+    }
+    setSearching(true);
+    try {
+      const r = await fetchSearch(q, getSessionId());
+      setResults(r.results);
+      setScopeLabel(r.scope.label);
+    } catch {
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, [query]);
+
+  // Chat-native: continue a run result/pin via the same prepared-prompt handoff.
+  const onContinueRun = useCallback(async (refId: string) => {
+    setBusy(refId);
+    try {
+      await continueRun(refId, getSessionId());
+      router.push("/chat");
+    } catch {
+      setBusy(null);
+    }
+  }, [router]);
+
+  const onPin = useCallback(async (r: SearchResult) => {
+    if (await pinResult(r, getSessionId())) await refreshPins();
+  }, [refreshPins]);
+
+  const onUnpin = useCallback(async (pinId: string) => {
+    if (await unpin(pinId, getSessionId())) await refreshPins();
+  }, [refreshPins]);
+
+  const resultAction = (r: SearchResult) => {
+    const label = resultActionLabel(r);
+    if (r.result_type === "artifact" && r.download_url) {
+      return (
+        <a
+          href={`${API_BASE}${r.download_url}`}
+          download
+          className="shrink-0 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
+        >
+          Download
+        </a>
+      );
+    }
+    if (r.result_type === "run" && r.ref_id) {
+      return (
+        <button
+          type="button"
+          onClick={() => onContinueRun(r.ref_id as string)}
+          disabled={busy === r.ref_id}
+          className={cn(
+            "shrink-0 rounded-full border px-3 py-1.5 text-xs font-black transition disabled:opacity-60",
+            resultResumable(r)
+              ? "border-transparent bg-[var(--accent)] text-[var(--accent-contrast,#fff)] hover:opacity-90"
+              : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
+          )}
+        >
+          {busy === r.ref_id ? "Opening…" : label}
+        </button>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <section className="sarvam-card rounded-[1.5rem] p-5">
+      <SectionHeading
+        icon={<Search className="h-5 w-5" />}
+        title="Find &amp; pinned work"
+        description={`Search artifacts, documents, runs, and activity in ${scopeLabel} — and keep important work one click away.`}
+      />
+
+      <form onSubmit={runSearch} className="mb-4 flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-subtle)]" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={`Search ${scopeLabel.toLowerCase()}…`}
+            className="w-full rounded-full border border-[var(--border)] bg-[var(--surface-soft)] py-2 pl-9 pr-3 text-sm text-[var(--text-strong)] outline-none transition focus:border-[var(--border-strong)]"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={searching}
+          className="shrink-0 rounded-full border border-transparent bg-[var(--accent)] px-4 py-2 text-xs font-black text-[var(--accent-contrast,#fff)] transition hover:opacity-90 disabled:opacity-60"
+        >
+          {searching ? "Searching…" : "Search"}
+        </button>
+      </form>
+
+      <div className="grid gap-3">
+        {query.trim() && (
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+            <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Results</p>
+            {results.length === 0 ? (
+              <p className="text-xs text-[var(--text-muted)]">No matches in {scopeLabel}. Try another term.</p>
+            ) : (
+              <div className="grid gap-2">
+                {results.map((r, i) => (
+                  <div key={`${r.result_type}-${r.ref_id ?? i}`} className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="shrink-0 rounded-md border border-[var(--border)] bg-[var(--surface-muted)] px-1.5 py-0.5 text-[10px] font-black uppercase text-[var(--text-subtle)]">
+                        {r.result_type}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-[var(--text-strong)]">{r.title}</p>
+                        <p className="truncate text-xs text-[var(--text-muted)]">
+                          {r.summary}{r.created_at ? ` · ${relativeTime(r.created_at)}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {resultAction(r)}
+                      {canPin(r) && (
+                        <button
+                          type="button"
+                          onClick={() => onPin(r)}
+                          title="Pin for later"
+                          className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] p-1.5 text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--accent)]"
+                        >
+                          <Bookmark className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {pins.length > 0 && (
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+            <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Pinned</p>
+            <div className="grid gap-2">
+              {pins.map((p) => (
+                <div key={p.id} className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <Bookmark className="h-4 w-4 shrink-0 text-[var(--accent)]" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[var(--text-strong)]">{p.title}</p>
+                      {p.subtitle ? <p className="truncate text-xs text-[var(--text-muted)]">{p.subtitle}</p> : null}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {p.ref_type === "artifact" && p.download_url && (
+                      <a
+                        href={`${API_BASE}${p.download_url}`}
+                        download
+                        className="shrink-0 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
+                      >
+                        Download
+                      </a>
+                    )}
+                    {p.ref_type === "run" && p.action && p.status !== "archived" && (
+                      <button
+                        type="button"
+                        onClick={() => onContinueRun(p.ref_id)}
+                        disabled={busy === p.ref_id}
+                        className="shrink-0 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-strong)] disabled:opacity-60"
+                      >
+                        {busy === p.ref_id ? "Opening…" : p.action}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onUnpin(p.id)}
+                      title="Unpin"
+                      className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] p-1.5 text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--warning)]"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function RecentResourcesCard() {
   const router = useRouter();
   const [data, setData] = useState<RecentResources | null>(null);
@@ -1363,6 +1590,8 @@ export default function SettingsPage() {
       <WorkspaceCard />
 
       <RecentResourcesCard />
+
+      <LibraryCard />
 
       <PreferencesCard />
 

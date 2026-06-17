@@ -2628,7 +2628,6 @@ export default function ChatPage() {
       setQuestion(prompt);
       flashOcta("Continuing where you left off");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function patchTurnById(id: string, patch: Partial<Turn>) {
