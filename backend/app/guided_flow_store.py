@@ -181,6 +181,40 @@ class GuidedFlowStore:
                 .count()
             )
 
+    def list_pending(self, session_id: Optional[str]) -> list[dict]:
+        """Every in-flight (pending, non-expired) flow for this owner, newest first.
+
+        Read-only and clean: returns `{kind, run_id, created_at, data}` so the
+        run-history layer can surface genuinely resumable runs without consuming
+        them. The atomic resume primitive stays `consume`; this only peeks.
+        """
+        key = _session_key(session_id)
+        now = _now()
+        with self._session_factory() as session:
+            rows = (
+                session.query(GuidedFlow)
+                .filter(
+                    GuidedFlow.session_key == key,
+                    GuidedFlow.status == "pending",
+                )
+                .filter((GuidedFlow.expires_at.is_(None)) | (GuidedFlow.expires_at >= now))
+                .order_by(GuidedFlow.created_at.desc())
+                .all()
+            )
+            out: list[dict] = []
+            for row in rows:
+                try:
+                    data = json.loads(row.payload_json)
+                except (TypeError, ValueError):
+                    continue
+                out.append({
+                    "kind": row.kind,
+                    "run_id": row.run_id,
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                    "data": data,
+                })
+            return out
+
     def clear_all(self) -> None:
         """Wipe every guided flow (used by tests for isolation)."""
         with self._session_factory() as session:

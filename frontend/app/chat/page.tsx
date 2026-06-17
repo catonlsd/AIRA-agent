@@ -61,6 +61,7 @@ import {
   livePhaseForStage,
   type LivePhase,
 } from "@/lib/live-phase-presenter";
+import { takeContinuation } from "@/lib/runs";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -2617,6 +2618,18 @@ export default function ChatPage() {
   useEffect(() => {
     threadBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns.length, loading, airaXResponse]);
+
+  // "Continue your work" handoff: a run picked from Settings leaves a prepared
+  // prompt here. Prefill the composer (never auto-send) so the user stays in
+  // control and the continuation runs as a normal scoped turn — chat-native.
+  useEffect(() => {
+    const prompt = takeContinuation();
+    if (prompt) {
+      setQuestion(prompt);
+      flashOcta("Continuing where you left off");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function patchTurnById(id: string, patch: Partial<Turn>) {
     setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));

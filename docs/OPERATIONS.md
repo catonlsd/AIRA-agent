@@ -344,6 +344,46 @@ Invitation tokens/emails, join-accept flows, shared run continuation, richer
 history/search/filtering, activity-driven notifications, and operator audit tools
 all layer on this without changing the owner-key call sites.
 
+## Run history & "pick up where we left off"
+
+A thin, read-only composition (`app/run_history.py`, `RunHistoryService`) over
+stores that are already owner-scoped — it adds **no new storage** and inherits the
+access model for free. It surfaces three honestly-distinct kinds of run:
+
+- **`resume`** — a genuinely pending guided flow (`artifact` / `plan`) awaiting
+  approval, read via `guided_flow_store.list_pending` (peek, never consume).
+  Resuming sends the exact approve phrase, so the supervisor's existing atomic
+  `consume` claims it — real resume, idempotent (a duplicate approve resolves to
+  "already handled").
+- **`continue`** — a completed artifact on disk. "Continue" seeds a fresh,
+  on-topic build from the prior output's context; it **never pretends the internal
+  execution state still exists**, so it works regardless of ephemeral session
+  memory. The item links to the same access-controlled artifact download.
+- **`retry`** — a recent failure surfaced from `activity_events`, so a retry is
+  one click away — never a raw error blob.
+
+**APIs** (`app/routes/runs.py`): `GET /runs/recent` (list), `GET /runs/{id}` (one
+clean summary), `POST /runs/{id}/continue` (prepare a continuation). All resolve
+the active scope like a turn (account-first; workspace header honoured only for
+members) and require `view`. Continuation re-checks that the run is accessible in
+*this* scope — an inaccessible run is a plain `404`, so its existence never leaks.
+Payloads are UI-ready only: `id`, `title`, `status`
+(`requires_approval`/`completed`/`failed`), `kind`, `resumable`, `action`,
+`summary`, optional `download_url`, `created_at` — **never workflow internals,
+tool payloads, trace blobs, raw rows, or owner keys**.
+
+**Chat-native, not a job console**: continuation returns the exact prompt the
+client sends as a normal turn. The Settings "Continue your work" list (folded into
+the same scope-aware card, replacing the old read-only runs strip — one coherent
+surface, no duplicate history panels) calls `POST /runs/{id}/continue`, stashes the
+prompt in `sessionStorage`, and lands the user in chat, where the composer is
+**prefilled (never auto-sent)** so the user stays in control. No dashboards, no
+state inspectors.
+
+Richer history/search, bookmarking/pinning, activity-linked run detail, audit-safe
+operator run views, and resumable collaborative workflows all layer on this
+composition without touching the owner-key call sites.
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

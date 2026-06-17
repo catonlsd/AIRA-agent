@@ -27,6 +27,7 @@ from app.routes.auth import router as auth_router
 from app.routes.operator import router as operator_router
 from app.routes.preferences import router as preferences_router
 from app.routes.resources import router as resources_router
+from app.routes.runs import router as runs_router
 from app.routes.workspaces import router as workspaces_router
 
 logging.basicConfig(
@@ -71,6 +72,7 @@ app.include_router(auth_router)
 app.include_router(workspaces_router)
 app.include_router(operator_router)
 app.include_router(resources_router)
+app.include_router(runs_router)
 app.include_router(activity_router)
 app.include_router(aira_x_router)
 app.include_router(assistant_router)

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Activity,
@@ -68,6 +69,15 @@ import {
   isWarn,
   type RecentActivity,
 } from "@/lib/activity";
+import {
+  actionLabel,
+  continueRun,
+  fetchRecentRuns,
+  isResumable,
+  runTone,
+  type RecentRuns,
+  type RunItem,
+} from "@/lib/runs";
 import {
   clearAllPreferences,
   fetchPreferences,
@@ -735,25 +745,49 @@ function WorkspaceCard() {
 }
 
 function RecentResourcesCard() {
+  const router = useRouter();
   const [data, setData] = useState<RecentResources | null>(null);
   const [activity, setActivity] = useState<RecentActivity | null>(null);
+  const [runs, setRuns] = useState<RecentRuns | null>(null);
+  const [continuing, setContinuing] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "hidden">("loading");
 
   useEffect(() => {
     const sid = getSessionId();
-    Promise.all([fetchRecentResources(sid), fetchRecentActivity(sid).catch(() => null)])
-      .then(([r, a]) => {
+    Promise.all([
+      fetchRecentResources(sid),
+      fetchRecentActivity(sid).catch(() => null),
+      fetchRecentRuns(sid).catch(() => null),
+    ])
+      .then(([r, a, runHistory]) => {
         setData(r);
         setActivity(a);
+        setRuns(runHistory);
         setStatus("ready");
       })
       .catch(() => setStatus("hidden"));
   }, []);
 
+  // Chat-native continuation: ask the backend (scope-checked) to prepare the
+  // turn, then hand the prompt to the composer and land the user in chat.
+  const onContinue = useCallback(
+    async (run: RunItem) => {
+      setContinuing(run.id);
+      try {
+        await continueRun(run.id, getSessionId());
+        router.push("/chat");
+      } catch {
+        setContinuing(null);
+      }
+    },
+    [router]
+  );
+
   if (status === "hidden" || !data) return null;
 
   const events = activity?.events ?? [];
-  const empty = resourcesEmpty(data) && events.length === 0;
+  const runItems = runs?.runs ?? [];
+  const empty = resourcesEmpty(data) && events.length === 0 && runItems.length === 0;
 
   return (
     <section className="sarvam-card rounded-[1.5rem] p-5">
@@ -837,16 +871,41 @@ function RecentResourcesCard() {
             </div>
           )}
 
-          {data.runs.length > 0 && (
+          {runItems.length > 0 && (
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-              <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Activity</p>
-              <div className="grid gap-1.5">
-                {data.runs.map((r, i) => (
-                  <p key={i} className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" aria-hidden="true" />
-                    <span className="font-semibold text-[var(--text-strong)]">{r.label}</span>
-                    <span>· {r.status}{r.created_at ? ` · ${relativeTime(r.created_at)}` : ""}</span>
-                  </p>
+              <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Continue your work</p>
+              <div className="grid gap-2">
+                {runItems.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 shrink-0 rounded-full",
+                          runTone(r) === "warn" ? "bg-[var(--warning)]" : "bg-[var(--accent)]"
+                        )}
+                        aria-hidden="true"
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-[var(--text-strong)]">{r.title}</p>
+                        <p className="truncate text-xs text-[var(--text-muted)]">
+                          {r.summary}{r.created_at ? ` · ${relativeTime(r.created_at)}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onContinue(r)}
+                      disabled={continuing === r.id}
+                      className={cn(
+                        "shrink-0 rounded-full border px-3 py-1.5 text-xs font-black transition disabled:opacity-60",
+                        isResumable(r)
+                          ? "border-transparent bg-[var(--accent)] text-[var(--accent-contrast,#fff)] hover:opacity-90"
+                          : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
+                      )}
+                    >
+                      {continuing === r.id ? "Opening…" : actionLabel(r)}
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
