@@ -231,6 +231,31 @@ class AssistantSupervisor:
             if saved:
                 ctx.preferences = {**(ctx.preferences or {}), **saved}
             session_memory.note(owner, ctx.session_id, "last_request", ctx.message[:200])
+            self._consume_attached_context(ctx)
+        except Exception:
+            pass
+
+    def _consume_attached_context(self, ctx: TurnContext) -> None:
+        """Apply any prior-work the user explicitly attached to this turn.
+
+        Single-use for the next message: read it, record it honestly, and clear it
+        so it never lingers as hidden context. The reuse itself rides existing
+        rails — an attached artifact already seeded `last_artifact` (revision), an
+        attached run carried its continuation prompt, an attached document grounds
+        document-first — so this only makes the attachment visible and one-shot.
+        The user's message still leads; the attachment only helps.
+        """
+        try:
+            from app.chat_context import chat_context_service
+
+            attached = chat_context_service.consume(ctx.owner, ctx.session_id)
+            if attached:
+                ctx.trace.event(
+                    "attached_context",
+                    ref_type=attached.get("ref_type"),
+                    action=attached.get("action"),
+                    title=attached.get("title"),
+                )
         except Exception:
             pass
 

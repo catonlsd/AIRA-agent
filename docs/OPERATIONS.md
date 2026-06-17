@@ -423,6 +423,44 @@ Richer filters/ranking, saved collections, activity-linked search, and
 cross-resource search all layer on this composition without changing the
 owner-key call sites.
 
+## Chat context handoff ("use this in chat")
+
+Bring a prior document, artifact, or run back into the conversation explicitly —
+no hidden context injection, no file blobs in the browser.
+
+- **Model** (`app/chat_context.py`): a server-backed reference. `attach` resolves
+  a `{ref_type, ref_id}` against the already owner-scoped readers (so it can never
+  attach another scope's work), produces ONE clean context object, and parks it on
+  the chat session (`session_memory`). The action stays semantically honest:
+  document → `use_as_context`, artifact → `revise`, run →
+  `resume`/`continue_from`/`retry` (delegated to run history, which already
+  distinguishes a pending run from a completed/failed one). A pin resolves to one
+  of these three. The object carries only a reference + action + a composer
+  prefill — never file contents, owner keys, or internals.
+- **Real reuse rides existing rails**: attaching an artifact seeds `last_artifact`
+  so the next revise-style turn regenerates a richer version; attaching a run
+  carries its continuation prompt; attaching a document grounds document-first.
+  The supervisor **consumes** the attachment at turn start (`_consume_attached_
+  context` in `_prime_memory`), emits an `attached_context` trace event, and
+  clears it — single-use, never lingering. The user's typed message still leads.
+- **APIs** (`app/routes/chat_context.py`): `POST /chat/context` (attach),
+  `GET /chat/context` (what's attached, or null), `DELETE /chat/context` (detach).
+  Reading/attaching needs `view` — it only parks a reference on the caller's own
+  session — so a workspace viewer can reuse what they can already see, a
+  non-member silently falls back to personal scope, and an inaccessible /
+  cross-scope reference is a plain 404 (its existence never leaks).
+- **Frontend** (`frontend/lib/chat-context.ts`, dependency-free): the Settings
+  search/pins/runs surfaces now offer **Revise** (artifact), **Use in chat**
+  (document), and **Resume/Continue/Retry** (run) — all routed through
+  `attachContext`, landing the user in chat. The chat composer fetches the parked
+  context on mount and shows ONE calm, removable **pill** ("Revising artifact:
+  Roadmap Deck") above the input, prefilling an honest starter. The pill clears
+  when the message is sent (the server consumes it) or when the user removes it.
+  All five surfaces share one coherent action vocabulary.
+
+Multi-item context packs, richer revision flows, and shared run handoff between
+teammates all layer on this reference model without changing the call sites.
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

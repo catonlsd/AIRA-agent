@@ -73,7 +73,6 @@ import {
 } from "@/lib/activity";
 import {
   actionLabel,
-  continueRun,
   fetchRecentRuns,
   isResumable,
   runTone,
@@ -91,6 +90,7 @@ import {
   type Pin,
   type SearchResult,
 } from "@/lib/search";
+import { attachContext, inChatActionLabel } from "@/lib/chat-context";
 import {
   clearAllPreferences,
   fetchPreferences,
@@ -799,12 +799,15 @@ function LibraryCard() {
     }
   }, [query]);
 
-  // Chat-native: continue a run result/pin via the same prepared-prompt handoff.
-  const onContinueRun = useCallback(async (refId: string) => {
+  // Chat-native reuse: park the resource as scope-checked chat context (revise an
+  // artifact, use a document, continue/resume/retry a run), then land in chat
+  // where it shows as a removable pill and prefills the honest starter.
+  const onUseInChat = useCallback(async (refType: string, refId: string) => {
     setBusy(refId);
     try {
-      await continueRun(refId, getSessionId());
-      router.push("/chat");
+      const ctx = await attachContext(refType, refId, getSessionId());
+      if (ctx) router.push("/chat");
+      else setBusy(null);
     } catch {
       setBusy(null);
     }
@@ -818,34 +821,43 @@ function LibraryCard() {
     if (await unpin(pinId, getSessionId())) await refreshPins();
   }, [refreshPins]);
 
+  const actionChip = (refType: string, refId: string, label: string, primary = false) => (
+    <button
+      type="button"
+      onClick={() => onUseInChat(refType, refId)}
+      disabled={busy === refId}
+      className={cn(
+        "shrink-0 rounded-full border px-3 py-1.5 text-xs font-black transition disabled:opacity-60",
+        primary
+          ? "border-transparent bg-[var(--accent)] text-[var(--accent-contrast,#fff)] hover:opacity-90"
+          : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
+      )}
+    >
+      {busy === refId ? "Opening…" : label}
+    </button>
+  );
+
   const resultAction = (r: SearchResult) => {
-    const label = resultActionLabel(r);
-    if (r.result_type === "artifact" && r.download_url) {
-      return (
-        <a
-          href={`${API_BASE}${r.download_url}`}
-          download
-          className="shrink-0 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
-        >
-          Download
-        </a>
-      );
+    if (r.result_type === "document" && r.ref_id) {
+      return actionChip("document", r.ref_id, inChatActionLabel("document"));
     }
     if (r.result_type === "run" && r.ref_id) {
+      return actionChip("run", r.ref_id, r.action || "Continue", resultResumable(r));
+    }
+    if (r.result_type === "artifact" && r.ref_id) {
       return (
-        <button
-          type="button"
-          onClick={() => onContinueRun(r.ref_id as string)}
-          disabled={busy === r.ref_id}
-          className={cn(
-            "shrink-0 rounded-full border px-3 py-1.5 text-xs font-black transition disabled:opacity-60",
-            resultResumable(r)
-              ? "border-transparent bg-[var(--accent)] text-[var(--accent-contrast,#fff)] hover:opacity-90"
-              : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
+        <>
+          {actionChip("artifact", r.ref_id, inChatActionLabel("artifact"))}
+          {r.download_url && (
+            <a
+              href={`${API_BASE}${r.download_url}`}
+              download
+              className="shrink-0 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
+            >
+              Download
+            </a>
           )}
-        >
-          {busy === r.ref_id ? "Opening…" : label}
-        </button>
+        </>
       );
     }
     return null;
@@ -933,25 +945,23 @@ function LibraryCard() {
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    {p.ref_type === "artifact" && p.download_url && (
-                      <a
-                        href={`${API_BASE}${p.download_url}`}
-                        download
-                        className="shrink-0 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
-                      >
-                        Download
-                      </a>
+                    {p.ref_type === "artifact" && (
+                      <>
+                        {actionChip("artifact", p.ref_id, inChatActionLabel("artifact"))}
+                        {p.download_url && (
+                          <a
+                            href={`${API_BASE}${p.download_url}`}
+                            download
+                            className="shrink-0 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
+                          >
+                            Download
+                          </a>
+                        )}
+                      </>
                     )}
-                    {p.ref_type === "run" && p.action && p.status !== "archived" && (
-                      <button
-                        type="button"
-                        onClick={() => onContinueRun(p.ref_id)}
-                        disabled={busy === p.ref_id}
-                        className="shrink-0 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-strong)] disabled:opacity-60"
-                      >
-                        {busy === p.ref_id ? "Opening…" : p.action}
-                      </button>
-                    )}
+                    {p.ref_type === "document" && actionChip("document", p.ref_id, inChatActionLabel("document"))}
+                    {p.ref_type === "run" && p.action && p.status !== "archived" &&
+                      actionChip("run", p.ref_id, p.action, resultResumable(p))}
                     <button
                       type="button"
                       onClick={() => onUnpin(p.id)}
@@ -995,14 +1005,16 @@ function RecentResourcesCard() {
       .catch(() => setStatus("hidden"));
   }, []);
 
-  // Chat-native continuation: ask the backend (scope-checked) to prepare the
-  // turn, then hand the prompt to the composer and land the user in chat.
+  // Chat-native continuation: park the run as scope-checked chat context, then
+  // land the user in chat where it shows as a removable pill and prefills the
+  // honest starter (resume / continue / retry).
   const onContinue = useCallback(
     async (run: RunItem) => {
       setContinuing(run.id);
       try {
-        await continueRun(run.id, getSessionId());
-        router.push("/chat");
+        const ctx = await attachContext("run", run.id, getSessionId());
+        if (ctx) router.push("/chat");
+        else setContinuing(null);
       } catch {
         setContinuing(null);
       }

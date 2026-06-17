@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -62,6 +63,12 @@ import {
   type LivePhase,
 } from "@/lib/live-phase-presenter";
 import { takeContinuation } from "@/lib/runs";
+import {
+  clearContext,
+  contextLabel,
+  fetchContext,
+  type AttachedContext,
+} from "@/lib/chat-context";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1091,7 +1098,7 @@ function SuggestionChip({ label, prompt, onSelect }: { label: string; prompt: st
 
 function AiraHomeStage({
   question, setQuestion, busy, loading, octaState, octaMessage, octaProgress, octaInspector,
-  onSubmit, onComposerFocus,
+  onSubmit, onComposerFocus, attachedContext, onRemoveContext,
 }: {
   question: string;
   setQuestion: (v: string) => void;
@@ -1103,6 +1110,8 @@ function AiraHomeStage({
   octaInspector?: OctaInspectorData;
   onSubmit: (e: FormEvent) => Promise<void>;
   onComposerFocus: () => void;
+  attachedContext: AttachedContext | null;
+  onRemoveContext: () => void;
 }) {
   return (
     <section className="assistant-empty-shell w-full">
@@ -1136,6 +1145,7 @@ function AiraHomeStage({
 
         {/* Composer */}
         <form onSubmit={onSubmit} className="aira-home-composer mt-4 text-left">
+          <ContextPill ctx={attachedContext} onRemove={onRemoveContext} />
           <textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
@@ -1282,6 +1292,30 @@ function DocChips({ docs, onRemove }: { docs: string[]; onRemove?: (index: numbe
           )}
         </span>
       ))}
+    </div>
+  );
+}
+
+// ─── Attached prior-work context pill ─────────────────────────────────────────
+
+/** One calm, removable pill showing what prior work is attached to the next
+ *  message — "Revising artifact: Roadmap Deck". Never hidden, never a blob. */
+function ContextPill({ ctx, onRemove }: { ctx: AttachedContext | null; onRemove: () => void }) {
+  if (!ctx) return null;
+  return (
+    <div className="mb-2 flex items-center gap-2">
+      <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-1 text-xs font-bold text-[var(--accent)]">
+        <Sparkles className="h-3 w-3 shrink-0" />
+        <span className="truncate">{contextLabel(ctx)}</span>
+        <button
+          type="button"
+          aria-label="Remove attached context"
+          className="ml-0.5 shrink-0 rounded-full px-1 text-sm leading-none hover:opacity-70"
+          onClick={onRemove}
+        >
+          ×
+        </button>
+      </span>
     </div>
   );
 }
@@ -2630,6 +2664,27 @@ export default function ChatPage() {
     }
   }, []);
 
+  // Chat-native context handoff: a document/artifact/run "used in chat" from a
+  // scope-aware surface is parked server-side on this session. Surface it as a
+  // calm, removable pill and prefill an honest starter — never hidden context.
+  const [attachedContext, setAttachedContext] = useState<AttachedContext | null>(null);
+  useEffect(() => {
+    fetchContext(sessionId)
+      .then((c) => {
+        if (c) {
+          setAttachedContext(c);
+          if (c.prompt) setQuestion(c.prompt);
+          flashOcta(contextLabel(c));
+        }
+      })
+      .catch(() => {});
+  }, [sessionId]);
+
+  const onRemoveContext = useCallback(() => {
+    setAttachedContext(null);
+    void clearContext(sessionId);
+  }, [sessionId]);
+
   function patchTurnById(id: string, patch: Partial<Turn>) {
     setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   }
@@ -2676,6 +2731,9 @@ export default function ChatPage() {
 
     setComposerFocused(false);
     if (!overrideText) setQuestion("");
+    // Attached context is single-use for this message (the server consumes it),
+    // so the pill clears as the turn is sent — never lingering, never hidden.
+    setAttachedContext(null);
     setLoading(true);
     setAiraXLoading(false);
     setOctaFlash(null);
@@ -2968,6 +3026,8 @@ export default function ChatPage() {
                 octaInspector={octaInspector}
                 onSubmit={handleSubmit}
                 onComposerFocus={() => setComposerFocused(true)}
+                attachedContext={attachedContext}
+                onRemoveContext={onRemoveContext}
               />
               <AssistantWorkspaceLinks onUploadClick={() => uploadInputRef.current?.click()} />
             </div>
@@ -3015,6 +3075,7 @@ export default function ChatPage() {
                 onSubmit={handleSubmit}
                 className="aira-home-composer"
               >
+                <ContextPill ctx={attachedContext} onRemove={onRemoveContext} />
                 <DocChips docs={uploadedDocs} onRemove={removeUploadedDocChip} />
               <textarea
                 value={question}
