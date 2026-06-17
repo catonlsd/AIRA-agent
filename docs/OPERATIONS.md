@@ -277,8 +277,28 @@ Workspace access is **role-aware**, not flat membership (`app/authz.py`):
   rejected, and with no key configured the path is simply unavailable. This is the
   seam for future support/audit/policy tooling — no admin dashboard.
 
-Invitations/membership management, shared runs/artifacts, role-based defaults, and
-admin surfaces all layer on this without changing the owner-key call sites.
+## Membership & workspace switching (minimal collaboration loop)
+
+A small, real collaboration loop sits on the role model — no admin console:
+
+- **Membership API** (`/workspaces/{id}/members`, `app/routes/workspaces.py`):
+  `GET` list members (any member), `POST` add an existing account **by email** with
+  a role (manage/owner only), `PATCH` change a role, `DELETE` remove (manage; or a
+  member leaving themselves). Honest `404` when no account uses that email. Owner
+  protections live in `WorkspaceService` — the **last owner can't be removed or
+  demoted** (no self-lockout); new members default to **viewer**. Responses carry
+  display fields only — never owner keys.
+- **Scope switching** is real, not cosmetic: the frontend Settings page has a
+  compact **Workspaces** card (a Personal / workspace scope selector + create +,
+  for owners, a minimal members section). Selecting a workspace persists the
+  active id (`lib/scope.ts`) and reloads so every scope-aware surface re-resolves;
+  the `X-Workspace-Id` header then flows on chat, upload, and preferences. The
+  backend honours it **only for members** (`resolve_scope`), so a stale or
+  forbidden selection silently falls back to Personal — the switcher and backend
+  never drift. Personal scope behaves exactly as before.
+
+Invitation tokens/emails, join-accept flows, shared runs/artifacts, and audit
+trails all layer on this without changing the owner-key call sites.
 
 ## Memory model (session + preference)
 

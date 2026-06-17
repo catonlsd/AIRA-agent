@@ -22,7 +22,11 @@ from uuid import uuid4
 
 from app.authz import ROLE_OWNER, ROLE_VIEWER, normalize_role
 from app.db.database import Base, SessionLocal, engine
-from app.db.models import Workspace, WorkspaceMember
+from app.db.models import Account, Workspace, WorkspaceMember
+
+
+class WorkspaceError(ValueError):
+    """A clean, user-safe workspace/membership error (e.g. last-owner guard)."""
 
 
 def _now() -> datetime:
@@ -153,6 +157,65 @@ class WorkspaceService:
                 )
             session.commit()
         return self.membership(workspace_id, account_id)
+
+    # ── member management ─────────────────────────────────────────────────────
+
+    def list_members(self, workspace_id: str) -> list[dict]:
+        """Members of a workspace with their role and account display fields.
+        No owner keys or internal columns are exposed."""
+        if not workspace_id:
+            return []
+        with self._session_factory() as session:
+            rows = (
+                session.query(WorkspaceMember, Account)
+                .join(Account, Account.id == WorkspaceMember.account_id)
+                .filter(WorkspaceMember.workspace_id == workspace_id)
+                .order_by(WorkspaceMember.created_at)
+                .all()
+            )
+            return [
+                {
+                    "account_id": account.id,
+                    "email": account.email,
+                    "display_name": account.display_name,
+                    "role": normalize_role(member.role) or ROLE_VIEWER,
+                }
+                for member, account in rows
+            ]
+
+    def _owner_count(self, session, workspace_id: str) -> int:
+        return (
+            session.query(WorkspaceMember)
+            .filter(WorkspaceMember.workspace_id == workspace_id, WorkspaceMember.role == ROLE_OWNER)
+            .count()
+        )
+
+    def update_member_role(self, workspace_id: str, account_id: str, role: str) -> dict:
+        """Change a member's role. Refuses to demote the last owner (no lockout)."""
+        new_role = normalize_role(role)
+        if new_role is None:
+            raise WorkspaceError("Unknown role.")
+        with self._session_factory() as session:
+            row = self._member_row(session, workspace_id, account_id)
+            if row is None:
+                raise WorkspaceError("That account is not a member of this workspace.")
+            if row.role == ROLE_OWNER and new_role != ROLE_OWNER and self._owner_count(session, workspace_id) <= 1:
+                raise WorkspaceError("A workspace must keep at least one owner.")
+            row.role = new_role
+            session.commit()
+        return self.membership(workspace_id, account_id) or {}
+
+    def remove_member(self, workspace_id: str, account_id: str) -> bool:
+        """Remove a member. Refuses to remove the last owner (no lockout)."""
+        with self._session_factory() as session:
+            row = self._member_row(session, workspace_id, account_id)
+            if row is None:
+                return False
+            if row.role == ROLE_OWNER and self._owner_count(session, workspace_id) <= 1:
+                raise WorkspaceError("A workspace must keep at least one owner — transfer ownership first.")
+            session.delete(row)
+            session.commit()
+            return True
 
     def member_workspace_ids(self, account_id: str) -> list[str]:
         if not account_id:

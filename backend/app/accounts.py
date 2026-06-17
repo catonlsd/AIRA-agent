@@ -100,6 +100,15 @@ class AccountService:
             account = session.query(Account).filter(Account.id == account_id).first()
             return self._public(account) if account else None
 
+    def get_by_email(self, email: str) -> Optional[dict]:
+        """Public view of an account by email (used to invite by identifier)."""
+        email = (email or "").strip().lower()
+        if not email:
+            return None
+        with self._session_factory() as session:
+            account = session.query(Account).filter(Account.email == email).first()
+            return self._public(account) if account else None
+
     # ── public view (never leaks the password hash) ──────────────────────────
 
     @staticmethod

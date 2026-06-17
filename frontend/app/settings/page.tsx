@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Activity,
   ArrowRight,
@@ -15,13 +15,16 @@ import {
   Palette,
   RefreshCw,
   LogOut,
+  Plus,
   Server,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Trash2,
   UserCircle,
+  Users,
   Wrench,
+  X,
   XCircle,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -34,7 +37,24 @@ import {
   register,
   type Account,
 } from "@/lib/auth";
-import { PERSONAL_SCOPE_LABEL } from "@/lib/scope";
+import {
+  getActiveWorkspaceId,
+  PERSONAL_SCOPE_LABEL,
+  setActiveWorkspaceId,
+} from "@/lib/scope";
+import {
+  addMember,
+  canManage,
+  createWorkspace,
+  listMembers,
+  listWorkspaces,
+  reconcileActiveId,
+  removeMember,
+  roleLabel,
+  updateMemberRole,
+  type Member,
+  type Workspace,
+} from "@/lib/workspaces";
 import {
   clearAllPreferences,
   fetchPreferences,
@@ -484,6 +504,223 @@ function AccountCard() {
   );
 }
 
+function WorkspaceCard() {
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [activeId, setActiveId] = useState<string>("");
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [newName, setNewName] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("viewer");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const active = useMemo(() => workspaces.find((w) => w.id === activeId) ?? null, [workspaces, activeId]);
+  const myRole = active?.role ?? null;
+
+  const refresh = useCallback(async () => {
+    const me = await fetchMe();
+    setSignedIn(Boolean(me));
+    if (!me) return;
+    const list = await listWorkspaces().catch(() => []);
+    setWorkspaces(list);
+    const safe = reconcileActiveId(list, getActiveWorkspaceId());
+    if (safe !== getActiveWorkspaceId()) setActiveWorkspaceId(safe || null);
+    setActiveId(safe);
+    if (safe) setMembers(await listMembers(safe).catch(() => []));
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const switchScope = useCallback((id: string) => {
+    setActiveWorkspaceId(id || null);
+    // Reload so every scope-aware surface (preferences, chat) re-resolves under
+    // the new scope — guarantees the switcher and backend never drift apart.
+    window.location.reload();
+  }, []);
+
+  const onCreate = useCallback(async () => {
+    if (!newName.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      await createWorkspace(newName.trim());
+      setNewName("");
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't create workspace.");
+    } finally {
+      setBusy(false);
+    }
+  }, [newName, refresh]);
+
+  const onInvite = useCallback(async () => {
+    if (!active || !inviteEmail.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      setMembers(await addMember(active.id, inviteEmail.trim(), inviteRole));
+      setInviteEmail("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't add member.");
+    } finally {
+      setBusy(false);
+    }
+  }, [active, inviteEmail, inviteRole]);
+
+  const onRole = useCallback(async (accountId: string, role: string) => {
+    if (!active) return;
+    setError("");
+    try {
+      setMembers(await updateMemberRole(active.id, accountId, role));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't update role.");
+    }
+  }, [active]);
+
+  const onRemove = useCallback(async (accountId: string) => {
+    if (!active) return;
+    setError("");
+    try {
+      setMembers(await removeMember(active.id, accountId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't remove member.");
+    }
+  }, [active]);
+
+  if (signedIn === false) return null; // workspaces need an account; the Account card prompts sign-in
+
+  return (
+    <section className="sarvam-card rounded-[1.5rem] p-5">
+      <SectionHeading
+        icon={<Users className="h-5 w-5" />}
+        title="Workspaces"
+        description="Switch between Personal and a shared workspace. The active scope drives your answers, documents, and generated files everywhere in AIRA-X."
+      />
+
+      {/* Active scope selector */}
+      <div className="flex flex-wrap gap-2">
+        {[{ id: "", name: PERSONAL_SCOPE_LABEL, role: undefined } as Pick<Workspace, "id" | "name" | "role">, ...workspaces].map((w) => {
+          const isActive = (w.id || "") === activeId;
+          return (
+            <button
+              key={w.id || "personal"}
+              type="button"
+              onClick={() => !isActive && switchScope(w.id)}
+              aria-pressed={isActive}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-black transition",
+                isActive
+                  ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
+                  : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
+              )}
+            >
+              {isActive && <CheckCircle2 className="h-3.5 w-3.5" />}
+              {w.name}
+              {w.role && w.id === activeId && (
+                <span className="text-[10px] font-bold text-[var(--text-subtle)]">· {roleLabel(w.role)}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Create workspace */}
+      <div className="mt-3 flex gap-2">
+        <input
+          type="text" value={newName} onChange={(e) => setNewName(e.target.value)}
+          placeholder="New workspace name"
+          className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--text-strong)] outline-none focus:border-[var(--accent)]"
+        />
+        <button
+          type="button" onClick={onCreate} disabled={busy || !newName.trim()}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-xs font-black text-[var(--text-muted)] transition hover:text-[var(--text-strong)] disabled:opacity-60"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Create
+        </button>
+      </div>
+
+      {error && <p className="mt-2 text-xs font-semibold text-[var(--danger)]">{error}</p>}
+
+      {/* Members — only when a workspace is active */}
+      {active && (
+        <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+          <p className="mb-3 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+            {active.name} · Members
+          </p>
+
+          <div className="grid gap-2">
+            {members.map((m) => (
+              <div key={m.account_id} className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-[var(--text-strong)]">{m.display_name}</p>
+                  <p className="truncate text-xs text-[var(--text-muted)]">{m.email}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {canManage(myRole) ? (
+                    <select
+                      value={m.role}
+                      onChange={(e) => onRole(m.account_id, e.target.value)}
+                      className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-1 text-xs font-bold text-[var(--text-muted)]"
+                    >
+                      {["owner", "editor", "viewer"].map((r) => (
+                        <option key={r} value={r}>{roleLabel(r)}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="text-xs font-bold text-[var(--text-subtle)]">{roleLabel(m.role)}</span>
+                  )}
+                  {canManage(myRole) && (
+                    <button
+                      type="button" onClick={() => onRemove(m.account_id)}
+                      aria-label={`Remove ${m.email}`}
+                      className="text-[var(--text-subtle)] transition hover:text-[var(--danger)]"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {canManage(myRole) ? (
+            <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--border)] pt-3">
+              <input
+                type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="Add by email"
+                className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--text-strong)] outline-none focus:border-[var(--accent)]"
+              />
+              <select
+                value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}
+                className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-2 text-xs font-bold text-[var(--text-muted)]"
+              >
+                {["viewer", "editor", "owner"].map((r) => (
+                  <option key={r} value={r}>{roleLabel(r)}</option>
+                ))}
+              </select>
+              <button
+                type="button" onClick={onInvite} disabled={busy || !inviteEmail.trim()}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-xs font-black text-[var(--accent)] transition hover:brightness-105 disabled:opacity-60"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add
+              </button>
+            </div>
+          ) : (
+            <p className="mt-3 border-t border-[var(--border)] pt-3 text-xs text-[var(--text-subtle)]">
+              You have {roleLabel(myRole).toLowerCase()} access. Only an owner can manage members.
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function PreferencesCard() {
   const [items, setItems] = useState<PreferenceItem[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "offline">("loading");
@@ -927,6 +1164,8 @@ export default function SettingsPage() {
       </section>
 
       <AccountCard />
+
+      <WorkspaceCard />
 
       <PreferencesCard />
 
