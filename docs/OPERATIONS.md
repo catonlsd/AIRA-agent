@@ -716,6 +716,47 @@ External dashboards, alerting/webhook hooks, dead-letter queues, and richer tria
 workflows all layer on this curated, cursor-based stream without changing the user
 surface or the queue's execution path.
 
+## Operational policy: SLOs, stuck detection & alerts
+
+`app/ops_policy.py` (`OperationalPolicyService`, `SLOPolicy`) is the *policy* on top
+of the observability signals: it turns durable job state + timestamps into a small,
+production-sensible set of health classifications — so "needs attention" is
+policy-driven, not ad-hoc heuristics scattered across the code.
+
+- **Classifications** (each with severity `info`/`warning`/`critical` and a human
+  reason): `healthy`, `stuck`, `retry_exhausted`, `triage_needed`, `resolved`,
+  `backlog_pressure`.
+- **Stuck-job detection** uses **durable timestamps** (never in-memory timers): a
+  `queued` job older than `slo_queued_seconds`, a running job past its
+  **class-aware** budget (`slo_running_seconds_<class>` — generation gets a longer
+  budget than light work), or a `cancel_requested` job that hasn't reached
+  `canceled` within `slo_cancel_seconds`. "Slow but valid" stays healthy until it
+  crosses a clear threshold.
+- **Lineage/resolution honoured**: a failed job whose retry/replay **completed** is
+  `resolved` (not alerted); one with a follow-up **in flight** is `triage_needed`
+  (info); only a retry-exhausted failure with no follow-up is `critical`. A stuck
+  job that later completes is simply no longer active. A clean `canceled` is
+  `healthy`, distinct from a stuck cancellation.
+- **Backlog pressure**: a class with more `queued` jobs than `slo_backlog_threshold`
+  is flagged (`critical` past 2×).
+- **APIs** (operator-only): `GET /operator/health` (bounded snapshot —
+  per-job classifications for recent active + terminal-failed work, per-class
+  backlog, summary counts) and `GET /operator/alerts` (alert-ready: only
+  warning/critical — stuck, retry-exhausted, backlog — critical-first). Both
+  service-key gated.
+- **Config** (operator-tunable, validated): `slo_enabled`, `slo_queued_seconds`,
+  `slo_running_seconds_{default,artifact,validation,maintenance}`,
+  `slo_cancel_seconds`, `slo_backlog_threshold`. Invalid values fail clearly at
+  startup (pydantic validators). `SLOPolicy` is injectable, so thresholds are
+  swappable and testable.
+- **Separation**: policy results never reach the user activity feed; there are **no**
+  user-facing `/health`/`/alerts` routes; `GET /jobs/{id}` is unchanged (no
+  classification/severity fields). No frontend surface.
+
+Real alert routing/webhooks, SLO dashboards, incident workflows, dead-letter
+queues, and auto-remediation hooks all layer on this policy model without touching
+the user surface or the execution path.
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

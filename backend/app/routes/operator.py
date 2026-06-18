@@ -153,3 +153,28 @@ def operator_triage(request: Request, limit: int = 25) -> dict:
     from app.observability import observability
 
     return {"triage": observability.triage(limit=limit)}
+
+
+# ── SLO / health policy + alert-ready classifications (operator-only) ──────────
+
+
+@router.get("/health")
+def operator_health(request: Request, limit: int = 200) -> dict:
+    """A bounded operational-policy snapshot: per-job health classifications for
+    recent active + terminal-failed work, per-class backlog pressure, and a summary
+    count. Derived from durable timestamps/state — not raw log scraping."""
+    _require_operator(request)
+    from app.ops_policy import ops_policy
+
+    return ops_policy.health(limit=limit)
+
+
+@router.get("/alerts")
+def operator_alerts(request: Request, limit: int = 200) -> dict:
+    """Alert-ready policy results: only warning/critical conditions — stuck jobs
+    (queued/running/cancel past their SLO), retry-exhausted failures, and backlog
+    pressure — bounded and curated for external alert routing. Operator-only."""
+    _require_operator(request)
+    from app.ops_policy import ops_policy
+
+    return {"alerts": ops_policy.alerts(limit=limit)}

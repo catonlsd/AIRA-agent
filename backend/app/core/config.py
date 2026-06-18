@@ -147,6 +147,22 @@ class Settings(BaseSettings):
     queue_concurrency_validation: int = 1
     queue_concurrency_maintenance: int = 1
 
+    # ── Operational SLO / alert policy (operator-only; never user-facing) ──
+    # Durable-timestamp thresholds that classify stuck/degraded work. A job queued
+    # longer than this (still not claimed) is "stuck". 0 disables the check.
+    slo_enabled: bool = True
+    slo_queued_seconds: int = 300
+    # Running-too-long thresholds, per class (generation is legitimately slow, so
+    # the artifact class gets a longer budget than light work). >= 0; 0 disables.
+    slo_running_seconds_default: int = 120
+    slo_running_seconds_artifact: int = 600
+    slo_running_seconds_validation: int = 300
+    slo_running_seconds_maintenance: int = 600
+    # A cancel_requested job that doesn't reach canceled within this is "stuck".
+    slo_cancel_seconds: int = 60
+    # Queued count for one class above this is "backlog pressure". >= 1.
+    slo_backlog_threshold: int = 20
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -169,6 +185,23 @@ class Settings(BaseSettings):
     def _validate_owner_cap(cls, value):
         if int(value) < 1:
             raise ValueError("queue_per_owner_inflight_cap must be >= 1")
+        return value
+
+    @field_validator(
+        "slo_queued_seconds", "slo_running_seconds_default", "slo_running_seconds_artifact",
+        "slo_running_seconds_validation", "slo_running_seconds_maintenance", "slo_cancel_seconds",
+    )
+    @classmethod
+    def _validate_slo_seconds(cls, value):
+        if int(value) < 0:
+            raise ValueError("SLO thresholds (seconds) must be >= 0 (0 disables the check)")
+        return value
+
+    @field_validator("slo_backlog_threshold")
+    @classmethod
+    def _validate_backlog(cls, value):
+        if int(value) < 1:
+            raise ValueError("slo_backlog_threshold must be >= 1")
         return value
 
     @field_validator("cors_origins", mode="before")
