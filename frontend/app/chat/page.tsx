@@ -66,7 +66,10 @@ import { takeContinuation } from "@/lib/runs";
 import {
   clearContext,
   contextLabel,
+  createBundle,
   fetchContext,
+  itemsSummary,
+  removeContextItem,
   type AttachedContext,
 } from "@/lib/chat-context";
 
@@ -1098,7 +1101,7 @@ function SuggestionChip({ label, prompt, onSelect }: { label: string; prompt: st
 
 function AiraHomeStage({
   question, setQuestion, busy, loading, octaState, octaMessage, octaProgress, octaInspector,
-  onSubmit, onComposerFocus, attachedContext, onRemoveContext,
+  onSubmit, onComposerFocus, attachedItems, onRemoveItem, onClearContext, onSaveBundle,
 }: {
   question: string;
   setQuestion: (v: string) => void;
@@ -1110,8 +1113,10 @@ function AiraHomeStage({
   octaInspector?: OctaInspectorData;
   onSubmit: (e: FormEvent) => Promise<void>;
   onComposerFocus: () => void;
-  attachedContext: AttachedContext | null;
-  onRemoveContext: () => void;
+  attachedItems: AttachedContext[];
+  onRemoveItem: (item: AttachedContext) => void;
+  onClearContext: () => void;
+  onSaveBundle: () => void;
 }) {
   return (
     <section className="assistant-empty-shell w-full">
@@ -1145,7 +1150,12 @@ function AiraHomeStage({
 
         {/* Composer */}
         <form onSubmit={onSubmit} className="aira-home-composer mt-4 text-left">
-          <ContextPill ctx={attachedContext} onRemove={onRemoveContext} />
+          <ContextStack
+            items={attachedItems}
+            onRemoveItem={onRemoveItem}
+            onClearAll={onClearContext}
+            onSaveBundle={onSaveBundle}
+          />
           <textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
@@ -1296,26 +1306,55 @@ function DocChips({ docs, onRemove }: { docs: string[]; onRemove?: (index: numbe
   );
 }
 
-// ─── Attached prior-work context pill ─────────────────────────────────────────
+// ─── Attached prior-work context (multi-item) ─────────────────────────────────
 
-/** One calm, removable pill showing what prior work is attached to the next
- *  message — "Revising artifact: Roadmap Deck". Never hidden, never a blob. */
-function ContextPill({ ctx, onRemove }: { ctx: AttachedContext | null; onRemove: () => void }) {
-  if (!ctx) return null;
+/** A calm, removable stack of pills showing the prior work attached to the next
+ *  message — one per item, with a header summary, clear-all, and save-as-bundle.
+ *  Never hidden, never a blob; the user's typed message still leads. */
+function ContextStack({
+  items, onRemoveItem, onClearAll, onSaveBundle,
+}: {
+  items: AttachedContext[];
+  onRemoveItem: (item: AttachedContext) => void;
+  onClearAll: () => void;
+  onSaveBundle: () => void;
+}) {
+  if (items.length === 0) return null;
   return (
-    <div className="mb-2 flex items-center gap-2">
-      <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-1 text-xs font-bold text-[var(--accent)]">
-        <Sparkles className="h-3 w-3 shrink-0" />
-        <span className="truncate">{contextLabel(ctx)}</span>
-        <button
-          type="button"
-          aria-label="Remove attached context"
-          className="ml-0.5 shrink-0 rounded-full px-1 text-sm leading-none hover:opacity-70"
-          onClick={onRemove}
-        >
-          ×
-        </button>
-      </span>
+    <div className="mb-2 flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-2 px-0.5">
+        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--accent)]">
+          <Sparkles className="h-3 w-3 shrink-0" />
+          {itemsSummary(items)}
+        </span>
+        <span className="flex items-center gap-2 text-xs">
+          <button type="button" onClick={onSaveBundle} className="font-semibold text-[var(--text-muted)] hover:text-[var(--accent)]">
+            Save as bundle
+          </button>
+          <button type="button" onClick={onClearAll} className="font-semibold text-[var(--text-muted)] hover:text-[var(--warning)]">
+            Clear all
+          </button>
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((item) => (
+          <span
+            key={`${item.ref_type}-${item.ref_id}`}
+            className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-1 text-xs font-bold text-[var(--accent)]"
+            title={item.summary}
+          >
+            <span className="truncate">{contextLabel(item)}</span>
+            <button
+              type="button"
+              aria-label={`Remove ${item.title}`}
+              className="ml-0.5 shrink-0 rounded-full px-1 text-sm leading-none hover:opacity-70"
+              onClick={() => onRemoveItem(item)}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2664,25 +2703,38 @@ export default function ChatPage() {
     }
   }, []);
 
-  // Chat-native context handoff: a document/artifact/run "used in chat" from a
-  // scope-aware surface is parked server-side on this session. Surface it as a
-  // calm, removable pill and prefill an honest starter — never hidden context.
-  const [attachedContext, setAttachedContext] = useState<AttachedContext | null>(null);
+  // Chat-native context handoff: documents/artifacts/runs "used in chat" from
+  // scope-aware surfaces (or a loaded bundle) are parked server-side on this
+  // session. Surface them as calm, removable pills and prefill an honest starter
+  // — never hidden context, always explicit and editable.
+  const [attachedItems, setAttachedItems] = useState<AttachedContext[]>([]);
   useEffect(() => {
     fetchContext(sessionId)
-      .then((c) => {
-        if (c) {
-          setAttachedContext(c);
-          if (c.prompt) setQuestion(c.prompt);
-          flashOcta(contextLabel(c));
+      .then((state) => {
+        if (state.items.length > 0) {
+          setAttachedItems(state.items);
+          if (state.prompt) setQuestion(state.prompt);
+          flashOcta(itemsSummary(state.items));
         }
       })
       .catch(() => {});
   }, [sessionId]);
 
-  const onRemoveContext = useCallback(() => {
-    setAttachedContext(null);
+  const onRemoveItem = useCallback((item: AttachedContext) => {
+    setAttachedItems((prev) => prev.filter((i) => !(i.ref_type === item.ref_type && i.ref_id === item.ref_id)));
+    void removeContextItem(item.ref_type, item.ref_id, sessionId);
+  }, [sessionId]);
+
+  const onClearContext = useCallback(() => {
+    setAttachedItems([]);
     void clearContext(sessionId);
+  }, [sessionId]);
+
+  const onSaveBundle = useCallback(async () => {
+    const name = typeof window !== "undefined" ? window.prompt("Name this handoff pack")?.trim() : "";
+    if (!name) return;
+    const bundle = await createBundle(name, sessionId);
+    flashOcta(bundle ? `Saved bundle “${bundle.name}”` : "Couldn't save bundle");
   }, [sessionId]);
 
   function patchTurnById(id: string, patch: Partial<Turn>) {
@@ -2732,8 +2784,8 @@ export default function ChatPage() {
     setComposerFocused(false);
     if (!overrideText) setQuestion("");
     // Attached context is single-use for this message (the server consumes it),
-    // so the pill clears as the turn is sent — never lingering, never hidden.
-    setAttachedContext(null);
+    // so the pills clear as the turn is sent — never lingering, never hidden.
+    setAttachedItems([]);
     setLoading(true);
     setAiraXLoading(false);
     setOctaFlash(null);
@@ -3026,8 +3078,10 @@ export default function ChatPage() {
                 octaInspector={octaInspector}
                 onSubmit={handleSubmit}
                 onComposerFocus={() => setComposerFocused(true)}
-                attachedContext={attachedContext}
-                onRemoveContext={onRemoveContext}
+                attachedItems={attachedItems}
+                onRemoveItem={onRemoveItem}
+                onClearContext={onClearContext}
+                onSaveBundle={onSaveBundle}
               />
               <AssistantWorkspaceLinks onUploadClick={() => uploadInputRef.current?.click()} />
             </div>
@@ -3075,7 +3129,12 @@ export default function ChatPage() {
                 onSubmit={handleSubmit}
                 className="aira-home-composer"
               >
-                <ContextPill ctx={attachedContext} onRemove={onRemoveContext} />
+                <ContextStack
+                  items={attachedItems}
+                  onRemoveItem={onRemoveItem}
+                  onClearAll={onClearContext}
+                  onSaveBundle={onSaveBundle}
+                />
                 <DocChips docs={uploadedDocs} onRemove={removeUploadedDocChip} />
               <textarea
                 value={question}

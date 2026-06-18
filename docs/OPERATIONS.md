@@ -458,8 +458,43 @@ no hidden context injection, no file blobs in the browser.
   when the message is sent (the server consumes it) or when the user removes it.
   All five surfaces share one coherent action vocabulary.
 
-Multi-item context packs, richer revision flows, and shared run handoff between
-teammates all layer on this reference model without changing the call sites.
+## Multi-item context & handoff bundles
+
+The single-item handoff above generalises to several attached items plus durable,
+reusable bundles — still calm, explicit, and reference-only.
+
+- **Multi-item attached context** (`app/chat_context.py`): the session now parks
+  an ordered, **deduplicated list** of context items (cap 8) instead of one. Each
+  keeps its honest action AND a short **role** (document → "source doc", artifact
+  → "artifact to revise", run → "prior run"). `attach` appends one (deduped),
+  `attach_many` adds several (returns `attached`/`skipped` counts), `remove` drops
+  one, `clear` empties, `consume` returns the whole list and clears it. The
+  supervisor consumes the list at turn start and emits one `attached_context`
+  trace with the count + items — single-use, never lingering. `primary_prompt`
+  picks the first actionable starter (a run/artifact); documents ground silently.
+- **APIs**: `POST /chat/context` (one), `POST /chat/context/items` (many),
+  `GET /chat/context` (→ `{items, prompt, context}` — `context` mirrors the first
+  item for single-item callers), `DELETE /chat/context/item` (one),
+  `DELETE /chat/context` (all). All `view`-gated; inaccessible refs never attach.
+- **Bundles** (`app/bundles.py`, `context_bundles` table; `app/routes/bundles.py`):
+  a small durable scope-owned store of **references only** (`items_json` =
+  `[{ref_type, ref_id, title}]`, never payloads/prompts/urls). `POST /bundles`
+  saves the currently attached items as a named pack; `GET /bundles` lists the
+  active scope; `POST /bundles/{id}/load` **re-resolves** every reference against
+  the *current* scope and attaches the accessible ones (inaccessible items are
+  skipped, never smuggled in); `PATCH` renames; `DELETE` removes. Reading/loading
+  needs `view` (a workspace viewer can reopen a shared pack; a non-member falls
+  back to personal scope and a pack they can't see is a 404); creating / renaming
+  / deleting needs `edit` (a personal user always can).
+- **Frontend** (`frontend/lib/chat-context.ts`, dependency-free): the composer now
+  shows a calm **ContextStack** — a "Using N items" header with per-item pills,
+  remove-one, clear-all, and **Save as bundle** — and the Settings "Find & pinned
+  work" card gains a **Handoff packs** subsection (Load / Delete). Loading a pack
+  lands the user in chat with the items attached and an honest starter prefilled.
+  The user's typed message still leads; the attachments only help.
+
+Reusable context packs, teammate-to-teammate handoff, and richer multi-document
+reuse all layer on this reference model without changing the owner-key call sites.
 
 ## Memory model (session + preference)
 

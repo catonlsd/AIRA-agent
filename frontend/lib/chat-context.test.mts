@@ -6,7 +6,9 @@ import {
   actionVerb,
   contextLabel,
   hasContext,
+  hasItems,
   inChatActionLabel,
+  itemsSummary,
   type AttachedContext,
 } from "./chat-context.ts";
 
@@ -44,4 +46,16 @@ test("inChatActionLabel is honest and consistent per resource", () => {
 test("hasContext reflects whether something is attached", () => {
   assert.equal(hasContext(null), false);
   assert.equal(hasContext(ctx()), true);
+});
+
+test("itemsSummary collapses to one label or a count", () => {
+  assert.equal(itemsSummary([]), "");
+  assert.equal(itemsSummary([ctx({ action: "revise", title: "Deck" })]), "Revising artifact: Deck");
+  assert.equal(itemsSummary([ctx(), ctx({ ref_id: "b.pptx" }), ctx({ ref_id: "c.pptx" })]), "Using 3 items");
+});
+
+test("hasItems reflects whether the attached set is non-empty", () => {
+  assert.equal(hasItems(null), false);
+  assert.equal(hasItems([]), false);
+  assert.equal(hasItems([ctx()]), true);
 });

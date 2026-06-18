@@ -252,9 +252,11 @@ class AssistantSupervisor:
             if attached:
                 ctx.trace.event(
                     "attached_context",
-                    ref_type=attached.get("ref_type"),
-                    action=attached.get("action"),
-                    title=attached.get("title"),
+                    count=len(attached),
+                    items=[
+                        {"ref_type": i.get("ref_type"), "action": i.get("action"), "title": i.get("title")}
+                        for i in attached
+                    ],
                 )
         except Exception:
             pass

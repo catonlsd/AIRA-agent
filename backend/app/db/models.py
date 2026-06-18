@@ -130,6 +130,26 @@ class PinnedItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
 
 
+class ContextBundle(Base):
+    """A durable, scope-owned "handoff pack" — a saved combination of context
+    references (documents, artifacts, runs) that can be reloaded into chat later.
+
+    Stores only REFERENCES (`items_json` = a list of {ref_type, ref_id, title}),
+    never the underlying payloads, so the resources stay the single source of
+    truth and access is re-checked at load time. Scope-owned (`owner` =
+    account:<id> / workspace:<id> / session) so a personal pack stays personal and
+    a workspace pack is shared with authorized members.
+    """
+
+    __tablename__ = "context_bundles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    items_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+
+
 class Workspace(Base):
     """A durable shared scope that can own resources alongside personal accounts.
 

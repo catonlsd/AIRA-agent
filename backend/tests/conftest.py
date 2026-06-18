@@ -53,6 +53,7 @@ def _isolate_guided_flows():
     preferences never leak across tests or owners."""
     from app.activity import activity_service
     from app.artifacts.images import set_image_provider
+    from app.bundles import bundle_service
     from app.core.config import settings
     from app.guided_flow_store import guided_flow_store
     from app.memory.preference_memory import preference_memory
@@ -71,6 +72,7 @@ def _isolate_guided_flows():
     session_memory.clear_all()
     activity_service.clear_all()
     pin_service.clear_all()
+    bundle_service.clear_all()
     yield
     guided_flow_store.clear_all()
     usage_limiter.reset()
@@ -78,6 +80,7 @@ def _isolate_guided_flows():
     session_memory.clear_all()
     activity_service.clear_all()
     pin_service.clear_all()
+    bundle_service.clear_all()
     set_image_provider(None)
 
 

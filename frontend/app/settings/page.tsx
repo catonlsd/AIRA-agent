@@ -90,7 +90,14 @@ import {
   type Pin,
   type SearchResult,
 } from "@/lib/search";
-import { attachContext, inChatActionLabel } from "@/lib/chat-context";
+import {
+  attachContext,
+  deleteBundle,
+  fetchBundles,
+  inChatActionLabel,
+  loadBundle,
+  type Bundle,
+} from "@/lib/chat-context";
 import {
   clearAllPreferences,
   fetchPreferences,
@@ -763,6 +770,7 @@ function LibraryCard() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [pins, setPins] = useState<Pin[]>([]);
+  const [bundles, setBundles] = useState<Bundle[]>([]);
   const [searching, setSearching] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -776,9 +784,32 @@ function LibraryCard() {
     }
   }, []);
 
+  const refreshBundles = useCallback(async () => {
+    try {
+      setBundles(await fetchBundles(getSessionId()));
+    } catch {
+      /* calm: a bundle read failure just hides the section */
+    }
+  }, []);
+
   useEffect(() => {
     void refreshPins();
-  }, [refreshPins]);
+    void refreshBundles();
+  }, [refreshPins, refreshBundles]);
+
+  const onLoadBundle = useCallback(async (id: string) => {
+    setBusy(id);
+    try {
+      if (await loadBundle(id, getSessionId())) router.push("/chat");
+      else setBusy(null);
+    } catch {
+      setBusy(null);
+    }
+  }, [router]);
+
+  const onDeleteBundle = useCallback(async (id: string) => {
+    if (await deleteBundle(id, getSessionId())) await refreshBundles();
+  }, [refreshBundles]);
 
   const runSearch = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -966,6 +997,45 @@ function LibraryCard() {
                       type="button"
                       onClick={() => onUnpin(p.id)}
                       title="Unpin"
+                      className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] p-1.5 text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--warning)]"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {bundles.length > 0 && (
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+            <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Handoff packs</p>
+            <div className="grid gap-2">
+              {bundles.map((b) => (
+                <div key={b.id} className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <Layers3 className="h-4 w-4 shrink-0 text-[var(--accent)]" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[var(--text-strong)]">{b.name}</p>
+                      <p className="truncate text-xs text-[var(--text-muted)]">
+                        {b.count} item{b.count === 1 ? "" : "s"}{b.items.length ? ` · ${b.items.map((i) => i.title).join(", ")}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onLoadBundle(b.id)}
+                      disabled={busy === b.id}
+                      className="shrink-0 rounded-full border border-transparent bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-[var(--accent-contrast,#fff)] transition hover:opacity-90 disabled:opacity-60"
+                    >
+                      {busy === b.id ? "Opening…" : "Load"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteBundle(b.id)}
+                      title="Delete pack"
                       className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] p-1.5 text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--warning)]"
                     >
                       <X className="h-3.5 w-3.5" />

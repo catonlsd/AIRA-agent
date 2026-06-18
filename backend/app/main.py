@@ -27,6 +27,7 @@ from app.routes.auth import router as auth_router
 from app.routes.operator import router as operator_router
 from app.routes.preferences import router as preferences_router
 from app.routes.resources import router as resources_router
+from app.routes.bundles import router as bundles_router
 from app.routes.chat_context import router as chat_context_router
 from app.routes.runs import router as runs_router
 from app.routes.search import router as search_router
@@ -77,6 +78,7 @@ app.include_router(resources_router)
 app.include_router(runs_router)
 app.include_router(search_router)
 app.include_router(chat_context_router)
+app.include_router(bundles_router)
 app.include_router(activity_router)
 app.include_router(aira_x_router)
 app.include_router(assistant_router)
