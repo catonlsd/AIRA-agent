@@ -25,11 +25,15 @@ export type Job = {
   title: string | null;
   progress: string | null;
   result: JobResult;
+  origin?: "retry" | "replay" | null;
+  can_cancel?: boolean;
+  can_retry?: boolean;
   created_at: string | null;
   updated_at: string | null;
 };
 
 const _ACTIVE: JobStatus[] = ["queued", "running", "awaiting_approval", "validating", "repairing", "cancel_requested"];
+const _CANCELABLE: JobStatus[] = ["queued", "running", "awaiting_approval", "validating", "repairing"];
 const _LABEL: Record<JobStatus, string> = {
   queued: "Queued",
   running: "Working",
@@ -64,6 +68,16 @@ export function jobTone(status: JobStatus): "warn" | "accent" | "muted" {
   if (status === "failed") return "warn";
   if (isActive(status)) return "accent";
   return "muted";
+}
+
+/** Whether a Cancel control should be offered (honest: only mid-flight jobs). */
+export function canCancel(job: Job): boolean {
+  return job.can_cancel ?? _CANCELABLE.includes(job.status);
+}
+
+/** Whether a Retry control should be offered (honest: only failed jobs). */
+export function canRetry(job: Job): boolean {
+  return job.can_retry ?? job.status === "failed";
 }
 
 export function hasActiveJobs(jobs: Job[] | null | undefined): boolean {
@@ -106,11 +120,25 @@ export async function fetchRecentJobs(sessionId: string, activeOnly = false): Pr
   return Array.isArray(body?.jobs) ? body.jobs : [];
 }
 
-export async function cancelJob(jobId: string, sessionId: string): Promise<boolean> {
+/** Request cancellation. Returns the honest outcome (status + message), or null. */
+export async function cancelJob(jobId: string, sessionId: string): Promise<{ ok: boolean; status: JobStatus | null; message: string } | null> {
   const res = await fetch(`${API_URL}/jobs/${encodeURIComponent(jobId)}/cancel?session_id=${encodeURIComponent(sessionId)}`, {
     method: "POST",
     cache: "no-store",
     headers: scopedHeaders(),
   });
-  return res.ok;
+  if (!res.ok) return null;
+  return res.json();
+}
+
+/** Retry a failed job — schedules a real new attempt. Returns the new job, or null. */
+export async function retryJob(jobId: string, sessionId: string): Promise<Job | null> {
+  const res = await fetch(`${API_URL}/jobs/${encodeURIComponent(jobId)}/retry?session_id=${encodeURIComponent(sessionId)}`, {
+    method: "POST",
+    cache: "no-store",
+    headers: scopedHeaders(),
+  });
+  if (!res.ok) return null;
+  const body = await res.json();
+  return (body?.job as Job) ?? null;
 }

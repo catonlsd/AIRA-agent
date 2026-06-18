@@ -3,6 +3,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  canCancel,
+  canRetry,
   hasActiveJobs,
   isActive,
   isTerminal,
@@ -43,4 +45,21 @@ test("hasActiveJobs reflects whether anything is still working", () => {
   assert.equal(hasActiveJobs(null), false);
   assert.equal(hasActiveJobs([job("completed")]), false);
   assert.equal(hasActiveJobs([job("completed"), job("running")]), true);
+});
+
+test("canCancel is offered only for mid-flight jobs", () => {
+  assert.equal(canCancel(job("queued")), true);
+  assert.equal(canCancel(job("running")), true);
+  assert.equal(canCancel(job("completed")), false);
+  assert.equal(canCancel(job("failed")), false);
+  assert.equal(canCancel(job("canceled")), false);
+  // Honors an explicit server flag when present.
+  assert.equal(canCancel({ ...job("running"), can_cancel: false }), false);
+});
+
+test("canRetry is offered only for failed jobs", () => {
+  assert.equal(canRetry(job("failed")), true);
+  assert.equal(canRetry(job("completed")), false);
+  assert.equal(canRetry(job("canceled")), false);
+  assert.equal(canRetry(job("running")), false);
 });

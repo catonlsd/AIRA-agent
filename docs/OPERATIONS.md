@@ -540,6 +540,41 @@ infra.
 Multiple workers, external queues, cancellation/retry UX, operator replay, and
 workload prioritization all layer on this model without changing the call sites.
 
+### Cancellation, retry & operator replay
+
+Honest controllability on top of the queue (`app/execution_queue.py`):
+
+- **Cooperative cancellation** — `request_cancel(owner, id)` is honest, not a
+  force-kill. A **queued** job cancels outright (→ `canceled`); a **running** one
+  is marked `cancel_requested` and stops at the worker's next **safe checkpoint**
+  (the artifact handler checks `job.cancelled()` *before* the expensive generation
+  and raises `JobCanceled`; `run_once` also re-checks *after* the handler and
+  discards the result if a cancel arrived mid-run — so a cancel never reports fake
+  completion and never delivers an orphaned artifact). An **already-terminal** job
+  is told the truth ("already finished — nothing to cancel"). `transition` refuses
+  to leave a terminal state, so a worker race can't resurrect a final status.
+- **Honest retry** — `retry(owner, id)` works **only on a failed** job and
+  schedules a **real new execution** (new id, `attempts` reset) linked to the
+  original via `parent_job_id`/`origin="retry"`, so a retry is distinguishable
+  from the original. Idempotent via `dedup_key="retry:{id}"` — a double click
+  returns the in-flight retry, never a second run. Distinct from the **internal
+  bounded repair retry** inside `run_once` (same job, `attempts++`, capped by
+  `job_max_attempts`) and from operator replay.
+- **Operator replay** — `replay(id)` re-runs **any** job (even completed) as a
+  fresh attempt (`origin="replay"`), preserving the job's scope. Exposed **only**
+  behind `POST /operator/jobs/{id}/replay` (service API key), never in the product
+  UI — the clean seam for support/audit replay.
+- **Activity** — a canceled job records `run_canceled`, a retry records
+  `run_retrying` (scope-attributed), so history stays honest and calm.
+- **Routes**: `POST /jobs/{id}/cancel` (honest `{ok, status, message}`),
+  `POST /jobs/{id}/retry` (new job; `409` if not failed). Both `edit`-gated (a
+  workspace viewer can't cancel/retry; a personal user always can); an
+  inaccessible job is a `404`.
+- **Frontend** (`frontend/lib/jobs.ts`): `canCancel`/`canRetry` gate the controls
+  so they appear **only when honest** — a subtle Cancel on in-flight work and
+  Retry on failed work in the Settings "Background work" line. No worker ids, no
+  retry counters, no queue console.
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

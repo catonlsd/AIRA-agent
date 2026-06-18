@@ -20,7 +20,7 @@ from typing import Any
 
 from app.activity import ARTIFACT_CREATED, ARTIFACT_FAILED, RUN_COMPLETED, RUN_FAILED, activity_service
 from app.artifacts.service import ArtifactService, _artifact_from_dict
-from app.execution_queue import execution_queue
+from app.execution_queue import JobCanceled, execution_queue
 
 JOB_ARTIFACT = "artifact"
 
@@ -29,6 +29,10 @@ def _artifact_handler(job) -> dict[str, Any]:
     """Generate + validate an approved artifact durably. Records the same activity
     the inline approval records, so run history / recent artifacts stay coherent."""
     pending = _artifact_from_dict(job.payload or {})
+    # Cooperative cancel checkpoint: stop cleanly *before* the expensive generation
+    # rather than force-killing mid-write. The queue records an honest `canceled`.
+    if job.cancelled():
+        raise JobCanceled()
     execution_queue.transition(job.id, "validating", progress="Generating & validating")
     outcome = ArtifactService().generate(pending)
 

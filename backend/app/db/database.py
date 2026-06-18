@@ -36,6 +36,10 @@ def ensure_runtime_columns() -> None:
         inspector = inspect(engine)
         additions = {
             "documents": [("owner", "VARCHAR(128)")],
+            "execution_jobs": [
+                ("parent_job_id", "VARCHAR(36)"),
+                ("origin", "VARCHAR(16)"),
+            ],
         }
         for table, columns in additions.items():
             if table not in inspector.get_table_names():

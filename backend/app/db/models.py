@@ -163,6 +163,11 @@ class ExecutionJob(Base):
     dedup_key: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Lineage for honest retry / operator replay: the job this one re-runs, and
+    # whether it's a user "retry" of a failed job or an operator "replay". None =
+    # an original job. Lets the system answer "was this a retry?" without guessing.
+    parent_job_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    origin: Mapped[str | None] = mapped_column(String(16), nullable=True)  # retry | replay
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

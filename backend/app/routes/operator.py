@@ -35,3 +35,18 @@ def operator_overview(request: Request) -> dict:
             "accounts": session.query(Account).count(),
             "workspaces": session.query(Workspace).count(),
         }
+
+
+@router.post("/jobs/{job_id}/replay")
+def operator_replay_job(job_id: str, request: Request) -> dict:
+    """Operator-safe replay: re-run any execution job (even a completed one) as a
+    fresh attempt linked via `origin=replay`, preserving the job's own scope. This
+    is the gated seam for support/audit replay — never exposed to normal users, so
+    no operator control leaks into the product UI. Idempotent per operator."""
+    _require_operator(request)
+    from app.execution_queue import execution_queue
+
+    job = execution_queue.replay(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return {"job": job}

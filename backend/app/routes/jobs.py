@@ -2,17 +2,21 @@
 """
 Background job status — reconnect-safe, scope-aware, calm (not a job console).
 
-  GET  /jobs            -> { scope, jobs }     recent jobs in the active scope
-  GET  /jobs/{id}       -> { scope, job }      one job's clean status
-  POST /jobs/{id}/cancel-> { ok }              request cancellation
+  GET  /jobs            -> { scope, jobs }       recent jobs in the active scope
+  GET  /jobs/{id}       -> { scope, job }        one job's clean status
+  POST /jobs/{id}/cancel-> { ok, status, message } honest, cooperative cancel
+  POST /jobs/{id}/retry -> { ok, job | message }   real new attempt of a failed job
 
 So a client that disconnected mid-generation can reconnect and ask "is it done?"
 without a polling console. Every route resolves the active scope like a turn
 (account-first; workspace header member-only). Reading needs `view`; an
-inaccessible job is a plain 404 (its existence never leaks). Cancelling mutates a
-shared run, so it needs `edit` (a personal user always can). Payloads are
-UI-ready only — status, progress, and a clean result (title / download / error) —
-never worker ids, queue internals, payloads, or owner keys.
+inaccessible job is a plain 404 (its existence never leaks). Cancel/retry mutate a
+shared run, so they need `edit` (a personal user always can). Cancel is honest: a
+queued job cancels outright, a running one stops at the worker's next safe
+checkpoint, and an already-finished job is told the truth. Retry of a failed job
+schedules a real new attempt (idempotent). Payloads are UI-ready only — status,
+progress, and a clean result (title / download / error) — never worker ids, queue
+internals, payloads, or owner keys. Operator replay lives behind `/operator/*`.
 """
 
 from __future__ import annotations
@@ -70,4 +74,23 @@ def cancel_job(
 ) -> dict:
     scope = _scope_or_403(request, session_id, PERM_EDIT)
     owner = scope.owner_key or "default"
-    return {"ok": execution_queue.cancel_request(owner, job_id)}
+    result = execution_queue.request_cancel(owner, job_id)
+    if result.get("not_found"):
+        raise HTTPException(status_code=404, detail="Job not found in this scope.")
+    return result
+
+
+@router.post("/{job_id}/retry")
+def retry_job(
+    job_id: str,
+    request: Request,
+    session_id: str | None = None,
+) -> dict:
+    scope = _scope_or_403(request, session_id, PERM_EDIT)
+    owner = scope.owner_key or "default"
+    result = execution_queue.retry(owner, job_id)
+    if result.get("not_found"):
+        raise HTTPException(status_code=404, detail="Job not found in this scope.")
+    if not result.get("ok"):
+        raise HTTPException(status_code=409, detail=result.get("message", "Cannot retry this job."))
+    return {"scope": _scope_dict(scope), **result}

@@ -49,9 +49,17 @@ CANCELED = "canceled"
 
 _ACTIVE = {QUEUED, RUNNING, AWAITING_APPROVAL, VALIDATING, REPAIRING, CANCEL_REQUESTED}
 _TERMINAL = {COMPLETED, FAILED, CANCELED}
+# A running job can be asked to stop; a queued one cancels outright.
+_INTERRUPTIBLE = {RUNNING, VALIDATING, REPAIRING, AWAITING_APPROVAL}
+# Only a terminally-failed job is user-retryable (cancellation/completion aren't).
+_RETRYABLE = {FAILED}
 
 # A handler runs a job and returns (result_dict, title) or raises on failure.
 JobHandler = Callable[["JobView"], dict[str, Any]]
+
+
+class JobCanceled(Exception):
+    """Raised by a handler that cooperatively aborts at a safe checkpoint."""
 
 
 def _now() -> datetime:
@@ -59,19 +67,28 @@ def _now() -> datetime:
 
 
 class JobView:
-    """A plain, read-only view of a job handed to handlers — no ORM session."""
+    """A plain, read-only view of a job handed to handlers — no ORM session.
 
-    def __init__(self, row: ExecutionJob) -> None:
+    `cancelled()` lets a handler cooperatively check for a cancel request at safe
+    checkpoints (e.g. before starting expensive generation) and bail by raising
+    `JobCanceled`, so cancellation is honest, not a force-kill mid-write."""
+
+    def __init__(self, row: ExecutionJob, service: "ExecutionQueueService" | None = None) -> None:
         self.id = row.id
         self.owner = row.owner
         self.session_id = row.session_id
         self.actor_account_id = row.actor_account_id
         self.kind = row.kind
+        self.title = row.title
         self.attempts = row.attempts
+        self._service = service
         try:
             self.payload = json.loads(row.payload_json)
         except (TypeError, ValueError):
             self.payload = {}
+
+    def cancelled(self) -> bool:
+        return bool(self._service and self._service._is_cancelled(self.id))
 
 
 class ExecutionQueueService:
@@ -163,7 +180,7 @@ class ExecutionQueueService:
             if claimed.rowcount != 1:
                 return None  # another worker won the race
             row = session.get(ExecutionJob, row.id)
-            return JobView(row)
+            return JobView(row, service=self)
 
     # ── transitions ───────────────────────────────────────────────────────────
 
@@ -179,6 +196,10 @@ class ExecutionQueueService:
             row = session.get(ExecutionJob, job_id)
             if row is None:
                 return
+            # Terminal is terminal: never resurrect a completed/failed/canceled job
+            # (guards a worker race from overwriting an honest final state).
+            if row.status in _TERMINAL and status != row.status:
+                return
             row.status = status
             if progress is not None:
                 row.progress = progress
@@ -189,24 +210,134 @@ class ExecutionQueueService:
                 row.finished_at = _now()
             session.commit()
 
-    def cancel_request(self, owner: str, job_id: str) -> bool:
-        """Foundation for cancellation: mark an active job for cancel. The worker
-        checks this before running terminal work; a finished job is left alone."""
+    # ── cancellation (honest, cooperative) ────────────────────────────────────
+
+    def request_cancel(self, owner: str, job_id: str) -> dict[str, Any]:
+        """Honestly cancel an accessible job. A queued job cancels outright; a
+        running one is marked `cancel_requested` and stops at the worker's next
+        safe checkpoint. Already-terminal jobs report the truth, never a fake
+        cancel. Scope-checked: an inaccessible job is reported not-found."""
         with self._session_factory() as session:
             row = session.get(ExecutionJob, job_id)
             if row is None or row.owner != owner:
-                return False
-            if row.status in _TERMINAL or row.status == CANCELED:
-                return False
-            row.status = CANCELED if row.status == QUEUED else CANCEL_REQUESTED
+                return {"ok": False, "not_found": True, "status": None,
+                        "message": "Job not found in this scope."}
+            status = row.status
+            if status in _TERMINAL:
+                return {"ok": False, "status": status,
+                        "message": "That job already finished — nothing to cancel."}
+            if status == CANCEL_REQUESTED:
+                return {"ok": True, "status": CANCEL_REQUESTED,
+                        "message": "Cancel already requested — it'll stop at the next safe point."}
+            if status == QUEUED:
+                row.status = CANCELED
+                row.progress = "Canceled"
+                row.finished_at = _now()
+                row.updated_at = _now()
+                session.commit()
+                self._record_canceled(owner, row.actor_account_id, row.title)
+                return {"ok": True, "status": CANCELED, "message": "Canceled."}
+            # Running / validating / repairing / awaiting_approval -> cooperative.
+            row.status = CANCEL_REQUESTED
+            row.progress = "Cancel requested"
             row.updated_at = _now()
             session.commit()
-            return True
+            return {"ok": True, "status": CANCEL_REQUESTED,
+                    "message": "Cancel requested — stopping at the next safe point."}
+
+    def cancel_request(self, owner: str, job_id: str) -> bool:
+        """Back-compat boolean wrapper over `request_cancel`."""
+        return bool(self.request_cancel(owner, job_id).get("ok"))
 
     def _is_cancelled(self, job_id: str) -> bool:
         with self._session_factory() as session:
             row = session.get(ExecutionJob, job_id)
             return bool(row and row.status in (CANCEL_REQUESTED, CANCELED))
+
+    # ── retry (user, of a failed terminal job) + replay (operator) ────────────
+
+    def retry(self, owner: str, job_id: str) -> dict[str, Any]:
+        """User-requested retry of a *failed* job: schedules a real NEW execution
+        (new id, attempts reset) that re-runs the same work, linked to the original
+        via `parent_job_id`/`origin=retry`. Idempotent — a retry already in flight
+        is returned rather than duplicated, so a double click can't double-run."""
+        with self._session_factory() as session:
+            row = session.get(ExecutionJob, job_id)
+            if row is None or row.owner != owner:
+                return {"ok": False, "not_found": True,
+                        "message": "Job not found in this scope."}
+            if row.status not in _RETRYABLE:
+                return {"ok": False, "status": row.status,
+                        "message": "Only a job that failed can be retried."}
+            payload = row.payload_json
+            kind, session_id, actor, title = row.kind, row.session_id, row.actor_account_id, row.title
+        new_job = self._enqueue_clone(
+            owner, kind, payload, session_id=session_id, actor_account_id=actor,
+            title=title, parent_job_id=job_id, origin="retry",
+            dedup_key=f"retry:{job_id}",
+        )
+        self._record_retry(owner, actor, title)
+        return {"ok": True, "job": new_job}
+
+    def replay(self, job_id: str, *, requested_by: str = "operator") -> Optional[dict[str, Any]]:
+        """Operator-safe replay primitive: re-run ANY job (even a completed one) as
+        a fresh execution linked via `origin=replay`. No user route exposes this —
+        it's the clean seam for an operator/admin replay tool. Returns the new job."""
+        with self._session_factory() as session:
+            row = session.get(ExecutionJob, job_id)
+            if row is None:
+                return None
+            owner, kind, payload = row.owner, row.kind, row.payload_json
+            session_id, actor, title = row.session_id, row.actor_account_id, row.title
+        return self._enqueue_clone(
+            owner, kind, payload, session_id=session_id, actor_account_id=actor,
+            title=title, parent_job_id=job_id, origin="replay",
+            dedup_key=f"replay:{job_id}:{requested_by}",
+        )
+
+    def _enqueue_clone(
+        self, owner: str, kind: str, payload_json: str, *,
+        session_id: Optional[str], actor_account_id: Optional[str], title: Optional[str],
+        parent_job_id: str, origin: str, dedup_key: str,
+    ) -> dict[str, Any]:
+        with self._session_factory() as session:
+            existing = (
+                session.query(ExecutionJob)
+                .filter(ExecutionJob.owner == owner, ExecutionJob.dedup_key == dedup_key,
+                        ExecutionJob.status.in_(tuple(_ACTIVE)))
+                .first()
+            )
+            if existing is not None:
+                return self._clean(existing)  # idempotent: re-run already in flight
+            row = ExecutionJob(
+                id=uuid4().hex, owner=owner, session_id=session_id,
+                actor_account_id=actor_account_id, kind=kind, status=QUEUED,
+                title=title, progress="Queued", payload_json=payload_json,
+                dedup_key=dedup_key, parent_job_id=parent_job_id, origin=origin, attempts=0,
+            )
+            session.add(row)
+            session.commit()
+            return self._clean(row)
+
+    # ── activity integration (honest, scope-attributed) ───────────────────────
+
+    @staticmethod
+    def _record_canceled(owner: str, actor_id: Optional[str], title: Optional[str]) -> None:
+        try:
+            from app.activity import RUN_CANCELED, activity_service
+            activity_service.record(owner, RUN_CANCELED, f"Canceled {title or 'a background task'}",
+                                    actor_id=actor_id, status="canceled")
+        except Exception:
+            pass
+
+    @staticmethod
+    def _record_retry(owner: str, actor_id: Optional[str], title: Optional[str]) -> None:
+        try:
+            from app.activity import RUN_RETRYING, activity_service
+            activity_service.record(owner, RUN_RETRYING, f"Retrying {title or 'a background task'}",
+                                    actor_id=actor_id, status="queued")
+        except Exception:
+            pass
 
     # ── worker step ───────────────────────────────────────────────────────────
 
@@ -217,8 +348,9 @@ class ExecutionQueueService:
         view = self.claim()
         if view is None:
             return None
+        # Checkpoint 1: a cancel requested before the work starts stops cleanly.
         if self._is_cancelled(view.id):
-            self.transition(view.id, CANCELED, progress="Canceled")
+            self._finish_canceled(view)
             return self.get_raw(view.id)
         handler = self._handlers.get(view.kind)
         if handler is None:
@@ -227,14 +359,30 @@ class ExecutionQueueService:
             return self.get_raw(view.id)
         try:
             result = handler(view)
-            self.transition(view.id, COMPLETED, progress="Completed", result=result)
-        except Exception as error:  # honest failure + bounded retry
-            if view.attempts < max(1, settings.job_max_attempts):
+        except JobCanceled:  # the handler bailed at a safe checkpoint
+            self._finish_canceled(view)
+            return self.get_raw(view.id)
+        except Exception as error:  # honest failure + bounded internal repair retry
+            if view.attempts < max(1, settings.job_max_attempts) and not self._is_cancelled(view.id):
                 self.transition(view.id, QUEUED, progress="Retrying")
+            elif self._is_cancelled(view.id):
+                self._finish_canceled(view)
             else:
                 self.transition(view.id, FAILED, progress="Failed",
                                 result={"error": f"{type(error).__name__}: {error}"[:300]})
+            return self.get_raw(view.id)
+        # Checkpoint 2: honor a cancel that arrived DURING the run — the honest
+        # outcome is canceled, and the (now-orphaned) result is not delivered.
+        if self._is_cancelled(view.id):
+            self._finish_canceled(view)
+        else:
+            self.transition(view.id, COMPLETED, progress="Completed", result=result)
         return self.get_raw(view.id)
+
+    def _finish_canceled(self, view: "JobView") -> None:
+        self.transition(view.id, CANCELED, progress="Canceled",
+                        result={"canceled": True})
+        self._record_canceled(view.owner, view.actor_account_id, view.title)
 
     def drain(self, max_jobs: int = 50) -> int:
         """Run queued jobs until the queue is empty (used by the worker loop and
@@ -276,7 +424,15 @@ class ExecutionQueueService:
         return status in _ACTIVE
 
     @staticmethod
-    def _clean(row: ExecutionJob) -> dict[str, Any]:
+    def can_cancel(status: str) -> bool:
+        return status == QUEUED or status in _INTERRUPTIBLE
+
+    @staticmethod
+    def can_retry(status: str) -> bool:
+        return status in _RETRYABLE
+
+    @classmethod
+    def _clean(cls, row: ExecutionJob) -> dict[str, Any]:
         result: Any = None
         if row.result_json:
             try:
@@ -290,6 +446,9 @@ class ExecutionQueueService:
             "title": row.title,
             "progress": row.progress,
             "result": result,  # clean handler outcome (title/download/error)
+            "origin": row.origin,  # null | retry | replay — was this a re-run?
+            "can_cancel": cls.can_cancel(row.status),
+            "can_retry": cls.can_retry(row.status),
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,
         }

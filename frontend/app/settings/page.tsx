@@ -99,8 +99,12 @@ import {
   type Bundle,
 } from "@/lib/chat-context";
 import {
+  canCancel,
+  canRetry,
+  cancelJob,
   fetchRecentJobs,
   jobStatusLabel,
+  retryJob,
   type Job,
 } from "@/lib/jobs";
 import {
@@ -1061,9 +1065,18 @@ function RecentResourcesCard() {
   const [data, setData] = useState<RecentResources | null>(null);
   const [activity, setActivity] = useState<RecentActivity | null>(null);
   const [runs, setRuns] = useState<RecentRuns | null>(null);
-  const [activeJobs, setActiveJobs] = useState<Job[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobBusy, setJobBusy] = useState<string | null>(null);
   const [continuing, setContinuing] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "hidden">("loading");
+
+  const refreshJobs = useCallback(async () => {
+    try {
+      setJobs(await fetchRecentJobs(getSessionId()));
+    } catch {
+      /* calm: a jobs read failure just hides the section */
+    }
+  }, []);
 
   useEffect(() => {
     const sid = getSessionId();
@@ -1071,17 +1084,37 @@ function RecentResourcesCard() {
       fetchRecentResources(sid),
       fetchRecentActivity(sid).catch(() => null),
       fetchRecentRuns(sid).catch(() => null),
-      fetchRecentJobs(sid, true).catch(() => []),
+      fetchRecentJobs(sid).catch(() => []),
     ])
-      .then(([r, a, runHistory, jobs]) => {
+      .then(([r, a, runHistory, jobList]) => {
         setData(r);
         setActivity(a);
         setRuns(runHistory);
-        setActiveJobs(jobs);
+        setJobs(jobList);
         setStatus("ready");
       })
       .catch(() => setStatus("hidden"));
   }, []);
+
+  const onCancelJob = useCallback(async (id: string) => {
+    setJobBusy(id);
+    try {
+      await cancelJob(id, getSessionId());
+      await refreshJobs();
+    } finally {
+      setJobBusy(null);
+    }
+  }, [refreshJobs]);
+
+  const onRetryJob = useCallback(async (id: string) => {
+    setJobBusy(id);
+    try {
+      await retryJob(id, getSessionId());
+      await refreshJobs();
+    } finally {
+      setJobBusy(null);
+    }
+  }, [refreshJobs]);
 
   // Chat-native continuation: park the run as scope-checked chat context, then
   // land the user in chat where it shows as a removable pill and prefills the
@@ -1104,7 +1137,10 @@ function RecentResourcesCard() {
 
   const events = activity?.events ?? [];
   const runItems = runs?.runs ?? [];
-  const empty = resourcesEmpty(data) && events.length === 0 && runItems.length === 0 && activeJobs.length === 0;
+  // Show background work that still needs attention — in flight, or failed (so it
+  // can be retried). Completed work surfaces via artifacts/activity already.
+  const bgJobs = jobs.filter((j) => j.status !== "completed");
+  const empty = resourcesEmpty(data) && events.length === 0 && runItems.length === 0 && bgJobs.length === 0;
 
   return (
     <section className="sarvam-card rounded-[1.5rem] p-5">
@@ -1120,18 +1156,50 @@ function RecentResourcesCard() {
         </div>
       ) : (
         <div className="grid gap-3">
-          {activeJobs.length > 0 && (
-            <div className="rounded-2xl border border-[var(--accent)] bg-[var(--accent-soft)] p-4">
-              <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--accent)]">Working in the background</p>
-              <div className="grid gap-1.5">
-                {activeJobs.map((j) => (
-                  <p key={j.id} className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-                    <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--accent)]" aria-hidden="true" />
-                    <span className="truncate">
-                      <span className="font-semibold text-[var(--text-strong)]">{j.title || "Background task"}</span>
-                      {` · ${jobStatusLabel(j.status)}`}
-                    </span>
-                  </p>
+          {bgJobs.length > 0 && (
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+              <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Background work</p>
+              <div className="grid gap-2">
+                {bgJobs.map((j) => (
+                  <div key={j.id} className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 shrink-0 rounded-full",
+                          j.status === "failed" ? "bg-[var(--warning)]"
+                            : j.status === "canceled" ? "bg-[var(--text-subtle)]"
+                            : "animate-pulse bg-[var(--accent)]"
+                        )}
+                        aria-hidden="true"
+                      />
+                      <span className="truncate text-xs text-[var(--text-muted)]">
+                        <span className="font-semibold text-[var(--text-strong)]">{j.title || "Background task"}</span>
+                        {` · ${jobStatusLabel(j.status)}`}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {canCancel(j) && (
+                        <button
+                          type="button"
+                          onClick={() => onCancelJob(j.id)}
+                          disabled={jobBusy === j.id}
+                          className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1 text-[11px] font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--warning)] disabled:opacity-60"
+                        >
+                          {jobBusy === j.id ? "…" : "Cancel"}
+                        </button>
+                      )}
+                      {canRetry(j) && (
+                        <button
+                          type="button"
+                          onClick={() => onRetryJob(j.id)}
+                          disabled={jobBusy === j.id}
+                          className="rounded-full border border-transparent bg-[var(--accent)] px-2.5 py-1 text-[11px] font-black text-[var(--accent-contrast,#fff)] transition hover:opacity-90 disabled:opacity-60"
+                        >
+                          {jobBusy === j.id ? "…" : "Retry"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
