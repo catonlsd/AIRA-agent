@@ -53,6 +53,9 @@ def ensure_runtime_columns() -> None:
                 ("stat_routed", "INTEGER DEFAULT 0"),
                 ("stat_suppressed", "INTEGER DEFAULT 0"),
                 ("stat_skipped", "INTEGER DEFAULT 0"),
+                ("max_attempts", "INTEGER"),
+                ("consecutive_failures", "INTEGER DEFAULT 0"),
+                ("cooldown_until", "DATETIME"),
             ],
         }
         for table, columns in additions.items():

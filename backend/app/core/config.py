@@ -183,6 +183,12 @@ class Settings(BaseSettings):
     # occurrence counter resets, so repeated-condition escalation reflects a
     # currently-persisting problem, not stale history. >= 0.
     webhook_escalation_resolve_seconds: int = 1800
+    # Destination health/cooldown: after this many CONSECUTIVE terminal delivery
+    # failures a destination cools down (routing skips it) for `cooldown_seconds`,
+    # so an unhealthy endpoint stops thrashing. Time-bounded + a success clears it;
+    # never a permanent black hole. threshold >= 1; seconds >= 0 (0 disables).
+    webhook_cooldown_threshold: int = 5
+    webhook_cooldown_seconds: int = 600
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -232,11 +238,19 @@ class Settings(BaseSettings):
             raise ValueError("webhook delivery/redrive bounds must be >= 1")
         return value
 
-    @field_validator("webhook_suppress_seconds", "webhook_escalation_resolve_seconds")
+    @field_validator("webhook_suppress_seconds", "webhook_escalation_resolve_seconds",
+                     "webhook_cooldown_seconds")
     @classmethod
     def _validate_webhook_suppress(cls, value):
         if int(value) < 0:
-            raise ValueError("webhook suppression/resolve windows must be >= 0 (0 disables)")
+            raise ValueError("webhook suppression/resolve/cooldown windows must be >= 0 (0 disables)")
+        return value
+
+    @field_validator("webhook_cooldown_threshold")
+    @classmethod
+    def _validate_cooldown_threshold(cls, value):
+        if int(value) < 1:
+            raise ValueError("webhook_cooldown_threshold must be >= 1")
         return value
 
     @field_validator("cors_origins", mode="before")

@@ -195,6 +195,7 @@ class DestinationBody(BaseModel):
     origin_filter: str | None = Field(default=None, max_length=64)
     suppress_seconds: int | None = None
     escalate_after: int | None = None
+    max_attempts: int | None = None
     secret: str | None = Field(default=None, max_length=255)
     enabled: bool = True
 
@@ -211,6 +212,7 @@ class DestinationUpdate(BaseModel):
     origin_filter: str | None = None
     suppress_seconds: int | None = None
     escalate_after: int | None = None
+    max_attempts: int | None = None
     secret: str | None = None
 
 
@@ -226,7 +228,7 @@ def operator_create_destination(body: DestinationBody, request: Request) -> dict
         min_severity=body.min_severity, event_filter=body.event_filter,
         alert_filter=body.alert_filter, origin_filter=body.origin_filter,
         suppress_seconds=body.suppress_seconds, escalate_after=body.escalate_after,
-        secret=body.secret, enabled=body.enabled)
+        max_attempts=body.max_attempts, secret=body.secret, enabled=body.enabled)
     if dest is None:
         raise HTTPException(status_code=400, detail="Invalid destination (url/kind/subscription/severity/filters/escalation).")
     return {"destination": dest}
@@ -253,6 +255,44 @@ def operator_destination_routing(dest_id: str, request: Request) -> dict:
     if preview is None:
         raise HTTPException(status_code=404, detail="Destination not found.")
     return preview
+
+
+@router.get("/destinations/{dest_id}/health")
+def operator_destination_health(dest_id: str, request: Request) -> dict:
+    """One destination's health/SLO view: status counts, cooldown state, escalation
+    eligibility, last error class, and a calm health label + reason. Operator-only."""
+    _require_operator(request)
+    from app.webhooks import delivery_service
+
+    health = delivery_service.destination_health_one(dest_id)
+    if health is None:
+        raise HTTPException(status_code=404, detail="Destination not found.")
+    return {"health": health}
+
+
+@router.get("/destinations/{dest_id}/policy")
+def operator_destination_policy(dest_id: str, request: Request) -> dict:
+    """One destination's effective delivery-control policy: adapter, retry budget
+    (with provenance), backoff class, and cooldown configuration/state."""
+    _require_operator(request)
+    from app.webhooks import delivery_service
+
+    policy = delivery_service.destination_policy(dest_id)
+    if policy is None:
+        raise HTTPException(status_code=404, detail="Destination not found.")
+    return {"policy": policy}
+
+
+@router.post("/destinations/{dest_id}/cooldown/clear")
+def operator_clear_cooldown(dest_id: str, request: Request) -> dict:
+    """Operator recovery: clear a destination's cooldown + failure streak so it
+    resumes receiving deliveries. Honest and bounded — never a silent black hole."""
+    _require_operator(request)
+    from app.webhooks import delivery_service
+
+    if not delivery_service.clear_cooldown(dest_id):
+        raise HTTPException(status_code=404, detail="Destination not found.")
+    return {"ok": True}
 
 
 @router.get("/delivery/analytics")

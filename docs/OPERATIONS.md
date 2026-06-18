@@ -891,9 +891,47 @@ On top of routing (`app/webhooks.py`):
   migration); `webhook_escalation_resolve_seconds` (≥ 0) validated. Operator-only;
   secrets still never returned; no user routes; `GET /jobs/{id}` unchanged. No frontend.
 
-Multi-stage escalation chains, adapter-specific escalation policies, delivery
-dashboards, SLO-driven routing, and alert acknowledgement/silencing all layer on
-this without touching the user surface or the execution path.
+### Adapter-specific retry, destination health/SLOs & cooldown
+
+The delivery layer (`app/webhooks.py`) stops being one-size-fits-all:
+
+- **Adapter-specific retry budget** — `effective_max_attempts(kind, dest_max)`:
+  a destination's own `max_attempts` override, else the **adapter** default, else
+  the global `webhook_max_attempts`. So `slack` retries tighter (2) than `webhook`,
+  and `deliver_pending` honours the per-destination budget instead of one global
+  cap. Each adapter also declares a `backoff` class. (This is the DELIVERY retry
+  budget — still distinct from job retry, replay, and operator redrive.)
+- **Health classification** — `destination_health_one`/`destination_health` label a
+  destination `healthy` / `degraded` / `failing` / `cooling_down` / `disabled` with
+  a concise **reason**, recent delivered/failed/pending counts, the durable routing
+  counters, and **escalation eligibility** (an escalation target that's
+  cooling/failing/disabled is `escalation_eligible: false`).
+- **Bounded cooldown** — a terminal delivery failure bumps `consecutive_failures`;
+  crossing `webhook_cooldown_threshold` (default 5) puts the destination in
+  `cooldown_until = now + webhook_cooldown_seconds` (default 600). While cooling,
+  **routing skips it honestly** (counted as `skipped`, **never** a fake delivered),
+  so an unhealthy endpoint stops thrashing — and a failing escalation target stops
+  receiving. It is **bounded + recoverable**: the cooldown auto-expires, a single
+  successful delivery (e.g. a redrive) clears the streak + cooldown, and
+  `POST /operator/destinations/{id}/cooldown/clear` is an explicit recovery. A
+  cooling destination's **existing pending deliveries still attempt** (cooldown
+  gates new routing only), so redrive recovers honestly.
+- **APIs** (operator-only): `GET /operator/destinations/{id}/health` (health/SLO
+  view), `GET /operator/destinations/{id}/policy` (effective retry budget +
+  provenance + backoff + cooldown config/state), `POST
+  /operator/destinations/{id}/cooldown/clear`, and `max_attempts` on
+  create/`PATCH`. `GET /operator/delivery/health` now carries the cooldown +
+  escalation-eligibility fields.
+- **Config** (validated): `webhook_cooldown_threshold` (≥ 1), `webhook_cooldown_seconds`
+  (≥ 0). New `WebhookDestination` columns `max_attempts`/`consecutive_failures`/
+  `cooldown_until` (self-healing migration). Compatible with F-8→F-11: cooldown
+  skips never masquerade as delivered, redrive/dead-letter lineage is intact,
+  analytics stay honest. Operator-only; secrets still never returned; no user
+  routes; `GET /jobs/{id}` unchanged. No frontend.
+
+Adapter-specific backoff timing, delivery SLO dashboards, escalation fallback
+chains, and destination silencing/acknowledgement all layer on this without
+touching the user surface or the execution path.
 
 ## Memory model (session + preference)
 

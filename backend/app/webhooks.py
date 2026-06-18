@@ -84,6 +84,10 @@ class WebhookAdapter:
 
     kind = KIND_WEBHOOK
     payload_shape = "structured_json"  # adapter-specific payload policy (intentional)
+    # Adapter delivery policy: the default retry budget (None = the global default)
+    # and a backoff CLASS label. A destination's own `max_attempts` overrides this.
+    default_max_attempts: Optional[int] = None
+    backoff = "standard"
 
     def prepare(self, dest, payload: dict) -> tuple[str, str, Optional[str]]:
         return dest.url, json.dumps(payload, default=str), dest.secret
@@ -96,6 +100,10 @@ class SlackAdapter:
 
     kind = KIND_SLACK
     payload_shape = "slack_text"
+    # Slack hooks are fast + transient; a tighter retry budget avoids hammering a
+    # rate-limited endpoint (per-adapter policy actually used by delivery).
+    default_max_attempts: Optional[int] = 2
+    backoff = "fast"
 
     def prepare(self, dest, payload: dict) -> tuple[str, str, Optional[str]]:
         label = payload.get("classification") or payload.get("event_type") or "signal"
@@ -114,6 +122,7 @@ class _DestView:
         self.url = row.url
         self.secret = row.secret
         self.kind = row.kind
+        self.max_attempts = row.max_attempts
 
 
 _ADAPTERS = {a.kind: a for a in (WebhookAdapter(), SlackAdapter())}
@@ -123,6 +132,22 @@ def adapter_for(kind: Optional[str]):
     """Resolve the adapter for a destination kind; unknown kinds fall back to the
     generic webhook adapter so a misconfigured destination still delivers safely."""
     return _ADAPTERS.get(kind or KIND_WEBHOOK, _ADAPTERS[KIND_WEBHOOK])
+
+
+def effective_max_attempts(kind: Optional[str], dest_max: Optional[int]) -> int:
+    """The DELIVERY retry budget for a destination: its own override, else the
+    adapter default, else the global default. Bounded >= 1. Pure + testable."""
+    if dest_max is not None:
+        return max(1, int(dest_max))
+    adapter_default = getattr(adapter_for(kind), "default_max_attempts", None)
+    if adapter_default is not None:
+        return max(1, int(adapter_default))
+    return max(1, int(getattr(settings, "webhook_max_attempts", 4)))
+
+
+def in_cooldown(cooldown_until, now) -> bool:
+    """Whether a destination is currently cooling down (time-bounded)."""
+    return cooldown_until is not None and cooldown_until > now
 
 
 # ── routing-decision helpers (pure; enforced by routing) ──────────────────────
@@ -194,7 +219,7 @@ class DeliveryService:
         min_severity: str = "warning", event_filter: Optional[str] = None,
         alert_filter: Optional[str] = None, origin_filter: Optional[str] = None,
         suppress_seconds: Optional[int] = None, escalate_after: Optional[int] = None,
-        secret: Optional[str] = None, enabled: bool = True,
+        max_attempts: Optional[int] = None, secret: Optional[str] = None, enabled: bool = True,
     ) -> Optional[dict[str, Any]]:
         name, url = (name or "").strip(), (url or "").strip()
         if not name or not url.lower().startswith(("http://", "https://")):
@@ -205,6 +230,8 @@ class DeliveryService:
             return None
         if escalate_after is not None and int(escalate_after) < 1:
             return None
+        if max_attempts is not None and int(max_attempts) < 1:
+            return None
         with self._session_factory() as session:
             row = WebhookDestination(
                 id=uuid4().hex, name=name[:120], url=url[:500], kind=kind,
@@ -213,6 +240,7 @@ class DeliveryService:
                 origin_filter=(origin_filter or None),
                 suppress_seconds=(int(suppress_seconds) if suppress_seconds is not None else None),
                 escalate_after=(int(escalate_after) if escalate_after is not None else None),
+                max_attempts=(int(max_attempts) if max_attempts is not None else None),
                 secret=(secret or None),
             )
             session.add(row)
@@ -221,7 +249,8 @@ class DeliveryService:
 
     def update_destination(self, dest_id: str, **changes: Any) -> Optional[dict[str, Any]]:
         allowed = {"name", "url", "enabled", "subscription", "min_severity", "event_filter",
-                   "alert_filter", "origin_filter", "suppress_seconds", "escalate_after", "secret", "kind"}
+                   "alert_filter", "origin_filter", "suppress_seconds", "escalate_after",
+                   "max_attempts", "secret", "kind"}
         with self._session_factory() as session:
             row = session.get(WebhookDestination, dest_id)
             if row is None:
@@ -238,6 +267,8 @@ class DeliveryService:
                 if key == "suppress_seconds" and int(value) < 0:
                     return None
                 if key == "escalate_after" and int(value) < 1:
+                    return None
+                if key == "max_attempts" and int(value) < 1:
                     return None
                 setattr(row, key, value)
             from datetime import datetime, timezone
@@ -273,9 +304,13 @@ class DeliveryService:
                     .all()
                 )
                 queued = 0
+                now = _utc_now()
                 etype = event.get("event_type")
                 eorigin = event.get("origin")  # normal -> None; retry/replay otherwise
                 for dest in dests:
+                    if in_cooldown(dest.cooldown_until, now):  # health-aware skip
+                        dest.stat_skipped = (dest.stat_skipped or 0) + 1
+                        continue
                     type_set = _csv_set(dest.event_filter)
                     if type_set is not None and etype not in type_set:
                         continue
@@ -326,6 +361,13 @@ class DeliveryService:
                     .all()
                 )
                 for dest in dests:
+                    # Health-aware: a cooling-down destination is skipped (honestly —
+                    # no delivery is created), so an unhealthy endpoint and any
+                    # escalation target pointing at it stop thrashing.
+                    if in_cooldown(dest.cooldown_until, now):
+                        dest.stat_skipped = (dest.stat_skipped or 0) + len(alerts)
+                        counts["skipped"] += len(alerts)
+                        continue
                     window = dest.suppress_seconds if dest.suppress_seconds is not None else default_window
                     for alert in alerts:
                         sig = _alert_signal(alert)
@@ -432,21 +474,45 @@ class DeliveryService:
                 row = session.get(WebhookDelivery, delivery_id)
                 if row is None:
                     continue
+                dest = session.get(WebhookDestination, dest_id)
+                # Retry budget is adapter/destination-specific, not purely global.
+                budget = effective_max_attempts(dest_view.kind if dest_view else None,
+                                                 dest_view.max_attempts if dest_view else None)
                 row.attempts = attempts + 1
                 row.response_code = code
-                from datetime import datetime, timezone
-                row.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                row.updated_at = _utc_now()
                 if ok:
                     row.status, row.last_error = STATUS_DELIVERED, None
                     delivered += 1
-                elif row.attempts >= max(1, settings.webhook_max_attempts):
+                    self._on_delivery_success(dest)
+                elif row.attempts >= budget:
                     row.status, row.last_error = STATUS_FAILED, (err or "DeliveryError")[:120]
                     failed += 1
+                    self._on_delivery_failure(dest)
                 else:
                     row.status, row.last_error = STATUS_PENDING, (err or "DeliveryError")[:120]
                     retried += 1
                 session.commit()
         return {"delivered": delivered, "failed": failed, "retried": retried}
+
+    def _on_delivery_success(self, dest) -> None:
+        """A success clears the failure streak and any cooldown — honest recovery."""
+        if dest is None:
+            return
+        dest.consecutive_failures = 0
+        dest.cooldown_until = None
+
+    def _on_delivery_failure(self, dest) -> None:
+        """A terminal failure bumps the streak; crossing the threshold cools the
+        destination down for a bounded window so it stops thrashing."""
+        if dest is None:
+            return
+        dest.consecutive_failures = (dest.consecutive_failures or 0) + 1
+        threshold = max(1, int(getattr(settings, "webhook_cooldown_threshold", 5)))
+        cooldown_seconds = int(getattr(settings, "webhook_cooldown_seconds", 600))
+        if cooldown_seconds > 0 and dest.consecutive_failures >= threshold:
+            from datetime import timedelta
+            dest.cooldown_until = _utc_now() + timedelta(seconds=cooldown_seconds)
 
     # ── redrive (operator-only recovery of terminal-failed deliveries) ────────
 
@@ -578,6 +644,12 @@ class DeliveryService:
             "suppress_seconds": row.suppress_seconds,
             "escalate_after": row.escalate_after,
             "is_escalation": bool(row.escalate_after),
+            "max_attempts": row.max_attempts,  # None = adapter/global default
+            "effective_max_attempts": effective_max_attempts(row.kind, row.max_attempts),
+            "backoff": getattr(adapter_for(row.kind), "backoff", "standard"),
+            "cooling_down": in_cooldown(row.cooldown_until, _utc_now()),
+            "cooldown_until": row.cooldown_until.isoformat() if row.cooldown_until else None,
+            "consecutive_failures": row.consecutive_failures or 0,
             "has_secret": bool(row.secret),   # presence only — never the value
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }
@@ -683,37 +755,95 @@ class DeliveryService:
         durable routed/suppressed/skipped counters, last error class, and a calm
         health label. Bounded and operator-safe (no secrets, no payloads)."""
         with self._session_factory() as session:
-            out: list[dict[str, Any]] = []
-            for dest in session.query(WebhookDestination).order_by(WebhookDestination.created_at.desc()).all():
-                rows = session.query(WebhookDelivery).filter(WebhookDelivery.destination_id == dest.id).all()
-                delivered = sum(1 for r in rows if r.status == STATUS_DELIVERED)
-                failed = sum(1 for r in rows if r.status == STATUS_FAILED and not r.redrive_of)
-                pending = sum(1 for r in rows if r.status == STATUS_PENDING)
-                resolved = sum(1 for r in rows if r.redrive_of and r.status == STATUS_DELIVERED)
-                last_error = next((r.last_error for r in sorted(rows, key=lambda x: x.created_at or _utc_now(),
-                                                                reverse=True) if r.last_error), None)
-                health = "healthy"
-                if not dest.enabled:
-                    health = "disabled"
-                elif failed > 0 and delivered == 0:
-                    health = "failing"
-                elif failed > 0:
-                    health = "degraded"
-                out.append({
-                    "destination_id": dest.id,
-                    "name": dest.name,
-                    "kind": dest.kind,
-                    "enabled": dest.enabled,
-                    "is_escalation": bool(dest.escalate_after),
-                    "delivered": delivered, "failed_terminal": failed, "pending": pending,
-                    "redrive_resolved": resolved,
-                    "routed": dest.stat_routed or 0,
-                    "suppressed": dest.stat_suppressed or 0,
-                    "skipped": dest.stat_skipped or 0,
-                    "last_error": last_error,   # error CLASS only
-                    "health": health,
-                })
-            return out
+            dests = session.query(WebhookDestination).order_by(WebhookDestination.created_at.desc()).all()
+            return [self._health_of(session, dest) for dest in dests]
+
+    def destination_health_one(self, dest_id: str) -> Optional[dict[str, Any]]:
+        with self._session_factory() as session:
+            dest = session.get(WebhookDestination, dest_id)
+            return self._health_of(session, dest) if dest is not None else None
+
+    def _health_of(self, session, dest) -> dict[str, Any]:
+        rows = session.query(WebhookDelivery).filter(WebhookDelivery.destination_id == dest.id).all()
+        delivered = sum(1 for r in rows if r.status == STATUS_DELIVERED)
+        failed = sum(1 for r in rows if r.status == STATUS_FAILED and not r.redrive_of)
+        pending = sum(1 for r in rows if r.status == STATUS_PENDING)
+        resolved = sum(1 for r in rows if r.redrive_of and r.status == STATUS_DELIVERED)
+        last_error = next((r.last_error for r in sorted(rows, key=lambda x: x.created_at or _utc_now(),
+                                                        reverse=True) if r.last_error), None)
+        cooling = in_cooldown(dest.cooldown_until, _utc_now())
+        # Bounded, explainable classification (not a scoring engine).
+        if not dest.enabled:
+            health, reason = "disabled", "Destination is disabled"
+        elif cooling:
+            health, reason = "cooling_down", f"Cooling down after {dest.consecutive_failures or 0} consecutive failures"
+        elif failed > 0 and delivered == 0:
+            health, reason = "failing", "Terminal failures with no successful delivery"
+        elif failed > 0:
+            health, reason = "degraded", "Some deliveries have failed terminally"
+        else:
+            health, reason = "healthy", "Delivering normally"
+        # Escalation should avoid a destination that's down/cooling/disabled.
+        escalation_eligible = bool(dest.escalate_after) and health in ("healthy", "degraded")
+        return {
+            "destination_id": dest.id,
+            "name": dest.name,
+            "kind": dest.kind,
+            "enabled": dest.enabled,
+            "is_escalation": bool(dest.escalate_after),
+            "delivered": delivered, "failed_terminal": failed, "pending": pending,
+            "redrive_resolved": resolved,
+            "routed": dest.stat_routed or 0,
+            "suppressed": dest.stat_suppressed or 0,
+            "skipped": dest.stat_skipped or 0,
+            "consecutive_failures": dest.consecutive_failures or 0,
+            "cooling_down": cooling,
+            "cooldown_until": dest.cooldown_until.isoformat() if dest.cooldown_until else None,
+            "escalation_eligible": escalation_eligible,
+            "last_error": last_error,   # error CLASS only
+            "health": health,
+            "reason": reason,
+        }
+
+    def destination_policy(self, dest_id: str) -> Optional[dict[str, Any]]:
+        """Effective delivery-control policy for one destination: adapter, retry
+        budget (with provenance), backoff class, and cooldown configuration/state."""
+        with self._session_factory() as session:
+            dest = session.get(WebhookDestination, dest_id)
+            if dest is None:
+                return None
+            adapter = adapter_for(dest.kind)
+            if dest.max_attempts is not None:
+                provenance = "destination"
+            elif getattr(adapter, "default_max_attempts", None) is not None:
+                provenance = "adapter"
+            else:
+                provenance = "global"
+            return {
+                "destination_id": dest.id,
+                "kind": dest.kind,
+                "payload_shape": adapter.payload_shape,
+                "backoff": getattr(adapter, "backoff", "standard"),
+                "max_attempts": effective_max_attempts(dest.kind, dest.max_attempts),
+                "max_attempts_source": provenance,
+                "cooldown_threshold": int(getattr(settings, "webhook_cooldown_threshold", 5)),
+                "cooldown_seconds": int(getattr(settings, "webhook_cooldown_seconds", 600)),
+                "consecutive_failures": dest.consecutive_failures or 0,
+                "cooling_down": in_cooldown(dest.cooldown_until, _utc_now()),
+                "cooldown_until": dest.cooldown_until.isoformat() if dest.cooldown_until else None,
+            }
+
+    def clear_cooldown(self, dest_id: str) -> bool:
+        """Operator recovery: clear a destination's cooldown + failure streak so it
+        resumes receiving deliveries. Honest, bounded, recoverable."""
+        with self._session_factory() as session:
+            dest = session.get(WebhookDestination, dest_id)
+            if dest is None:
+                return False
+            dest.cooldown_until = None
+            dest.consecutive_failures = 0
+            session.commit()
+            return True
 
     @staticmethod
     def _clean_delivery(row: WebhookDelivery, *, include_payload: bool = False) -> dict[str, Any]:

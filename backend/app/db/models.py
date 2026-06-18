@@ -244,6 +244,15 @@ class WebhookDestination(Base):
     stat_routed: Mapped[int] = mapped_column(Integer, default=0)
     stat_suppressed: Mapped[int] = mapped_column(Integer, default=0)
     stat_skipped: Mapped[int] = mapped_column(Integer, default=0)
+    # Delivery-control policy (F-12): a per-destination DELIVERY retry budget
+    # override (None = the adapter default, else the global default — never job
+    # retry/replay); and bounded health/cooldown state. `consecutive_failures`
+    # counts terminal delivery failures since the last success; once it crosses the
+    # threshold the destination is put in `cooldown_until` (time-bounded), during
+    # which routing skips it honestly (never a fake "delivered"). A success resets.
+    max_attempts: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    cooldown_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     secret: Mapped[str | None] = mapped_column(String(255), nullable=True)  # signs payloads; never returned
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
