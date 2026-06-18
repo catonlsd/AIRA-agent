@@ -39,7 +39,7 @@ from uuid import uuid4
 
 from app.core.config import settings
 from app.db.database import Base, SessionLocal, engine
-from app.db.models import WebhookDelivery, WebhookDestination
+from app.db.models import AlertOccurrence, WebhookDelivery, WebhookDestination
 
 SUB_EVENTS = "events"
 SUB_ALERTS = "alerts"
@@ -65,6 +65,11 @@ _KINDS = {KIND_WEBHOOK, KIND_SLACK}
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _status_bucket(status: str) -> str:
+    return STATUS_DELIVERED if status == STATUS_DELIVERED else (
+        STATUS_FAILED if status == STATUS_FAILED else STATUS_PENDING)
 
 
 # ── destination adapters ──────────────────────────────────────────────────────
@@ -138,16 +143,20 @@ def _alert_signal(alert: dict) -> str:
 def alert_routing_decision(
     *, dest, alert: dict, in_flight: bool, last_severity: Optional[str],
     last_age_seconds: Optional[float], window_seconds: int,
+    escalate_after: Optional[int] = None, occurrence_count: int = 1,
 ) -> tuple[str, str]:
     """Decide whether an alert should route to a destination, and why. Pure +
     testable. Returns one of: ("route", ...), ("skip", reason), ("suppress", reason).
 
-      * skip:below_min_severity       — under the destination's floor
-      * skip:classification_filtered  — not in the destination's alert_filter
-      * skip:in_flight                — an identical delivery is still pending
-      * suppress:within_window        — same signal + same severity, inside window
-      * route                         — a real new delivery should be created
+      * skip:below_min_severity         — under the destination's floor
+      * skip:classification_filtered    — not in the destination's alert_filter
+      * skip:below_escalation_threshold — an escalation target, condition not yet
+                                          persistent enough (occurrences < escalate_after)
+      * skip:in_flight                  — an identical delivery is still pending
+      * suppress:within_window          — same signal + same severity, inside window
+      * route                           — a real new delivery should be created
     A severity CHANGE for the same signal always routes (escalation/recovery).
+    Escalation is bounded by an occurrence count, never an uncontrolled fan-out.
     """
     sev = alert.get("severity", "warning")
     if _SEVERITY_RANK.get(sev, 0) < _SEVERITY_RANK.get(dest.min_severity, 1):
@@ -155,6 +164,8 @@ def alert_routing_decision(
     allowed = _csv_set(dest.alert_filter)
     if allowed is not None and alert.get("classification") not in allowed:
         return ("skip", "classification_filtered")
+    if escalate_after and occurrence_count < int(escalate_after):
+        return ("skip", "below_escalation_threshold")
     if in_flight:
         return ("skip", "in_flight")
     if (window_seconds > 0 and last_severity == sev and last_age_seconds is not None
@@ -172,6 +183,7 @@ class DeliveryService:
         try:
             WebhookDestination.__table__.create(bind=engine, checkfirst=True)
             WebhookDelivery.__table__.create(bind=engine, checkfirst=True)
+            AlertOccurrence.__table__.create(bind=engine, checkfirst=True)
         except Exception:
             Base.metadata.create_all(bind=engine)
 
@@ -181,7 +193,8 @@ class DeliveryService:
         self, *, name: str, url: str, kind: str = KIND_WEBHOOK, subscription: str = SUB_ALERTS,
         min_severity: str = "warning", event_filter: Optional[str] = None,
         alert_filter: Optional[str] = None, origin_filter: Optional[str] = None,
-        suppress_seconds: Optional[int] = None, secret: Optional[str] = None, enabled: bool = True,
+        suppress_seconds: Optional[int] = None, escalate_after: Optional[int] = None,
+        secret: Optional[str] = None, enabled: bool = True,
     ) -> Optional[dict[str, Any]]:
         name, url = (name or "").strip(), (url or "").strip()
         if not name or not url.lower().startswith(("http://", "https://")):
@@ -190,6 +203,8 @@ class DeliveryService:
             return None
         if suppress_seconds is not None and int(suppress_seconds) < 0:
             return None
+        if escalate_after is not None and int(escalate_after) < 1:
+            return None
         with self._session_factory() as session:
             row = WebhookDestination(
                 id=uuid4().hex, name=name[:120], url=url[:500], kind=kind,
@@ -197,6 +212,7 @@ class DeliveryService:
                 event_filter=(event_filter or None), alert_filter=(alert_filter or None),
                 origin_filter=(origin_filter or None),
                 suppress_seconds=(int(suppress_seconds) if suppress_seconds is not None else None),
+                escalate_after=(int(escalate_after) if escalate_after is not None else None),
                 secret=(secret or None),
             )
             session.add(row)
@@ -205,7 +221,7 @@ class DeliveryService:
 
     def update_destination(self, dest_id: str, **changes: Any) -> Optional[dict[str, Any]]:
         allowed = {"name", "url", "enabled", "subscription", "min_severity", "event_filter",
-                   "alert_filter", "origin_filter", "suppress_seconds", "secret", "kind"}
+                   "alert_filter", "origin_filter", "suppress_seconds", "escalate_after", "secret", "kind"}
         with self._session_factory() as session:
             row = session.get(WebhookDestination, dest_id)
             if row is None:
@@ -220,6 +236,8 @@ class DeliveryService:
                 if key == "kind" and value not in _KINDS:
                     return None
                 if key == "suppress_seconds" and int(value) < 0:
+                    return None
+                if key == "escalate_after" and int(value) < 1:
                     return None
                 setattr(row, key, value)
             from datetime import datetime, timezone
@@ -283,15 +301,24 @@ class DeliveryService:
         return self.route_alerts_detailed(alerts).get("routed", 0)
 
     def route_alerts_detailed(self, alerts: list[dict[str, Any]]) -> dict[str, int]:
-        """Like `route_alerts` but returns `{routed, suppressed, skipped}` so the
-        operator sweep can report how much noise the policy absorbed."""
+        """Like `route_alerts` but returns `{routed, suppressed, skipped, escalated}`
+        so the operator sweep can report how much noise the policy absorbed and how
+        much it escalated. Records per-signal occurrences (for repeated-condition
+        escalation) and bumps durable per-destination routing counters."""
         if not getattr(settings, "webhooks_enabled", True) or not alerts:
-            return {"routed": 0, "suppressed": 0, "skipped": 0}
+            return {"routed": 0, "suppressed": 0, "skipped": 0, "escalated": 0}
         default_window = int(getattr(settings, "webhook_suppress_seconds", 300))
+        resolve_seconds = int(getattr(settings, "webhook_escalation_resolve_seconds", 1800))
         now = _utc_now()
-        counts = {"routed": 0, "suppressed": 0, "skipped": 0}
+        counts = {"routed": 0, "suppressed": 0, "skipped": 0, "escalated": 0}
         try:
             with self._session_factory() as session:
+                # One occurrence bump per (alert signal) per sweep — episodic so a
+                # resolved-then-recurring condition starts a fresh count.
+                occ: dict[str, int] = {}
+                for alert in alerts:
+                    sig = _alert_signal(alert)
+                    occ[sig] = self._record_occurrence(session, sig, alert.get("severity"), now, resolve_seconds)
                 dests = (
                     session.query(WebhookDestination)
                     .filter(WebhookDestination.enabled.is_(True),
@@ -301,26 +328,49 @@ class DeliveryService:
                 for dest in dests:
                     window = dest.suppress_seconds if dest.suppress_seconds is not None else default_window
                     for alert in alerts:
-                        dedup = f"alert:{dest.id}:{_alert_signal(alert)}"
+                        sig = _alert_signal(alert)
+                        dedup = f"alert:{dest.id}:{sig}"
                         in_flight, last_sev, last_age = self._dedup_state(session, dedup, now)
                         decision, _reason = alert_routing_decision(
                             dest=dest, alert=alert, in_flight=in_flight,
-                            last_severity=last_sev, last_age_seconds=last_age, window_seconds=window)
+                            last_severity=last_sev, last_age_seconds=last_age, window_seconds=window,
+                            escalate_after=dest.escalate_after, occurrence_count=occ.get(sig, 1))
                         if decision == "route":
                             self._enqueue_delivery(session, dest, source_type="alert",
-                                                   source_id=_alert_signal(alert),
-                                                   event_type=alert.get("classification"),
+                                                   source_id=sig, event_type=alert.get("classification"),
                                                    severity=alert.get("severity", "warning"),
                                                    payload=alert, dedup_key=dedup)
+                            dest.stat_routed = (dest.stat_routed or 0) + 1
                             counts["routed"] += 1
+                            if dest.escalate_after:
+                                counts["escalated"] += 1
                         elif decision == "suppress":
+                            dest.stat_suppressed = (dest.stat_suppressed or 0) + 1
                             counts["suppressed"] += 1
                         else:
+                            dest.stat_skipped = (dest.stat_skipped or 0) + 1
                             counts["skipped"] += 1
                 session.commit()
         except Exception:
             return counts
         return counts
+
+    def _record_occurrence(self, session, signal: str, severity: Optional[str], now, resolve_seconds: int) -> int:
+        """Bump (or reset, on a resolved episode) the durable occurrence count for a
+        signal, returning the current count. Drives repeated-condition escalation."""
+        row = session.get(AlertOccurrence, signal)
+        if row is None:
+            session.add(AlertOccurrence(signal=signal, count=1, last_severity=severity,
+                                        first_seen=now, last_seen=now))
+            return 1
+        stale = (resolve_seconds > 0 and row.last_seen is not None
+                 and (now - row.last_seen).total_seconds() > resolve_seconds)
+        row.count = 1 if stale else (row.count or 0) + 1
+        if stale:
+            row.first_seen = now
+        row.last_seen = now
+        row.last_severity = severity
+        return row.count
 
     def _dedup_state(self, session, dedup: str, now) -> tuple[bool, Optional[str], Optional[float]]:
         """(in_flight, last_severity, last_age_seconds) for a dedup signal — the
@@ -526,6 +576,8 @@ class DeliveryService:
             "alert_filter": row.alert_filter,
             "origin_filter": row.origin_filter,
             "suppress_seconds": row.suppress_seconds,
+            "escalate_after": row.escalate_after,
+            "is_escalation": bool(row.escalate_after),
             "has_secret": bool(row.secret),   # presence only — never the value
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }
@@ -547,15 +599,20 @@ class DeliveryService:
             decisions: list[dict[str, Any]] = []
             if dest.subscription in (SUB_ALERTS, SUB_BOTH):
                 for alert in alerts:
-                    dedup = f"alert:{dest.id}:{_alert_signal(alert)}"
+                    sig = _alert_signal(alert)
+                    dedup = f"alert:{dest.id}:{sig}"
                     in_flight, last_sev, last_age = self._dedup_state(session, dedup, now)
+                    occ = session.get(AlertOccurrence, sig)
+                    occ_count = occ.count if occ is not None else 1  # read-only; no bump
                     decision, reason = alert_routing_decision(
                         dest=dest, alert=alert, in_flight=in_flight,
-                        last_severity=last_sev, last_age_seconds=last_age, window_seconds=window)
+                        last_severity=last_sev, last_age_seconds=last_age, window_seconds=window,
+                        escalate_after=dest.escalate_after, occurrence_count=occ_count)
                     decisions.append({
                         "classification": alert.get("classification"),
                         "severity": alert.get("severity"),
                         "job_id": alert.get("job_id"),
+                        "occurrences": occ_count,
                         "decision": decision,
                         "reason": reason,
                     })
@@ -564,6 +621,99 @@ class DeliveryService:
                 "effective_window_seconds": window,
                 "decisions": decisions,
             }
+
+    # ── delivery analytics + destination health (operator-only) ───────────────
+
+    def analytics(self, *, since_minutes: int = 60) -> dict[str, Any]:
+        """A compact, queryable delivery summary: totals, per-kind, per-destination,
+        and routing/suppression/escalation counters. Bounded; derived from durable
+        state, not raw scraping. (Suppressed alerts create no delivery, so those
+        counts come from the durable per-destination stat counters.)"""
+        from datetime import timedelta
+        cutoff = _utc_now() - timedelta(minutes=max(1, since_minutes))
+        with self._session_factory() as session:
+            dests = {d.id: d for d in session.query(WebhookDestination).all()}
+            rows = (
+                session.query(WebhookDelivery)
+                .filter(WebhookDelivery.created_at >= cutoff)
+                .all()
+            )
+            totals = {"attempted": 0, "delivered": 0, "failed": 0, "pending": 0, "redriven": 0}
+            by_kind: dict[str, dict[str, int]] = {}
+            per_dest: dict[str, dict[str, Any]] = {}
+            for r in rows:
+                totals["attempted"] += 1
+                if r.status == STATUS_DELIVERED:
+                    totals["delivered"] += 1
+                elif r.status == STATUS_FAILED:
+                    totals["failed"] += 1
+                else:
+                    totals["pending"] += 1
+                if r.redrive_of:
+                    totals["redriven"] += 1
+                dest = dests.get(r.destination_id)
+                kind = dest.kind if dest else "unknown"
+                k = by_kind.setdefault(kind, {"delivered": 0, "failed": 0, "pending": 0})
+                k[_status_bucket(r.status)] += 1
+                pd = per_dest.setdefault(r.destination_id, {
+                    "destination_id": r.destination_id,
+                    "name": dest.name if dest else None,
+                    "kind": kind,
+                    "delivered": 0, "failed": 0, "pending": 0,
+                })
+                pd[_status_bucket(r.status)] += 1
+            # Durable routing counters (incl. suppression — invisible in deliveries).
+            routing = {"routed": 0, "suppressed": 0, "skipped": 0, "escalation_destinations": 0}
+            for d in dests.values():
+                routing["routed"] += d.stat_routed or 0
+                routing["suppressed"] += d.stat_suppressed or 0
+                routing["skipped"] += d.stat_skipped or 0
+                if d.escalate_after:
+                    routing["escalation_destinations"] += 1
+            return {
+                "window_minutes": since_minutes,
+                "totals": totals,
+                "routing": routing,
+                "by_kind": by_kind,
+                "by_destination": list(per_dest.values()),
+            }
+
+    def destination_health(self) -> list[dict[str, Any]]:
+        """Per-destination health: status counts, redrive/dead-letter outcome, the
+        durable routed/suppressed/skipped counters, last error class, and a calm
+        health label. Bounded and operator-safe (no secrets, no payloads)."""
+        with self._session_factory() as session:
+            out: list[dict[str, Any]] = []
+            for dest in session.query(WebhookDestination).order_by(WebhookDestination.created_at.desc()).all():
+                rows = session.query(WebhookDelivery).filter(WebhookDelivery.destination_id == dest.id).all()
+                delivered = sum(1 for r in rows if r.status == STATUS_DELIVERED)
+                failed = sum(1 for r in rows if r.status == STATUS_FAILED and not r.redrive_of)
+                pending = sum(1 for r in rows if r.status == STATUS_PENDING)
+                resolved = sum(1 for r in rows if r.redrive_of and r.status == STATUS_DELIVERED)
+                last_error = next((r.last_error for r in sorted(rows, key=lambda x: x.created_at or _utc_now(),
+                                                                reverse=True) if r.last_error), None)
+                health = "healthy"
+                if not dest.enabled:
+                    health = "disabled"
+                elif failed > 0 and delivered == 0:
+                    health = "failing"
+                elif failed > 0:
+                    health = "degraded"
+                out.append({
+                    "destination_id": dest.id,
+                    "name": dest.name,
+                    "kind": dest.kind,
+                    "enabled": dest.enabled,
+                    "is_escalation": bool(dest.escalate_after),
+                    "delivered": delivered, "failed_terminal": failed, "pending": pending,
+                    "redrive_resolved": resolved,
+                    "routed": dest.stat_routed or 0,
+                    "suppressed": dest.stat_suppressed or 0,
+                    "skipped": dest.stat_skipped or 0,
+                    "last_error": last_error,   # error CLASS only
+                    "health": health,
+                })
+            return out
 
     @staticmethod
     def _clean_delivery(row: WebhookDelivery, *, include_payload: bool = False) -> dict[str, Any]:
@@ -595,6 +745,7 @@ class DeliveryService:
             with self._session_factory() as session:
                 session.query(WebhookDelivery).delete()
                 session.query(WebhookDestination).delete()
+                session.query(AlertOccurrence).delete()
                 session.commit()
         except Exception:
             pass

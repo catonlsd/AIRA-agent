@@ -858,9 +858,42 @@ On top of delivery (`app/webhooks.py`), routing stops being a blunt fan-out:
   `webhook_suppress_seconds` (≥ 0) validated. Operator-only; secrets still never
   returned; no user routes; `GET /jobs/{id}` unchanged. No frontend.
 
-Adapter-specific retry policies, richer routing rules, per-destination escalation,
-PagerDuty/email adapters, and notification aggregation all layer on this without
-touching the user surface or the execution path.
+### Multi-destination escalation & delivery analytics
+
+On top of routing (`app/webhooks.py`):
+
+- **Escalation by persistence** — a destination with `escalate_after = N` is an
+  **escalation target** that fires only once a matching condition has been detected
+  **N times** (a primary has `escalate_after = None` and fires on the first
+  occurrence). Occurrences are tracked durably per signal (`alert_occurrences`
+  table), **episodically**: a gap longer than `webhook_escalation_resolve_seconds`
+  (default 1800) is a resolved episode and the count resets — so escalation
+  reflects a *currently-persisting* problem, not stale history. So "a critical
+  `retry_exhausted` that persists 3 sweeps also pages PagerDuty" is real, bounded
+  by an occurrence count (never an uncontrolled fan-out), and **suppression-safe**
+  (the escalation target's own suppression window still applies). The decision is
+  the same pure `alert_routing_decision` (+ `skip:below_escalation_threshold`), and
+  `routing_preview` shows the live occurrence count + decision per alert.
+- **Delivery analytics** (`GET /operator/delivery/analytics?since_minutes=`):
+  attempted / delivered / failed / pending / redriven totals, durable **routing
+  counters** (routed / suppressed / skipped + escalation-destination count —
+  suppressed alerts create no delivery, so these come from per-destination
+  `stat_*` counters), and breakdowns **by adapter kind** and **by destination**.
+- **Destination health** (`GET /operator/delivery/health`): per destination —
+  delivered / failed_terminal / pending / redrive_resolved, the routing counters,
+  the last error **class**, and a calm health label (`healthy` / `degraded` /
+  `failing` / `disabled`). No secrets, no payloads.
+- **Compatible with F-8/F-9/F-10** — escalated deliveries are **real separate
+  attempts** with intact source correlation and redrive/dead-letter lineage;
+  escalation never blurs with auto-retry or redrive; analytics are derived from
+  durable state and never distort delivery truth. New `WebhookDestination` columns
+  `escalate_after` + `stat_routed`/`stat_suppressed`/`stat_skipped` (self-healing
+  migration); `webhook_escalation_resolve_seconds` (≥ 0) validated. Operator-only;
+  secrets still never returned; no user routes; `GET /jobs/{id}` unchanged. No frontend.
+
+Multi-stage escalation chains, adapter-specific escalation policies, delivery
+dashboards, SLO-driven routing, and alert acknowledgement/silencing all layer on
+this without touching the user surface or the execution path.
 
 ## Memory model (session + preference)
 

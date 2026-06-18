@@ -235,6 +235,15 @@ class WebhookDestination(Base):
     alert_filter: Mapped[str | None] = mapped_column(String(255), nullable=True)
     origin_filter: Mapped[str | None] = mapped_column(String(64), nullable=True)
     suppress_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Escalation policy (F-11): an escalation target fires only once a matching
+    # condition has persisted >= `escalate_after` detections (None/0 = a primary
+    # that fires on the first occurrence). Bounded by an occurrence count, never an
+    # uncontrolled fan-out. `stat_*` are durable routing counters for analytics
+    # (suppressed alerts create no delivery, so these are the only durable record).
+    escalate_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stat_routed: Mapped[int] = mapped_column(Integer, default=0)
+    stat_suppressed: Mapped[int] = mapped_column(Integer, default=0)
+    stat_skipped: Mapped[int] = mapped_column(Integer, default=0)
     secret: Mapped[str | None] = mapped_column(String(255), nullable=True)  # signs payloads; never returned
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
@@ -270,6 +279,25 @@ class WebhookDelivery(Base):
     payload_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class AlertOccurrence(Base):
+    """Durable per-signal occurrence counter for repeated-condition escalation.
+
+    Keyed by the alert signal (`classification:subject`). Each routing sweep that
+    still sees a condition bumps `count`; a gap longer than the resolve window
+    starts a fresh episode (count resets), so escalation reflects a *persisting*
+    problem, not a one-off. Lets an escalation destination fire only after the
+    condition has been detected N times — bounded and honest about resolution.
+    """
+
+    __tablename__ = "alert_occurrences"
+
+    signal: Mapped[str] = mapped_column(String(160), primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, default=1)
+    last_severity: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    first_seen: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
 
 class ContextBundle(Base):

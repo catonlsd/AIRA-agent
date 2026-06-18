@@ -49,6 +49,10 @@ def ensure_runtime_columns() -> None:
                 ("alert_filter", "VARCHAR(255)"),
                 ("origin_filter", "VARCHAR(64)"),
                 ("suppress_seconds", "INTEGER"),
+                ("escalate_after", "INTEGER"),
+                ("stat_routed", "INTEGER DEFAULT 0"),
+                ("stat_suppressed", "INTEGER DEFAULT 0"),
+                ("stat_skipped", "INTEGER DEFAULT 0"),
             ],
         }
         for table, columns in additions.items():

@@ -194,6 +194,7 @@ class DestinationBody(BaseModel):
     alert_filter: str | None = Field(default=None, max_length=255)
     origin_filter: str | None = Field(default=None, max_length=64)
     suppress_seconds: int | None = None
+    escalate_after: int | None = None
     secret: str | None = Field(default=None, max_length=255)
     enabled: bool = True
 
@@ -209,6 +210,7 @@ class DestinationUpdate(BaseModel):
     alert_filter: str | None = None
     origin_filter: str | None = None
     suppress_seconds: int | None = None
+    escalate_after: int | None = None
     secret: str | None = None
 
 
@@ -223,9 +225,10 @@ def operator_create_destination(body: DestinationBody, request: Request) -> dict
         name=body.name, url=body.url, kind=body.kind, subscription=body.subscription,
         min_severity=body.min_severity, event_filter=body.event_filter,
         alert_filter=body.alert_filter, origin_filter=body.origin_filter,
-        suppress_seconds=body.suppress_seconds, secret=body.secret, enabled=body.enabled)
+        suppress_seconds=body.suppress_seconds, escalate_after=body.escalate_after,
+        secret=body.secret, enabled=body.enabled)
     if dest is None:
-        raise HTTPException(status_code=400, detail="Invalid destination (url/kind/subscription/severity/filters).")
+        raise HTTPException(status_code=400, detail="Invalid destination (url/kind/subscription/severity/filters/escalation).")
     return {"destination": dest}
 
 
@@ -250,6 +253,27 @@ def operator_destination_routing(dest_id: str, request: Request) -> dict:
     if preview is None:
         raise HTTPException(status_code=404, detail="Destination not found.")
     return preview
+
+
+@router.get("/delivery/analytics")
+def operator_delivery_analytics(request: Request, since_minutes: int = 60) -> dict:
+    """A compact delivery summary: attempted/delivered/failed/pending/redriven
+    totals, durable routing counters (routed/suppressed/skipped + escalation
+    destinations), and breakdowns by adapter kind and destination. Operator-only."""
+    _require_operator(request)
+    from app.webhooks import delivery_service
+
+    return delivery_service.analytics(since_minutes=since_minutes)
+
+
+@router.get("/delivery/health")
+def operator_delivery_health(request: Request) -> dict:
+    """Per-destination health: status counts, redrive outcome, durable routing
+    counters, last error class, and a calm health label. Operator-only."""
+    _require_operator(request)
+    from app.webhooks import delivery_service
+
+    return {"destinations": delivery_service.destination_health()}
 
 
 @router.patch("/destinations/{dest_id}")

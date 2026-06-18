@@ -179,6 +179,10 @@ class Settings(BaseSettings):
     # critical alert every sweep. A severity change (escalation) is never
     # suppressed. Per-destination `suppress_seconds` overrides this. 0 = off.
     webhook_suppress_seconds: int = 300
+    # A condition not detected for this long is a RESOLVED episode: the per-signal
+    # occurrence counter resets, so repeated-condition escalation reflects a
+    # currently-persisting problem, not stale history. >= 0.
+    webhook_escalation_resolve_seconds: int = 1800
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -228,11 +232,11 @@ class Settings(BaseSettings):
             raise ValueError("webhook delivery/redrive bounds must be >= 1")
         return value
 
-    @field_validator("webhook_suppress_seconds")
+    @field_validator("webhook_suppress_seconds", "webhook_escalation_resolve_seconds")
     @classmethod
     def _validate_webhook_suppress(cls, value):
         if int(value) < 0:
-            raise ValueError("webhook_suppress_seconds must be >= 0 (0 disables)")
+            raise ValueError("webhook suppression/resolve windows must be >= 0 (0 disables)")
         return value
 
     @field_validator("cors_origins", mode="before")
