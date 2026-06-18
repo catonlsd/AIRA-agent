@@ -156,6 +156,11 @@ class ExecutionJob(Base):
     actor_account_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     kind: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
     status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
+    # Scheduling policy (internal — never surfaced in the user UI): the execution
+    # class shapes concurrency, `priority` drives priority-aware claiming (higher
+    # first; created_at FIFO breaks ties).
+    exec_class: Mapped[str | None] = mapped_column(String(24), index=True, nullable=True)
+    priority: Mapped[int] = mapped_column(Integer, default=0, index=True)
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     progress: Mapped[str | None] = mapped_column(String(64), nullable=True)
     payload_json: Mapped[str] = mapped_column(Text, nullable=False)

@@ -32,6 +32,7 @@ from uuid import uuid4
 
 from sqlalchemy import update
 
+from app import job_policy
 from app.core.config import settings
 from app.db.database import Base, SessionLocal, engine
 from app.db.models import ExecutionJob
@@ -139,6 +140,7 @@ class ExecutionQueueService:
                 )
                 if existing is not None:
                     return self._clean(existing)
+            exec_class = job_policy.class_for(kind)
             row = ExecutionJob(
                 id=uuid4().hex,
                 owner=owner,
@@ -146,6 +148,8 @@ class ExecutionQueueService:
                 actor_account_id=actor_account_id,
                 kind=kind,
                 status=QUEUED,
+                exec_class=exec_class.name,
+                priority=exec_class.priority,
                 title=(title or None),
                 progress="Queued",
                 payload_json=json.dumps(payload or {}),
@@ -160,13 +164,40 @@ class ExecutionQueueService:
     # ── claim (atomic; exactly one worker wins) ───────────────────────────────
 
     def claim(self) -> Optional[JobView]:
+        """Claim the next eligible job. Priority-aware (higher class first, then
+        created_at FIFO) and bounded: a class at its concurrency cap or an owner
+        already running their fair share is skipped, so nothing monopolises workers
+        and nothing starves forever. The claim itself stays a single guarded UPDATE
+        (race-safe: exactly one worker wins). Falls back to plain FIFO when
+        scheduling is disabled."""
         with self._session_factory() as session:
-            row = (
-                session.query(ExecutionJob)
-                .filter(ExecutionJob.status == QUEUED)
-                .order_by(ExecutionJob.created_at.asc())
-                .first()
-            )
+            query = session.query(ExecutionJob).filter(ExecutionJob.status == QUEUED)
+            if job_policy.scheduling_enabled(settings):
+                # Count what's currently occupying a worker slot, by class and owner.
+                in_flight = (
+                    session.query(ExecutionJob.exec_class, ExecutionJob.owner)
+                    .filter(ExecutionJob.status.in_(tuple(_INTERRUPTIBLE)))
+                    .all()
+                )
+                class_counts: dict[str, int] = {}
+                owner_counts: dict[str, int] = {}
+                for exec_class, owner in in_flight:
+                    class_counts[exec_class or ""] = class_counts.get(exec_class or "", 0) + 1
+                    owner_counts[owner] = owner_counts.get(owner, 0) + 1
+                blocked_classes = job_policy.blocked_classes(class_counts, settings)
+                blocked_owners = job_policy.blocked_owners(owner_counts, settings)
+                if blocked_classes:
+                    query = query.filter(
+                        (ExecutionJob.exec_class.is_(None))
+                        | (ExecutionJob.exec_class.notin_(blocked_classes))
+                    )
+                if blocked_owners:
+                    query = query.filter(ExecutionJob.owner.notin_(blocked_owners))
+                query = query.order_by(ExecutionJob.priority.desc(), ExecutionJob.created_at.asc())
+            else:
+                query = query.order_by(ExecutionJob.created_at.asc())  # plain FIFO
+
+            row = query.first()
             if row is None:
                 return None
             now = _now()
@@ -309,9 +340,13 @@ class ExecutionQueueService:
             )
             if existing is not None:
                 return self._clean(existing)  # idempotent: re-run already in flight
+            # Retry keeps the original class/priority; operator replay drops to the
+            # isolated maintenance class so re-runs never jump ahead of user work.
+            exec_class = job_policy.class_for(kind, origin=origin)
             row = ExecutionJob(
                 id=uuid4().hex, owner=owner, session_id=session_id,
                 actor_account_id=actor_account_id, kind=kind, status=QUEUED,
+                exec_class=exec_class.name, priority=exec_class.priority,
                 title=title, progress="Queued", payload_json=payload_json,
                 dedup_key=dedup_key, parent_job_id=parent_job_id, origin=origin, attempts=0,
             )

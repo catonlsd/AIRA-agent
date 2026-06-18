@@ -575,6 +575,41 @@ Honest controllability on top of the queue (`app/execution_queue.py`):
   Retry on failed work in the Settings "Background work" line. No worker ids, no
   retry counters, no queue console.
 
+### Scheduling policy: priority, concurrency classes & fairness
+
+The queue is no longer plain FIFO (`app/job_policy.py`): each job `kind` maps to an
+`ExecutionClass` with a **priority** and a **concurrency** bound, and `claim()`
+uses them.
+
+- **Classes**: `interactive` (priority 100, unbounded — light, user-visible work),
+  `artifact` (50, cap 2 — heavy generation), `validation` (40, cap 1 —
+  startup/runtime), `maintenance` (10, cap 1 — operator replay, isolated). Unknown
+  kinds default to `interactive`; **operator replay is always `maintenance`** so a
+  re-run never jumps ahead of users. Class + priority are stored on the job
+  (`exec_class`/`priority`) but **never surfaced in the user payload**.
+- **Priority-aware claim**: among eligible queued jobs, claim by `priority DESC`
+  then `created_at ASC` (deterministic FIFO tie-break). The claim is still a single
+  guarded `UPDATE`, so it stays race-safe (exactly one worker wins).
+- **Concurrency shaping**: a class whose running count has reached its cap is
+  **skipped** — so heavy artifact generation (cap 2) can't occupy every worker and
+  starve lighter work.
+- **Fairness**: a per-owner in-flight cap (`queue_per_owner_inflight_cap`, default
+  3) skips an owner already running their share, so one user/workspace retrying a
+  lot can't monopolise a class. This **complements** quotas (which still gate
+  enqueue/approval) rather than replacing them.
+- **Config** (operator-tunable, validated): `queue_scheduling_enabled` (off =
+  plain FIFO), `queue_per_owner_inflight_cap` (≥ 1), and
+  `queue_concurrency_<class>` (≥ 0; 0 = unbounded). Invalid values fail clearly at
+  startup (pydantic validators) — no magic constants.
+- **Coexistence**: cancel/retry/replay are unchanged under the scheduler; a
+  canceled/terminal job frees its class slot; retries keep the original class,
+  replay drops to maintenance. Nothing is exposed in the UI — the user just
+  experiences the right work starting at the right time.
+
+Multiple worker pools, per-class worker eligibility, external queues, per-class
+autoscaling, and operator policy overrides all layer on this model without
+changing call sites.
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

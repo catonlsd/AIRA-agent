@@ -133,12 +133,43 @@ class Settings(BaseSettings):
     # Worker poll interval when the queue is empty (seconds).
     worker_poll_seconds: float = 1.0
 
+    # ── Queue scheduling policy (priority + concurrency classes + fairness) ──
+    # When on, the queue claims by class priority (higher first) with created_at
+    # FIFO tie-break, bounded by per-class concurrency caps and a per-owner
+    # in-flight cap so no class or owner can monopolise workers. Off = plain FIFO.
+    queue_scheduling_enabled: bool = True
+    # Max jobs ONE owner may have running at once (fairness; >= 1).
+    queue_per_owner_inflight_cap: int = 3
+    # Per-class concurrency caps (0 = unbounded). Heavy classes are bounded
+    # independently of light interactive work.
+    queue_concurrency_interactive: int = 0
+    queue_concurrency_artifact: int = 2
+    queue_concurrency_validation: int = 1
+    queue_concurrency_maintenance: int = 1
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
     )
+
+    @field_validator(
+        "queue_concurrency_interactive", "queue_concurrency_artifact",
+        "queue_concurrency_validation", "queue_concurrency_maintenance",
+    )
+    @classmethod
+    def _validate_concurrency(cls, value):
+        if int(value) < 0:
+            raise ValueError("queue concurrency caps must be >= 0 (0 = unbounded)")
+        return value
+
+    @field_validator("queue_per_owner_inflight_cap")
+    @classmethod
+    def _validate_owner_cap(cls, value):
+        if int(value) < 1:
+            raise ValueError("queue_per_owner_inflight_cap must be >= 1")
+        return value
 
     @field_validator("cors_origins", mode="before")
     @classmethod

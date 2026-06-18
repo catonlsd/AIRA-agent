@@ -39,6 +39,8 @@ def ensure_runtime_columns() -> None:
             "execution_jobs": [
                 ("parent_job_id", "VARCHAR(36)"),
                 ("origin", "VARCHAR(16)"),
+                ("exec_class", "VARCHAR(24)"),
+                ("priority", "INTEGER DEFAULT 0"),
             ],
         }
         for table, columns in additions.items():

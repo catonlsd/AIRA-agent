@@ -63,3 +63,11 @@ test("canRetry is offered only for failed jobs", () => {
   assert.equal(canRetry(job("canceled")), false);
   assert.equal(canRetry(job("running")), false);
 });
+
+test("scheduler internals never appear in the UI job shape", () => {
+  // The Job surface stays user-facing: no exec_class, priority, or queue lane.
+  const j = job("running") as Record<string, unknown>;
+  for (const internal of ["exec_class", "priority", "lane", "concurrency"]) {
+    assert.equal(internal in j, false);
+  }
+});
