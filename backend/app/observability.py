@@ -94,15 +94,25 @@ class ObservabilityExportService:
         try:
             scope_type, scope_id = scope_of(owner)
             with self._session_factory() as session:
-                session.add(ObservabilityEvent(
+                row = ObservabilityEvent(
                     event_type=event_type, job_id=job_id, run_id=run_id, kind=kind,
                     origin=origin, scope_type=scope_type, scope_id=scope_id,
                     status=status, failure_class=failure_class,
                     parent_job_id=parent_job_id, title=(title[:255] if title else None),
-                ))
+                )
+                session.add(row)
                 session.commit()
+                clean = self._clean(row)
         except Exception:
-            pass  # observability must never break execution
+            return  # observability must never break execution
+        # Best-effort fan-out to external destinations subscribed to events. A
+        # delivery failure can never affect the source path (own session, guarded).
+        try:
+            from app.webhooks import delivery_service
+
+            delivery_service.route_observability(clean)
+        except Exception:
+            pass
 
     # ── export feed (cursor-based, bounded, curated) ──────────────────────────
 

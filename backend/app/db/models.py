@@ -209,6 +209,58 @@ class ObservabilityEvent(Base):
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
+class WebhookDestination(Base):
+    """An operator-configured external delivery target (start: webhook).
+
+    Operator-only: where curated observability events / alert-worthy policy results
+    are POSTed. `secret` signs the payload (HMAC) and is NEVER returned by read
+    APIs. `subscription` selects events / alerts / both; `min_severity` and
+    `event_filter` give bounded routing. Disabled destinations receive nothing.
+    """
+
+    __tablename__ = "webhook_destinations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    kind: Mapped[str] = mapped_column(String(24), default="webhook")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    subscription: Mapped[str] = mapped_column(String(16), default="alerts")  # events|alerts|both
+    min_severity: Mapped[str] = mapped_column(String(16), default="warning")  # warning|critical
+    event_filter: Mapped[str | None] = mapped_column(String(255), nullable=True)  # comma list, optional
+    secret: Mapped[str | None] = mapped_column(String(255), nullable=True)  # signs payloads; never returned
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class WebhookDelivery(Base):
+    """A durable delivery record for one (destination, source signal) pair.
+
+    Separate from job retry / replay: `attempts` is the DELIVERY retry counter,
+    bounded by `webhook_max_attempts`. `status` runs pending -> delivered | failed
+    (terminal). `dedup_key` makes alert routing idempotent (a stuck job doesn't
+    deliver every sweep). `payload_json` is the curated, correlation-friendly body
+    that was/will be POSTed — never prompts, tool payloads, traces, or secrets.
+    """
+
+    __tablename__ = "webhook_deliveries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    destination_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    source_type: Mapped[str] = mapped_column(String(16), nullable=False)  # observability|alert
+    source_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    event_type: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    severity: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)  # pending|delivered|failed
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    response_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(120), nullable=True)  # error CLASS, not body
+    dedup_key: Mapped[str | None] = mapped_column(String(160), index=True, nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
 class ContextBundle(Base):
     """A durable, scope-owned "handoff pack" — a saved combination of context
     references (documents, artifacts, runs) that can be reloaded into chat later.

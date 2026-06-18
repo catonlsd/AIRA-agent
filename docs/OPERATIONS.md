@@ -757,6 +757,45 @@ Real alert routing/webhooks, SLO dashboards, incident workflows, dead-letter
 queues, and auto-remediation hooks all layer on this policy model without touching
 the user surface or the execution path.
 
+## External delivery: webhooks & alert routing
+
+`app/webhooks.py` (`DeliveryService`, tables `webhook_destinations` +
+`webhook_deliveries`) *delivers* the curated observability events and alert-worthy
+policy results to external systems instead of forcing them to poll. Operator-only.
+
+- **Destinations** (`POST/GET/PATCH/DELETE /operator/destinations`): an operator
+  configures a webhook target — `url`, `subscription` (`events` / `alerts` /
+  `both`), `min_severity` (for alerts), an optional `event_filter`, and a signing
+  `secret`. The **secret is stored but NEVER returned** (reads expose only
+  `has_secret`). Disabled destinations receive nothing.
+- **Routing**: `observability.record()` fans each curated event out (best-effort,
+  own session, guarded) to enabled `events`/`both` destinations; the alert sweep
+  routes `ops_policy.alerts()` to `alerts`/`both` destinations filtered by
+  `min_severity`. **Deliveries are NOT execution jobs** — routing them through the
+  queue would re-emit observability events and loop — so a failing webhook can
+  **never break a job**. Alert routing is **idempotent** via a `dedup_key`, so a
+  stuck job doesn't deliver on every sweep.
+- **Durable, bounded delivery** (`deliver_pending`, run by the worker when idle, or
+  via `POST /operator/deliveries/sweep`): a `WebhookDelivery` runs
+  `pending → delivered | failed`; a non-2xx/exception increments `attempts` and
+  re-queues until `webhook_max_attempts` (a **delivery** retry counter, distinct
+  from job retry/replay), then marks the delivery **terminally failed**
+  (dead-letter-ready). Payloads are signed `HMAC-SHA256` in `X-AIRA-Signature`.
+- **Inspection** (`GET /operator/deliveries?status=&destination_id=`,
+  `GET /operator/deliveries/{id}`): status, attempts, response code, and the **error
+  class** (never a body/secret). `?status=failed` is the dead-letter view; the
+  delivered payload preserves correlation (`source_type`/`source_id`/`event_type`/
+  severity). The payload is the already-curated event/alert — never prompts, tool
+  payloads, traces, or secrets.
+- **Config** (validated): `webhooks_enabled`, `webhook_max_attempts` (≥ 1),
+  `webhook_timeout_seconds`. **Separation**: no user-facing destination/delivery
+  routes, `GET /jobs/{id}` unchanged, nothing in the user activity feed. The HTTP
+  send is injectable, so it's fully testable without a network. No frontend.
+
+Webhook redelivery, Slack/PagerDuty/email adapters, richer per-destination routing
+rules, and a full dead-letter queue all layer on this durable model without
+touching the user surface or the execution path.
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

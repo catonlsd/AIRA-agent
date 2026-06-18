@@ -43,6 +43,14 @@ class ExecutionWorker:
                 logger.exception("worker run_once failed")
                 ran = None
             if ran is None:
+                # Idle: flush any pending external webhook deliveries (bounded,
+                # best-effort — a failed delivery never affects execution).
+                try:
+                    from app.webhooks import delivery_service
+
+                    delivery_service.deliver_pending()
+                except Exception:
+                    logger.exception("worker deliver_pending failed")
                 time.sleep(self.poll_seconds)
 
 

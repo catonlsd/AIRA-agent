@@ -163,6 +163,15 @@ class Settings(BaseSettings):
     # Queued count for one class above this is "backlog pressure". >= 1.
     slo_backlog_threshold: int = 20
 
+    # ── External delivery (webhooks / alert routing; operator-only) ──
+    # When on, curated observability events / alert-worthy policy results can be
+    # POSTed to operator-configured webhook destinations. Delivery is durable and
+    # best-effort around execution — a failed webhook can NEVER break a job.
+    webhooks_enabled: bool = True
+    # DELIVERY retry bound (separate from job retry / replay). >= 1.
+    webhook_max_attempts: int = 4
+    webhook_timeout_seconds: float = 5.0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -202,6 +211,13 @@ class Settings(BaseSettings):
     def _validate_backlog(cls, value):
         if int(value) < 1:
             raise ValueError("slo_backlog_threshold must be >= 1")
+        return value
+
+    @field_validator("webhook_max_attempts")
+    @classmethod
+    def _validate_webhook_attempts(cls, value):
+        if int(value) < 1:
+            raise ValueError("webhook_max_attempts must be >= 1")
         return value
 
     @field_validator("cors_origins", mode="before")

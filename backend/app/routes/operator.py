@@ -13,6 +13,7 @@ paths are simply unavailable.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 
 from app.auth import resolve_operator_principal
 from app.db.database import SessionLocal
@@ -178,3 +179,107 @@ def operator_alerts(request: Request, limit: int = 200) -> dict:
     from app.ops_policy import ops_policy
 
     return {"alerts": ops_policy.alerts(limit=limit)}
+
+
+# ── External delivery: webhook destinations + deliveries (operator-only) ──────
+
+
+class DestinationBody(BaseModel):
+    name: str = Field(..., max_length=120)
+    url: str = Field(..., max_length=500)
+    subscription: str = Field(default="alerts", max_length=16)
+    min_severity: str = Field(default="warning", max_length=16)
+    event_filter: str | None = Field(default=None, max_length=255)
+    secret: str | None = Field(default=None, max_length=255)
+    enabled: bool = True
+
+
+class DestinationUpdate(BaseModel):
+    name: str | None = None
+    url: str | None = None
+    enabled: bool | None = None
+    subscription: str | None = None
+    min_severity: str | None = None
+    event_filter: str | None = None
+    secret: str | None = None
+
+
+@router.post("/destinations")
+def operator_create_destination(body: DestinationBody, request: Request) -> dict:
+    """Configure an external delivery target (webhook). Operator-only; the signing
+    secret is stored but NEVER returned by any read API."""
+    _require_operator(request)
+    from app.webhooks import delivery_service
+
+    dest = delivery_service.create_destination(
+        name=body.name, url=body.url, subscription=body.subscription,
+        min_severity=body.min_severity, event_filter=body.event_filter,
+        secret=body.secret, enabled=body.enabled)
+    if dest is None:
+        raise HTTPException(status_code=400, detail="Invalid destination (url/subscription/severity).")
+    return {"destination": dest}
+
+
+@router.get("/destinations")
+def operator_list_destinations(request: Request) -> dict:
+    _require_operator(request)
+    from app.webhooks import delivery_service
+
+    return {"destinations": delivery_service.list_destinations()}
+
+
+@router.patch("/destinations/{dest_id}")
+def operator_update_destination(dest_id: str, body: DestinationUpdate, request: Request) -> dict:
+    _require_operator(request)
+    from app.webhooks import delivery_service
+
+    dest = delivery_service.update_destination(dest_id, **body.model_dump(exclude_none=True))
+    if dest is None:
+        raise HTTPException(status_code=404, detail="Destination not found or invalid update.")
+    return {"destination": dest}
+
+
+@router.delete("/destinations/{dest_id}")
+def operator_delete_destination(dest_id: str, request: Request) -> dict:
+    _require_operator(request)
+    from app.webhooks import delivery_service
+
+    return {"ok": delivery_service.delete_destination(dest_id)}
+
+
+@router.get("/deliveries")
+def operator_list_deliveries(
+    request: Request, status: str | None = None, destination_id: str | None = None, limit: int = 50,
+) -> dict:
+    """Inspect recent delivery attempts — status, attempts, last error class. The
+    dead-letter view: filter `?status=failed` for terminally-failed deliveries."""
+    _require_operator(request)
+    from app.webhooks import delivery_service
+
+    return {"deliveries": delivery_service.recent_deliveries(
+        status=status, destination_id=destination_id, limit=limit)}
+
+
+@router.get("/deliveries/{delivery_id}")
+def operator_get_delivery(delivery_id: str, request: Request) -> dict:
+    _require_operator(request)
+    from app.webhooks import delivery_service
+
+    delivery = delivery_service.get_delivery(delivery_id)
+    if delivery is None:
+        raise HTTPException(status_code=404, detail="Delivery not found.")
+    return {"delivery": delivery}
+
+
+@router.post("/deliveries/sweep")
+def operator_deliveries_sweep(request: Request) -> dict:
+    """Route current alert-worthy policy results to subscribed destinations, then
+    flush pending deliveries. The manual trigger for the delivery foundation (a
+    scheduled worker calls the same path later). Returns routing + delivery counts."""
+    _require_operator(request)
+    from app.ops_policy import ops_policy
+    from app.webhooks import delivery_service
+
+    routed = delivery_service.route_alerts(ops_policy.alerts())
+    result = delivery_service.deliver_pending()
+    return {"routed_alerts": routed, **result}
