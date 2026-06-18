@@ -109,6 +109,17 @@ class ExecutionQueueService:
     def register_handler(self, kind: str, handler: JobHandler) -> None:
         self._handlers[kind] = handler
 
+    # ── observability emission (best-effort; never affects execution) ─────────
+
+    @staticmethod
+    def _emit(event_type: str, **fields: Any) -> None:
+        try:
+            from app.observability import observability
+
+            observability.record(event_type, **fields)
+        except Exception:
+            pass
+
     # ── enqueue (idempotent via dedup_key) ────────────────────────────────────
 
     def enqueue(
@@ -159,7 +170,11 @@ class ExecutionQueueService:
             )
             session.add(row)
             session.commit()
-            return self._clean(row)
+            cleaned = self._clean(row)
+        from app.observability import EVT_QUEUED  # local: avoid import cycle
+        self._emit(EVT_QUEUED, owner=owner, job_id=cleaned["id"], kind=kind,
+                   run_id=run_id, status=QUEUED, title=title)
+        return cleaned
 
     # ── claim (atomic; exactly one worker wins) ───────────────────────────────
 
@@ -211,7 +226,11 @@ class ExecutionQueueService:
             if claimed.rowcount != 1:
                 return None  # another worker won the race
             row = session.get(ExecutionJob, row.id)
-            return JobView(row, service=self)
+            view = JobView(row, service=self)
+        from app.observability import EVT_CLAIMED
+        self._emit(EVT_CLAIMED, owner=view.owner, job_id=view.id, kind=view.kind,
+                   status=RUNNING, title=view.title)
+        return view
 
     # ── transitions ───────────────────────────────────────────────────────────
 
@@ -265,8 +284,12 @@ class ExecutionQueueService:
                 row.progress = "Canceled"
                 row.finished_at = _now()
                 row.updated_at = _now()
+                kind, title = row.kind, row.title
                 session.commit()
-                self._record_canceled(owner, row.actor_account_id, row.title)
+                self._record_canceled(owner, row.actor_account_id, title)
+                from app.observability import EVT_CANCELED
+                self._emit(EVT_CANCELED, owner=owner, job_id=job_id, kind=kind,
+                           status=CANCELED, title=title)
                 return {"ok": True, "status": CANCELED, "message": "Canceled."}
             # Running / validating / repairing / awaiting_approval -> cooperative.
             row.status = CANCEL_REQUESTED
@@ -352,7 +375,13 @@ class ExecutionQueueService:
             )
             session.add(row)
             session.commit()
-            return self._clean(row)
+            cleaned = self._clean(row)
+        # The lineage signal: the new run is queued AS a retry/replay of its parent.
+        from app.observability import EVT_REPLAYED, EVT_RETRYING
+        self._emit(EVT_RETRYING if origin == "retry" else EVT_REPLAYED,
+                   owner=owner, job_id=cleaned["id"], kind=kind, origin=origin,
+                   status=QUEUED, parent_job_id=parent_job_id, title=title)
+        return cleaned
 
     # ── activity integration (honest, scope-attributed) ───────────────────────
 
@@ -391,6 +420,7 @@ class ExecutionQueueService:
         if handler is None:
             self.transition(view.id, FAILED, progress="No handler",
                             result={"error": f"no handler for {view.kind}"})
+            self._emit_failed(view, "NoHandler")
             return self.get_raw(view.id)
         try:
             result = handler(view)
@@ -405,6 +435,7 @@ class ExecutionQueueService:
             else:
                 self.transition(view.id, FAILED, progress="Failed",
                                 result={"error": f"{type(error).__name__}: {error}"[:300]})
+                self._emit_failed(view, type(error).__name__)
             return self.get_raw(view.id)
         # Checkpoint 2: honor a cancel that arrived DURING the run — the honest
         # outcome is canceled, and the (now-orphaned) result is not delivered.
@@ -412,12 +443,23 @@ class ExecutionQueueService:
             self._finish_canceled(view)
         else:
             self.transition(view.id, COMPLETED, progress="Completed", result=result)
+            from app.observability import EVT_COMPLETED
+            self._emit(EVT_COMPLETED, owner=view.owner, job_id=view.id, kind=view.kind,
+                       status=COMPLETED, title=view.title)
         return self.get_raw(view.id)
+
+    def _emit_failed(self, view: "JobView", failure_class: str) -> None:
+        from app.observability import EVT_FAILED
+        self._emit(EVT_FAILED, owner=view.owner, job_id=view.id, kind=view.kind,
+                   status=FAILED, failure_class=failure_class, title=view.title)
 
     def _finish_canceled(self, view: "JobView") -> None:
         self.transition(view.id, CANCELED, progress="Canceled",
                         result={"canceled": True})
         self._record_canceled(view.owner, view.actor_account_id, view.title)
+        from app.observability import EVT_CANCELED
+        self._emit(EVT_CANCELED, owner=view.owner, job_id=view.id, kind=view.kind,
+                   status=CANCELED, title=view.title)
 
     def drain(self, max_jobs: int = 50) -> int:
         """Run queued jobs until the queue is empty (used by the worker loop and

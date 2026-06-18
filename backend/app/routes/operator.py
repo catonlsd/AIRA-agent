@@ -122,3 +122,34 @@ def operator_run_timeline(run_id: str, request: Request) -> dict:
     if timeline is None:
         raise HTTPException(status_code=404, detail="Run not found.")
     return {"run_id": run_id, "timeline": timeline}
+
+
+# ── Observability export + failure triage (operator-only) ─────────────────────
+
+
+@router.get("/observability")
+def operator_observability(
+    request: Request,
+    since: int | None = None,
+    type: str | None = None,
+    limit: int = 100,
+) -> dict:
+    """Curated, cursor-based export of the operational signal stream — the seam for
+    external dashboards/alerting. Poll `?since=<cursor>` for incremental export;
+    the response carries the next `cursor`. Bounded; never raw payloads/traces."""
+    _require_operator(request)
+    from app.observability import observability
+
+    types = [t.strip() for t in type.split(",") if t.strip()] if type else None
+    return observability.recent(since=since, limit=limit, types=types)
+
+
+@router.get("/triage")
+def operator_triage(request: Request, limit: int = 25) -> dict:
+    """Curated terminal-failed jobs needing attention, classified honestly
+    (retry_exhausted / replay_candidate / in_progress / resolved) with lineage —
+    the dead-letter / failure-triage foundation. Operator-only."""
+    _require_operator(request)
+    from app.observability import observability
+
+    return {"triage": observability.triage(limit=limit)}

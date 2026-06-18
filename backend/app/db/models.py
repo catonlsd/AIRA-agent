@@ -179,6 +179,36 @@ class ExecutionJob(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class ObservabilityEvent(Base):
+    """A curated, durable operational signal for external monitoring / export.
+
+    Distinct from user-facing `activity_events` (the calm product summary) and from
+    raw traces (per-turn debug JSONL): this is the operator-only ops stream — a
+    bounded, append-only record of meaningful job lifecycle transitions
+    (queued/claimed/completed/failed/canceled/retrying/replayed) plus a summarized
+    failure class and lineage ids. The integer primary key is a monotonic cursor,
+    so an external dashboard/alerting system polls `?since=<id>` for incremental
+    export without scraping the DB. Never carries prompts, tool payloads, trace
+    blobs, secrets, or raw owner keys — only safe, ops-useful identifiers.
+    """
+
+    __tablename__ = "observability_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+    event_type: Mapped[str] = mapped_column(String(48), index=True, nullable=False)
+    job_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    origin: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    scope_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    scope_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    failure_class: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    parent_job_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
 class ContextBundle(Base):
     """A durable, scope-owned "handoff pack" — a saved combination of context
     references (documents, artifacts, runs) that can be reloaded into chat later.

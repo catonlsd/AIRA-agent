@@ -684,6 +684,38 @@ Operator replay tools, dead-letter inspection, failure triage, audit-safe suppor
 tooling, and richer correlation search all layer on this curated model without
 touching the user surface.
 
+## Observability export & failure triage
+
+`app/observability.py` (`ObservabilityExportService`, `observability_events` table)
+is the operator-only ops stream — distinct from user `activity_events` (the calm
+product summary) and from raw traces (per-turn debug JSONL).
+
+- **Export feed** (`GET /operator/observability?since=&type=&limit=`): a durable,
+  append-only journal of curated job lifecycle signals — `job_queued`,
+  `job_claimed`, `job_completed`, `job_failed`, `job_canceled`, `job_retrying`,
+  `job_replayed` — emitted **best-effort** from the queue's real lifecycle tap
+  points (enqueue / claim / run_once terminal / cancel / retry-replay clone), so
+  emission **never breaks execution**. The row id is a **monotonic cursor**: an
+  external dashboard/alerting backend polls `?since=<cursor>` for incremental
+  export and the response carries the next `cursor`. Each event carries only safe,
+  ops-useful fields (type, ts, job/run ids, origin, **scope type + id** derived
+  from the owner — never the raw key, status, **summarized failure class**,
+  lineage `parent_job_id`) — never prompts, tool payloads, trace blobs, or secrets.
+- **Triage** (`GET /operator/triage`): the dead-letter / failure-triage foundation
+  — terminal-`failed` jobs classified **honestly** from their lineage:
+  `retry_exhausted` (attempts reached `job_max_attempts`), `replay_candidate` (no
+  active/resolved follow-up — safe to replay), `in_progress` (a retry/replay is in
+  flight), or `resolved` (a retry/replay already succeeded). Includes
+  `retried_into`/`replayed_into` ids and the failure class.
+- **Gating & separation**: both endpoints are service-key gated (operator
+  principal) — `401`/`403` without it. The signals do **not** flow into the user
+  activity feed (verified), there is **no** user-facing `/observability` route, and
+  the user `GET /jobs/{id}` is unchanged. No frontend surface.
+
+External dashboards, alerting/webhook hooks, dead-letter queues, and richer triage
+workflows all layer on this curated, cursor-based stream without changing the user
+surface or the queue's execution path.
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

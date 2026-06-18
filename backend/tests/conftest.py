@@ -60,6 +60,7 @@ def _isolate_guided_flows():
     from app.memory.preference_memory import preference_memory
     from app.memory.session_memory import session_memory
     from app.middleware import reset_rate_limit
+    from app.observability import observability
     from app.pins import pin_service
     from app.usage_limits import usage_limiter
 
@@ -77,6 +78,7 @@ def _isolate_guided_flows():
     pin_service.clear_all()
     bundle_service.clear_all()
     execution_queue.clear_all()
+    observability.clear_all()
     yield
     guided_flow_store.clear_all()
     usage_limiter.reset()
