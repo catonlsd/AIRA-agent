@@ -29,6 +29,7 @@ from app.routes.preferences import router as preferences_router
 from app.routes.resources import router as resources_router
 from app.routes.bundles import router as bundles_router
 from app.routes.chat_context import router as chat_context_router
+from app.routes.jobs import router as jobs_router
 from app.routes.runs import router as runs_router
 from app.routes.search import router as search_router
 from app.routes.workspaces import router as workspaces_router
@@ -50,6 +51,14 @@ async def lifespan(_app: FastAPI):
         from app.artifacts.images import set_image_provider
 
         set_image_provider(build_default_provider())
+    except Exception:
+        pass
+    # Register durable-queue job handlers so an enqueued artifact job can run
+    # (in-process drain, or out-of-process via `python -m app.worker`).
+    try:
+        from app.job_handlers import register_default_handlers
+
+        register_default_handlers()
     except Exception:
         pass
     logger.info(
@@ -79,6 +88,7 @@ app.include_router(runs_router)
 app.include_router(search_router)
 app.include_router(chat_context_router)
 app.include_router(bundles_router)
+app.include_router(jobs_router)
 app.include_router(activity_router)
 app.include_router(aira_x_router)
 app.include_router(assistant_router)

@@ -958,6 +958,14 @@ class AssistantSupervisor:
                 "completed", "artifact_rejected", message, pending, ctx, artifact=None
             )
 
+        # Durable background path (opt-in): enqueue generation as an ExecutionJob
+        # so it survives client disconnect and runs on the worker. The pending flow
+        # is already consumed, so this can't double-enqueue; the result surfaces in
+        # recent activity and via /jobs/{id}. Default off — inline stays the norm.
+        queued = self._maybe_enqueue_artifact(pending, ctx)
+        if queued is not None:
+            return queued
+
         ctx.trace.event("stage", stage="executing_workflow")
         _ops_log("artifact_generation_started", ctx, kind=pending.kind)
         outcome = self.artifacts.generate(pending)
@@ -1022,6 +1030,58 @@ class AssistantSupervisor:
             f"Created “{artifact['title']}” ({kind.upper()}, {extent}) and validated "
             f"it opens correctly.{note} Your download is ready below."
         )
+
+    def _maybe_enqueue_artifact(
+        self, pending: PendingArtifact, ctx: TurnContext
+    ) -> dict[str, Any] | None:
+        """When durable queuing is enabled, hand artifact generation to the queue
+        and return a calm "working in the background" turn. Returns None to fall
+        through to the inline path (the default). Never breaks the turn."""
+        if not getattr(settings, "queue_artifacts", False):
+            return None
+        try:
+            from app.artifacts.service import _artifact_to_dict
+            from app.execution_queue import execution_queue
+            from app.job_handlers import JOB_ARTIFACT
+
+            job = execution_queue.enqueue(
+                ctx.owner, JOB_ARTIFACT, _artifact_to_dict(pending),
+                session_id=ctx.session_id,
+                actor_account_id=getattr(ctx.scope, "account_id", None),
+                title=f"{pending.kind.upper()} generation",
+                dedup_key=f"artifact:{ctx.owner}:{pending.kind}:{pending.goal}"[:128],
+            )
+        except Exception:
+            return None  # any queue failure falls back to the inline path
+        if not job:
+            return None
+        ctx.trace.event("artifact_enqueued", kind=pending.kind, job_id=job["id"])
+        _ops_log("artifact_generation_queued", ctx, kind=pending.kind, job_id=job["id"])
+        message = (
+            f"Working on your {pending.kind.upper()} in the background — it'll appear "
+            "in your recent work as soon as it's ready."
+        )
+        return {
+            "run_id": uuid4().hex,
+            "status": "queued",
+            "decision": "artifact_queued",
+            "mode": "research_then_execution",
+            "message": message,
+            "final_answer": message,
+            "sources": [],
+            "artifacts": [],
+            "approval_summary": None,
+            "meta": {
+                "is_multi_question": False,
+                "question_count": 1,
+                "has_sources": False,
+                "has_artifacts": False,
+                "requires_approval": False,
+                "artifact_kind": pending.kind,
+                "job_id": job["id"],
+                "original_request": pending.goal,
+            },
+        }
 
     def _artifact_response(
         self, status, decision, message, pending: PendingArtifact, ctx: TurnContext,

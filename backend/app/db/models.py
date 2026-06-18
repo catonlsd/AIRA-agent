@@ -130,6 +130,45 @@ class PinnedItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
 
 
+class ExecutionJob(Base):
+    """A durable unit of background work — the queue/worker backbone.
+
+    Long-running or expensive work (artifact generation today; execution / repair
+    loops later) is recorded here so it survives client disconnect and process
+    pressure, can be claimed by a worker out-of-request, and exposes reconnect-safe
+    status. Scope-owned (`owner` = account:<id> / workspace:<id> / session) so jobs
+    inherit the same access boundaries as runs and artifacts. `payload_json` holds
+    a clean work spec (references, not user blobs); `result_json` holds a clean,
+    UI-ready outcome (title / download / error) — never raw internals.
+
+    `status` drives the lifecycle: queued -> running -> (validating / repairing) ->
+    completed | failed, with awaiting_approval and cancel_requested / canceled
+    reserved so cancellation, retry, and replay layer on without a schema change.
+    `dedup_key` makes enqueue idempotent (a duplicate approval can't double-queue);
+    a worker claims a job with a single guarded UPDATE, so it can only run once.
+    """
+
+    __tablename__ = "execution_jobs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    session_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    actor_account_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    progress: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dedup_key: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class ContextBundle(Base):
     """A durable, scope-owned "handoff pack" — a saved combination of context
     references (documents, artifacts, runs) that can be reloaded into chat later.

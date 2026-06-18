@@ -99,6 +99,11 @@ import {
   type Bundle,
 } from "@/lib/chat-context";
 import {
+  fetchRecentJobs,
+  jobStatusLabel,
+  type Job,
+} from "@/lib/jobs";
+import {
   clearAllPreferences,
   fetchPreferences,
   isForbiddenError,
@@ -1056,6 +1061,7 @@ function RecentResourcesCard() {
   const [data, setData] = useState<RecentResources | null>(null);
   const [activity, setActivity] = useState<RecentActivity | null>(null);
   const [runs, setRuns] = useState<RecentRuns | null>(null);
+  const [activeJobs, setActiveJobs] = useState<Job[]>([]);
   const [continuing, setContinuing] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "hidden">("loading");
 
@@ -1065,11 +1071,13 @@ function RecentResourcesCard() {
       fetchRecentResources(sid),
       fetchRecentActivity(sid).catch(() => null),
       fetchRecentRuns(sid).catch(() => null),
+      fetchRecentJobs(sid, true).catch(() => []),
     ])
-      .then(([r, a, runHistory]) => {
+      .then(([r, a, runHistory, jobs]) => {
         setData(r);
         setActivity(a);
         setRuns(runHistory);
+        setActiveJobs(jobs);
         setStatus("ready");
       })
       .catch(() => setStatus("hidden"));
@@ -1096,7 +1104,7 @@ function RecentResourcesCard() {
 
   const events = activity?.events ?? [];
   const runItems = runs?.runs ?? [];
-  const empty = resourcesEmpty(data) && events.length === 0 && runItems.length === 0;
+  const empty = resourcesEmpty(data) && events.length === 0 && runItems.length === 0 && activeJobs.length === 0;
 
   return (
     <section className="sarvam-card rounded-[1.5rem] p-5">
@@ -1112,6 +1120,22 @@ function RecentResourcesCard() {
         </div>
       ) : (
         <div className="grid gap-3">
+          {activeJobs.length > 0 && (
+            <div className="rounded-2xl border border-[var(--accent)] bg-[var(--accent-soft)] p-4">
+              <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--accent)]">Working in the background</p>
+              <div className="grid gap-1.5">
+                {activeJobs.map((j) => (
+                  <p key={j.id} className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                    <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--accent)]" aria-hidden="true" />
+                    <span className="truncate">
+                      <span className="font-semibold text-[var(--text-strong)]">{j.title || "Background task"}</span>
+                      {` · ${jobStatusLabel(j.status)}`}
+                    </span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
           {events.length > 0 && (
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
               <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Activity</p>

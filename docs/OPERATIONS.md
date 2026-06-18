@@ -496,6 +496,50 @@ reusable bundles — still calm, explicit, and reference-only.
 Reusable context packs, teammate-to-teammate handoff, and richer multi-document
 reuse all layer on this reference model without changing the owner-key call sites.
 
+## Durable background execution (queue + worker)
+
+Heavy/long-running work can run off the request path so it survives client
+disconnect and process pressure — a staged, swappable foundation, not distributed
+infra.
+
+- **Queue/state** (`app/execution_queue.py`, `execution_jobs` table): a DB-backed
+  `ExecutionJob` with lifecycle `queued → running → (validating/repairing) →
+  completed|failed`, plus `awaiting_approval` and `cancel_requested/canceled`
+  reserved. Scope-owned (`owner` = account/workspace/session). `enqueue` is
+  **idempotent** via `dedup_key` (a duplicate approval can't double-queue);
+  `claim()` flips exactly one row `queued→running` with a guarded `UPDATE` (SQLite
+  serializes writers, so a job runs **once** even with multiple workers);
+  `run_once()` executes a handler with **bounded retry** (`job_max_attempts`) then
+  records an **honest `failed`** with a clean message. `payload_json` holds a
+  reference spec, `result_json` a clean outcome (title/download/error) — never
+  internals. The interface swaps for Redis/RQ/Arq/Celery later without touching
+  call sites.
+- **Worker** (`app/worker.py`): `python -m app.worker` — a thin loop calling
+  `run_once()`; scale by running it more than once (the atomic claim keeps each
+  job single-execution). The API never depends on the worker for inline paths.
+- **Handlers** (`app/job_handlers.py`): `kind="artifact"` runs the **real**
+  `ArtifactService.generate` (generation + validation unchanged, so evidence-based
+  completion and artifact validation are preserved) and records the same activity
+  the inline path does, so run history / recent artifacts stay coherent and
+  scope-attributed.
+- **Approval integration**: when `queue_artifacts` is on (default **off** —
+  inline stays the tested default), an approved artifact is **enqueued** instead of
+  generated inline. The pending guided flow is consumed first, so a duplicate
+  approval still resolves to "already handled" — no double-execute. The turn
+  returns a calm "working in the background" message with a `job_id`.
+- **Status** (`app/routes/jobs.py`): `GET /jobs/{id}` (reconnect-safe), `GET /jobs`
+  (recent, `?active=`), `POST /jobs/{id}/cancel`. Read = `view` (an inaccessible
+  job is a 404, no leak); cancel = `edit`. Payloads are UI-ready only — never
+  worker ids, queue internals, or owner keys.
+- **Frontend** (`frontend/lib/jobs.ts`, dependency-free): a calm "Working in the
+  background" line in the Settings "Recent" card when jobs are active (`?active`),
+  with human status labels — no job dashboard, no worker ids, no polling console.
+  Completed work surfaces through the existing activity / recent-artifacts
+  surfaces.
+
+Multiple workers, external queues, cancellation/retry UX, operator replay, and
+workload prioritization all layer on this model without changing the call sites.
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

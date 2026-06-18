@@ -55,6 +55,7 @@ def _isolate_guided_flows():
     from app.artifacts.images import set_image_provider
     from app.bundles import bundle_service
     from app.core.config import settings
+    from app.execution_queue import execution_queue
     from app.guided_flow_store import guided_flow_store
     from app.memory.preference_memory import preference_memory
     from app.memory.session_memory import session_memory
@@ -73,6 +74,7 @@ def _isolate_guided_flows():
     activity_service.clear_all()
     pin_service.clear_all()
     bundle_service.clear_all()
+    execution_queue.clear_all()
     yield
     guided_flow_store.clear_all()
     usage_limiter.reset()
@@ -81,6 +83,7 @@ def _isolate_guided_flows():
     activity_service.clear_all()
     pin_service.clear_all()
     bundle_service.clear_all()
+    execution_queue.clear_all()
     set_image_provider(None)
 
 

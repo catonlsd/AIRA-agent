@@ -121,6 +121,18 @@ class Settings(BaseSettings):
     max_artifact_images: int = 6
     artifact_image_timeout_seconds: float = 5.0
 
+    # ── Durable background execution (queue + worker) ──
+    # When on, approved artifact generation is enqueued as a durable ExecutionJob
+    # and run by the worker (`python -m app.worker`) instead of inline in the
+    # request, so heavy work survives client disconnect. Off by default: the
+    # inline path stays the tested default; the queue is the same code path, just
+    # executed out-of-request. The DB-backed queue/state is always available.
+    queue_artifacts: bool = False
+    # Bounded retry for a failed job before it's recorded as honestly failed.
+    job_max_attempts: int = 2
+    # Worker poll interval when the queue is empty (seconds).
+    worker_poll_seconds: float = 1.0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
