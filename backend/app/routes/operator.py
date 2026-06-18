@@ -191,6 +191,9 @@ class DestinationBody(BaseModel):
     subscription: str = Field(default="alerts", max_length=16)
     min_severity: str = Field(default="warning", max_length=16)
     event_filter: str | None = Field(default=None, max_length=255)
+    alert_filter: str | None = Field(default=None, max_length=255)
+    origin_filter: str | None = Field(default=None, max_length=64)
+    suppress_seconds: int | None = None
     secret: str | None = Field(default=None, max_length=255)
     enabled: bool = True
 
@@ -198,10 +201,14 @@ class DestinationBody(BaseModel):
 class DestinationUpdate(BaseModel):
     name: str | None = None
     url: str | None = None
+    kind: str | None = None
     enabled: bool | None = None
     subscription: str | None = None
     min_severity: str | None = None
     event_filter: str | None = None
+    alert_filter: str | None = None
+    origin_filter: str | None = None
+    suppress_seconds: int | None = None
     secret: str | None = None
 
 
@@ -215,9 +222,10 @@ def operator_create_destination(body: DestinationBody, request: Request) -> dict
     dest = delivery_service.create_destination(
         name=body.name, url=body.url, kind=body.kind, subscription=body.subscription,
         min_severity=body.min_severity, event_filter=body.event_filter,
-        secret=body.secret, enabled=body.enabled)
+        alert_filter=body.alert_filter, origin_filter=body.origin_filter,
+        suppress_seconds=body.suppress_seconds, secret=body.secret, enabled=body.enabled)
     if dest is None:
-        raise HTTPException(status_code=400, detail="Invalid destination (url/kind/subscription/severity).")
+        raise HTTPException(status_code=400, detail="Invalid destination (url/kind/subscription/severity/filters).")
     return {"destination": dest}
 
 
@@ -227,6 +235,21 @@ def operator_list_destinations(request: Request) -> dict:
     from app.webhooks import delivery_service
 
     return {"destinations": delivery_service.list_destinations()}
+
+
+@router.get("/destinations/{dest_id}/routing")
+def operator_destination_routing(dest_id: str, request: Request) -> dict:
+    """Effective routing config for one destination + a dry-run of the CURRENT
+    alert set against it: per alert, would it route / suppress / skip, and why.
+    Explains delivery decisions without DB spelunking. Creates no deliveries."""
+    _require_operator(request)
+    from app.ops_policy import ops_policy
+    from app.webhooks import delivery_service
+
+    preview = delivery_service.routing_preview(dest_id, ops_policy.alerts())
+    if preview is None:
+        raise HTTPException(status_code=404, detail="Destination not found.")
+    return preview
 
 
 @router.patch("/destinations/{dest_id}")
@@ -308,6 +331,6 @@ def operator_deliveries_sweep(request: Request) -> dict:
     from app.ops_policy import ops_policy
     from app.webhooks import delivery_service
 
-    routed = delivery_service.route_alerts(ops_policy.alerts())
+    routing = delivery_service.route_alerts_detailed(ops_policy.alerts())
     result = delivery_service.deliver_pending()
-    return {"routed_alerts": routed, **result}
+    return {"routing": routing, **result}

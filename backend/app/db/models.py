@@ -228,6 +228,13 @@ class WebhookDestination(Base):
     subscription: Mapped[str] = mapped_column(String(16), default="alerts")  # events|alerts|both
     min_severity: Mapped[str] = mapped_column(String(16), default="warning")  # warning|critical
     event_filter: Mapped[str | None] = mapped_column(String(255), nullable=True)  # comma list, optional
+    # Routing policy (F-10): a comma list of allowed alert CLASSIFICATIONS
+    # (retry_exhausted/stuck/backlog_pressure/…); a comma list of allowed event
+    # ORIGINS (normal/retry/replay); and a per-destination suppression window for
+    # repeated identical alerts (NULL = use the global default). All operator-only.
+    alert_filter: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    origin_filter: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    suppress_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     secret: Mapped[str | None] = mapped_column(String(255), nullable=True)  # signs payloads; never returned
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)

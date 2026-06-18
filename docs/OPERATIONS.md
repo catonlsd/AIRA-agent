@@ -823,9 +823,44 @@ On top of the delivery foundation (`app/webhooks.py`):
   still never returned; payloads stay the curated F-8 contract; no user-facing
   routes, `GET /jobs/{id}` unchanged. No frontend.
 
-Redelivery UI, richer per-destination routing rules, adapter-specific retry
-policies, PagerDuty/email/queue adapters, and a full dead-letter queue all layer on
-this without touching the user surface or the execution path.
+### Routing policy & noise-safe suppression
+
+On top of delivery (`app/webhooks.py`), routing stops being a blunt fan-out:
+
+- **Per-destination filters** (enforced, not just stored): `event_filter` (allowed
+  observability event types) and `origin_filter` (allowed event origins —
+  `normal`/`retry`/`replay`) for events; **`alert_filter`** (allowed alert
+  classifications — `stuck`/`retry_exhausted`/`backlog_pressure`/…) plus the
+  existing `min_severity` for alerts. A destination receives only the classes it
+  asked for.
+- **Bounded suppression** (the noise fix): the alert dedup is now a **time window**.
+  A persistent stuck job no longer re-delivers the same critical alert every sweep
+  — within `suppress_seconds` (per-destination, or the global
+  `webhook_suppress_seconds`, default 300; 0 = off), an identical
+  `(classification, subject, severity)` signal is **suppressed**. A **severity
+  change** (escalation/recovery) is never suppressed, and after the window a
+  recurring alert routes again. Suppression creates **no delivery record** — it
+  never masquerades as delivered.
+- **Explainable** — `alert_routing_decision(...)` is a pure helper returning
+  `route` / `skip:<reason>` / `suppress:within_window`. `route_alerts_detailed`
+  returns `{routed, suppressed, skipped}` (surfaced by the sweep), and
+  `GET /operator/destinations/{id}/routing` dry-runs the current alert set against
+  one destination — per alert, *would it route/suppress/skip and why* — so an
+  operator can answer "why didn't this destination get that alert" without DB
+  spelunking.
+- **Adapter policy used intentionally** — each adapter declares a `payload_shape`
+  (`structured_json` for webhook, `slack_text` for slack), surfaced on the
+  destination so routing/inspection knows the form a destination expects. The
+  curated payload contract is unchanged; the adapter adapts *presentation*.
+- **Compatible with F-8/F-9** — suppression/filters never create fake deliveries,
+  routed alerts still make real durable attempts, redrive preserves
+  destination/routing identity, and dead-letter lineage is intact. Config
+  `webhook_suppress_seconds` (≥ 0) validated. Operator-only; secrets still never
+  returned; no user routes; `GET /jobs/{id}` unchanged. No frontend.
+
+Adapter-specific retry policies, richer routing rules, per-destination escalation,
+PagerDuty/email adapters, and notification aggregation all layer on this without
+touching the user surface or the execution path.
 
 ## Memory model (session + preference)
 

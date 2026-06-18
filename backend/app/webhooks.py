@@ -33,6 +33,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 from uuid import uuid4
 
@@ -62,6 +63,10 @@ KIND_SLACK = "slack"
 _KINDS = {KIND_WEBHOOK, KIND_SLACK}
 
 
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 # ── destination adapters ──────────────────────────────────────────────────────
 #
 # An adapter owns ONLY payload shaping + which (url, secret) to use. The actual
@@ -73,6 +78,7 @@ class WebhookAdapter:
     """The generic outbound HTTP adapter: POST the curated payload as-is, signed."""
 
     kind = KIND_WEBHOOK
+    payload_shape = "structured_json"  # adapter-specific payload policy (intentional)
 
     def prepare(self, dest, payload: dict) -> tuple[str, str, Optional[str]]:
         return dest.url, json.dumps(payload, default=str), dest.secret
@@ -84,6 +90,7 @@ class SlackAdapter:
     (Slack authenticates via the secret URL)."""
 
     kind = KIND_SLACK
+    payload_shape = "slack_text"
 
     def prepare(self, dest, payload: dict) -> tuple[str, str, Optional[str]]:
         label = payload.get("classification") or payload.get("event_type") or "signal"
@@ -113,6 +120,49 @@ def adapter_for(kind: Optional[str]):
     return _ADAPTERS.get(kind or KIND_WEBHOOK, _ADAPTERS[KIND_WEBHOOK])
 
 
+# ── routing-decision helpers (pure; enforced by routing) ──────────────────────
+
+def _csv_set(value: Optional[str]) -> Optional[set[str]]:
+    if not value:
+        return None
+    items = {t.strip() for t in value.split(",") if t.strip()}
+    return items or None
+
+
+def _alert_signal(alert: dict) -> str:
+    """A stable per-(classification, subject) signal — the dedup/suppression key
+    body. Severity is intentionally excluded so an escalation is NOT suppressed."""
+    return f"{alert.get('classification')}:{alert.get('job_id') or alert.get('exec_class')}"
+
+
+def alert_routing_decision(
+    *, dest, alert: dict, in_flight: bool, last_severity: Optional[str],
+    last_age_seconds: Optional[float], window_seconds: int,
+) -> tuple[str, str]:
+    """Decide whether an alert should route to a destination, and why. Pure +
+    testable. Returns one of: ("route", ...), ("skip", reason), ("suppress", reason).
+
+      * skip:below_min_severity       — under the destination's floor
+      * skip:classification_filtered  — not in the destination's alert_filter
+      * skip:in_flight                — an identical delivery is still pending
+      * suppress:within_window        — same signal + same severity, inside window
+      * route                         — a real new delivery should be created
+    A severity CHANGE for the same signal always routes (escalation/recovery).
+    """
+    sev = alert.get("severity", "warning")
+    if _SEVERITY_RANK.get(sev, 0) < _SEVERITY_RANK.get(dest.min_severity, 1):
+        return ("skip", "below_min_severity")
+    allowed = _csv_set(dest.alert_filter)
+    if allowed is not None and alert.get("classification") not in allowed:
+        return ("skip", "classification_filtered")
+    if in_flight:
+        return ("skip", "in_flight")
+    if (window_seconds > 0 and last_severity == sev and last_age_seconds is not None
+            and last_age_seconds < window_seconds):
+        return ("suppress", "within_window")
+    return ("route", "ok")
+
+
 class DeliveryService:
     def __init__(self, session_factory: Callable[[], Any] = SessionLocal) -> None:
         self._session_factory = session_factory
@@ -130,25 +180,32 @@ class DeliveryService:
     def create_destination(
         self, *, name: str, url: str, kind: str = KIND_WEBHOOK, subscription: str = SUB_ALERTS,
         min_severity: str = "warning", event_filter: Optional[str] = None,
-        secret: Optional[str] = None, enabled: bool = True,
+        alert_filter: Optional[str] = None, origin_filter: Optional[str] = None,
+        suppress_seconds: Optional[int] = None, secret: Optional[str] = None, enabled: bool = True,
     ) -> Optional[dict[str, Any]]:
         name, url = (name or "").strip(), (url or "").strip()
         if not name or not url.lower().startswith(("http://", "https://")):
             return None
         if subscription not in _SUBSCRIPTIONS or min_severity not in _SEVERITIES or kind not in _KINDS:
             return None
+        if suppress_seconds is not None and int(suppress_seconds) < 0:
+            return None
         with self._session_factory() as session:
             row = WebhookDestination(
                 id=uuid4().hex, name=name[:120], url=url[:500], kind=kind,
                 enabled=bool(enabled), subscription=subscription, min_severity=min_severity,
-                event_filter=(event_filter or None), secret=(secret or None),
+                event_filter=(event_filter or None), alert_filter=(alert_filter or None),
+                origin_filter=(origin_filter or None),
+                suppress_seconds=(int(suppress_seconds) if suppress_seconds is not None else None),
+                secret=(secret or None),
             )
             session.add(row)
             session.commit()
             return self._clean_destination(row)
 
     def update_destination(self, dest_id: str, **changes: Any) -> Optional[dict[str, Any]]:
-        allowed = {"name", "url", "enabled", "subscription", "min_severity", "event_filter", "secret", "kind"}
+        allowed = {"name", "url", "enabled", "subscription", "min_severity", "event_filter",
+                   "alert_filter", "origin_filter", "suppress_seconds", "secret", "kind"}
         with self._session_factory() as session:
             row = session.get(WebhookDestination, dest_id)
             if row is None:
@@ -161,6 +218,8 @@ class DeliveryService:
                 if key == "min_severity" and value not in _SEVERITIES:
                     return None
                 if key == "kind" and value not in _KINDS:
+                    return None
+                if key == "suppress_seconds" and int(value) < 0:
                     return None
                 setattr(row, key, value)
             from datetime import datetime, timezone
@@ -183,7 +242,8 @@ class DeliveryService:
 
     def route_observability(self, event: dict[str, Any]) -> int:
         """Fan an observability event out to enabled destinations subscribed to
-        events (with optional type filter). Best-effort; returns #queued."""
+        events, enforcing per-destination event-type AND origin filters. Best-effort;
+        returns #queued."""
         if not getattr(settings, "webhooks_enabled", True):
             return 0
         try:
@@ -196,11 +256,14 @@ class DeliveryService:
                 )
                 queued = 0
                 etype = event.get("event_type")
+                eorigin = event.get("origin")  # normal -> None; retry/replay otherwise
                 for dest in dests:
-                    if dest.event_filter:
-                        allowed = {t.strip() for t in dest.event_filter.split(",") if t.strip()}
-                        if etype not in allowed:
-                            continue
+                    type_set = _csv_set(dest.event_filter)
+                    if type_set is not None and etype not in type_set:
+                        continue
+                    origin_set = _csv_set(dest.origin_filter)
+                    if origin_set is not None and (eorigin or "normal") not in origin_set:
+                        continue
                     self._enqueue_delivery(session, dest, source_type="observability",
                                            source_id=str(event.get("id")), event_type=etype,
                                            severity=None, payload=event,
@@ -213,9 +276,20 @@ class DeliveryService:
 
     def route_alerts(self, alerts: list[dict[str, Any]]) -> int:
         """Route alert-worthy policy results to destinations subscribed to alerts,
-        filtered by min_severity. Idempotent per (destination, alert signature)."""
+        enforcing min_severity + classification filters and a bounded suppression
+        window (a persistent stuck job won't re-deliver the same critical alert
+        every sweep; a severity change still routes). Returns #routed (new
+        deliveries); suppressed/skipped do NOT create records."""
+        return self.route_alerts_detailed(alerts).get("routed", 0)
+
+    def route_alerts_detailed(self, alerts: list[dict[str, Any]]) -> dict[str, int]:
+        """Like `route_alerts` but returns `{routed, suppressed, skipped}` so the
+        operator sweep can report how much noise the policy absorbed."""
         if not getattr(settings, "webhooks_enabled", True) or not alerts:
-            return 0
+            return {"routed": 0, "suppressed": 0, "skipped": 0}
+        default_window = int(getattr(settings, "webhook_suppress_seconds", 300))
+        now = _utc_now()
+        counts = {"routed": 0, "suppressed": 0, "skipped": 0}
         try:
             with self._session_factory() as session:
                 dests = (
@@ -224,32 +298,44 @@ class DeliveryService:
                             WebhookDestination.subscription.in_((SUB_ALERTS, SUB_BOTH)))
                     .all()
                 )
-                queued = 0
                 for dest in dests:
-                    floor = _SEVERITY_RANK.get(dest.min_severity, 1)
+                    window = dest.suppress_seconds if dest.suppress_seconds is not None else default_window
                     for alert in alerts:
-                        sev = alert.get("severity", "warning")
-                        if _SEVERITY_RANK.get(sev, 0) < floor:
-                            continue
-                        sig = f"{alert.get('classification')}:{alert.get('job_id') or alert.get('exec_class')}"
-                        dedup = f"alert:{dest.id}:{sig}"
-                        # Idempotent: skip if an open delivery for this signal exists.
-                        exists = (
-                            session.query(WebhookDelivery)
-                            .filter(WebhookDelivery.dedup_key == dedup,
-                                    WebhookDelivery.status == STATUS_PENDING)
-                            .first()
-                        )
-                        if exists is not None:
-                            continue
-                        self._enqueue_delivery(session, dest, source_type="alert", source_id=sig,
-                                               event_type=alert.get("classification"), severity=sev,
-                                               payload=alert, dedup_key=dedup)
-                        queued += 1
+                        dedup = f"alert:{dest.id}:{_alert_signal(alert)}"
+                        in_flight, last_sev, last_age = self._dedup_state(session, dedup, now)
+                        decision, _reason = alert_routing_decision(
+                            dest=dest, alert=alert, in_flight=in_flight,
+                            last_severity=last_sev, last_age_seconds=last_age, window_seconds=window)
+                        if decision == "route":
+                            self._enqueue_delivery(session, dest, source_type="alert",
+                                                   source_id=_alert_signal(alert),
+                                                   event_type=alert.get("classification"),
+                                                   severity=alert.get("severity", "warning"),
+                                                   payload=alert, dedup_key=dedup)
+                            counts["routed"] += 1
+                        elif decision == "suppress":
+                            counts["suppressed"] += 1
+                        else:
+                            counts["skipped"] += 1
                 session.commit()
-                return queued
         except Exception:
-            return 0
+            return counts
+        return counts
+
+    def _dedup_state(self, session, dedup: str, now) -> tuple[bool, Optional[str], Optional[float]]:
+        """(in_flight, last_severity, last_age_seconds) for a dedup signal — the
+        inputs the suppression window needs, from the most recent delivery."""
+        last = (
+            session.query(WebhookDelivery)
+            .filter(WebhookDelivery.dedup_key == dedup)
+            .order_by(WebhookDelivery.created_at.desc())
+            .first()
+        )
+        if last is None:
+            return (False, None, None)
+        in_flight = last.status == STATUS_PENDING
+        age = (now - last.created_at).total_seconds() if last.created_at else None
+        return (in_flight, last.severity, age)
 
     def _enqueue_delivery(self, session, dest, *, source_type, source_id, event_type,
                           severity, payload, dedup_key) -> None:
@@ -432,13 +518,52 @@ class DeliveryService:
             "name": row.name,
             "url": row.url,
             "kind": row.kind,
+            "payload_shape": adapter_for(row.kind).payload_shape,  # adapter policy
             "enabled": row.enabled,
             "subscription": row.subscription,
             "min_severity": row.min_severity,
             "event_filter": row.event_filter,
+            "alert_filter": row.alert_filter,
+            "origin_filter": row.origin_filter,
+            "suppress_seconds": row.suppress_seconds,
             "has_secret": bool(row.secret),   # presence only — never the value
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }
+
+    # ── routing inspection (operator-only; explains decisions) ────────────────
+
+    def routing_preview(self, dest_id: str, alerts: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+        """A dry-run of the current alert set against ONE destination's policy:
+        for each alert, would it route / suppress / skip, and why. Answers "why did
+        this destination (not) receive this class of alert" without DB spelunking.
+        Creates no deliveries."""
+        now = _utc_now()
+        default_window = int(getattr(settings, "webhook_suppress_seconds", 300))
+        with self._session_factory() as session:
+            dest = session.get(WebhookDestination, dest_id)
+            if dest is None:
+                return None
+            window = dest.suppress_seconds if dest.suppress_seconds is not None else default_window
+            decisions: list[dict[str, Any]] = []
+            if dest.subscription in (SUB_ALERTS, SUB_BOTH):
+                for alert in alerts:
+                    dedup = f"alert:{dest.id}:{_alert_signal(alert)}"
+                    in_flight, last_sev, last_age = self._dedup_state(session, dedup, now)
+                    decision, reason = alert_routing_decision(
+                        dest=dest, alert=alert, in_flight=in_flight,
+                        last_severity=last_sev, last_age_seconds=last_age, window_seconds=window)
+                    decisions.append({
+                        "classification": alert.get("classification"),
+                        "severity": alert.get("severity"),
+                        "job_id": alert.get("job_id"),
+                        "decision": decision,
+                        "reason": reason,
+                    })
+            return {
+                "destination": self._clean_destination(dest),
+                "effective_window_seconds": window,
+                "decisions": decisions,
+            }
 
     @staticmethod
     def _clean_delivery(row: WebhookDelivery, *, include_payload: bool = False) -> dict[str, Any]:

@@ -174,6 +174,11 @@ class Settings(BaseSettings):
     # Operator REDRIVE bound for terminal-failed deliveries (separate again from
     # auto-retry and from job retry/replay). >= 1.
     webhook_max_redrives: int = 3
+    # Default suppression window (seconds) for repeated identical ALERT deliveries
+    # to one destination — a persistent stuck job shouldn't re-deliver the same
+    # critical alert every sweep. A severity change (escalation) is never
+    # suppressed. Per-destination `suppress_seconds` overrides this. 0 = off.
+    webhook_suppress_seconds: int = 300
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -221,6 +226,13 @@ class Settings(BaseSettings):
     def _validate_webhook_attempts(cls, value):
         if int(value) < 1:
             raise ValueError("webhook delivery/redrive bounds must be >= 1")
+        return value
+
+    @field_validator("webhook_suppress_seconds")
+    @classmethod
+    def _validate_webhook_suppress(cls, value):
+        if int(value) < 0:
+            raise ValueError("webhook_suppress_seconds must be >= 0 (0 disables)")
         return value
 
     @field_validator("cors_origins", mode="before")

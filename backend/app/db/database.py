@@ -45,6 +45,11 @@ def ensure_runtime_columns() -> None:
             "webhook_deliveries": [
                 ("redrive_of", "VARCHAR(36)"),
             ],
+            "webhook_destinations": [
+                ("alert_filter", "VARCHAR(255)"),
+                ("origin_filter", "VARCHAR(64)"),
+                ("suppress_seconds", "INTEGER"),
+            ],
         }
         for table, columns in additions.items():
             if table not in inspector.get_table_names():
