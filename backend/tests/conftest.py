@@ -59,6 +59,7 @@ def _isolate_guided_flows():
     from app.guided_flow_store import guided_flow_store
     from app.memory.preference_memory import preference_memory
     from app.memory.session_memory import session_memory
+    from app.middleware import reset_rate_limit
     from app.pins import pin_service
     from app.usage_limits import usage_limiter
 
@@ -69,6 +70,7 @@ def _isolate_guided_flows():
 
     guided_flow_store.clear_all()
     usage_limiter.reset()
+    reset_rate_limit()  # fresh per-minute window per test (shared unauth bucket)
     preference_memory.clear_all()
     session_memory.clear_all()
     activity_service.clear_all()
@@ -78,6 +80,7 @@ def _isolate_guided_flows():
     yield
     guided_flow_store.clear_all()
     usage_limiter.reset()
+    reset_rate_limit()
     preference_memory.clear_all()
     session_memory.clear_all()
     activity_service.clear_all()

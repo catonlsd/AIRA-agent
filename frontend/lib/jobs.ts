@@ -18,6 +18,8 @@ export type JobResult = {
   error?: string | null;
 } | null;
 
+export type JobPhase = { key: string; label: string; tone: "active" | "good" | "warn" | "bad" };
+
 export type Job = {
   id: string;
   kind: string;
@@ -28,6 +30,7 @@ export type Job = {
   origin?: "retry" | "replay" | null;
   can_cancel?: boolean;
   can_retry?: boolean;
+  phase?: JobPhase;  // unified live phase (server-computed, calm vocabulary)
   created_at: string | null;
   updated_at: string | null;
 };

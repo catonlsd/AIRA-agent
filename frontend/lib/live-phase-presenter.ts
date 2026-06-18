@@ -29,7 +29,13 @@ export type LivePhaseKey =
   | "retrying"
   | "completed"
   | "failed"
-  | "skipped";
+  | "skipped"
+  // Queued/background work (durable jobs) — same vocabulary so inline and queued
+  // work read as one product.
+  | "queued"
+  | "working_background"
+  | "canceling"
+  | "canceled";
 
 export type LiveTone = "active" | "good" | "warn" | "bad";
 
@@ -54,6 +60,10 @@ const PHASES: Record<LivePhaseKey, { label: string; tone: LiveTone }> = {
   completed: { label: "Completed", tone: "good" },
   failed: { label: "Could not complete", tone: "bad" },
   skipped: { label: "Completed — some checks skipped", tone: "good" },
+  queued: { label: "Queued", tone: "active" },
+  working_background: { label: "Working in the background", tone: "active" },
+  canceling: { label: "Canceling", tone: "warn" },
+  canceled: { label: "Canceled", tone: "warn" },
 };
 
 function phase(key: LivePhaseKey): LivePhase {

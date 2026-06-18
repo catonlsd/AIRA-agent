@@ -26,6 +26,7 @@ from fastapi import APIRouter, HTTPException, Request
 from app.auth import resolve_scope
 from app.authz import PERM_EDIT, PERM_VIEW, can
 from app.execution_queue import execution_queue
+from app.live_status import enrich_phase, live_status_service
 
 router = APIRouter(prefix="/jobs", tags=["AIRA-X Jobs"])
 
@@ -49,7 +50,20 @@ def list_jobs(
 ) -> dict:
     scope = _scope_or_403(request, session_id, PERM_VIEW)
     owner = scope.owner_key or "default"
-    return {"scope": _scope_dict(scope), "jobs": execution_queue.recent(owner, active_only=active)}
+    jobs = [enrich_phase(j) for j in execution_queue.recent(owner, active_only=active)]
+    return {"scope": _scope_dict(scope), "jobs": jobs}
+
+
+@router.get("/live")
+def live_jobs(
+    request: Request,
+    session_id: str | None = None,
+) -> dict:
+    """Reconnect-safe: the active (non-terminal) work in this scope, as unified
+    live-status snapshots — what a reloaded client lists to restore the live view."""
+    scope = _scope_or_403(request, session_id, PERM_VIEW)
+    owner = scope.owner_key or "default"
+    return {"scope": _scope_dict(scope), "live": live_status_service.active(owner)}
 
 
 @router.get("/{job_id}")
@@ -60,10 +74,26 @@ def get_job(
 ) -> dict:
     scope = _scope_or_403(request, session_id, PERM_VIEW)
     owner = scope.owner_key or "default"
-    job = execution_queue.get(owner, job_id)
+    job = enrich_phase(execution_queue.get(owner, job_id))
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found in this scope.")
     return {"scope": _scope_dict(scope), "job": job}
+
+
+@router.get("/{job_id}/live")
+def get_job_live(
+    job_id: str,
+    request: Request,
+    session_id: str | None = None,
+) -> dict:
+    """Reconnect-safe snapshot for one job — resume the right phase after a reload,
+    or resolve honestly to the terminal state if it already finished."""
+    scope = _scope_or_403(request, session_id, PERM_VIEW)
+    owner = scope.owner_key or "default"
+    snapshot = live_status_service.snapshot(owner, job_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Job not found in this scope.")
+    return {"scope": _scope_dict(scope), "live": snapshot}
 
 
 @router.post("/{job_id}/cancel")

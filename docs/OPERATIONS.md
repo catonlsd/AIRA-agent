@@ -610,6 +610,41 @@ Multiple worker pools, per-class worker eligibility, external queues, per-class
 autoscaling, and operator policy overrides all layer on this model without
 changing call sites.
 
+## Unified live status & reconnect-safe resumption
+
+Inline turns stream SSE phases that live only while the request is open; queued
+jobs are durable but carried only a freeform progress string. `app/live_status.py`
+(`LiveStatusService`) is the seam that makes them feel like one product:
+
+- **One phase vocabulary** — `job_phase(status, origin)` maps a durable job's
+  lifecycle into the SAME curated, user-facing phases the streaming presenter uses
+  (`Queued`, `Working in the background`, `Running validation`, `Repairing`,
+  `Canceling`, `Completed`, `Could not complete`, and `Retrying` for a freshly
+  re-queued retry). Labels match `frontend/lib/live-phase-presenter.ts` exactly, so
+  inline and queued work read identically. **Never** worker ids, offsets, queue, or
+  trace internals.
+- **Reconnect-safe via snapshot** — the `ExecutionJob` row IS the durable snapshot,
+  so no event backplane is needed: a reloaded client re-reads and resumes the right
+  phase, and a finished job resolves to its honest **terminal** phase (never fake
+  resumed progress). `RunLiveStatus` (`{id, kind, state, phase, status, result,
+  …}`) is the conceptual channel both inline and queued work map into.
+- **APIs** (`app/routes/jobs.py`): `GET /jobs/{id}` and `GET /jobs` now carry the
+  unified `phase`; `GET /jobs/{id}/live` returns one reconnect snapshot;
+  `GET /jobs/live` lists the active (non-terminal) work in scope to restore a live
+  view. All `view`-gated and scope-inherited from the queue's own `get`/`recent` —
+  an inaccessible job is a `404` (existence never leaks); a workspace member can
+  resume shared live work, a non-member can't.
+- **Frontend** (`frontend/lib/live-status.ts`, dependency-free): `jobLivePhase`
+  bridges a queued job into the shared `LivePhase` shape (prefers the server phase,
+  falls back by status); `liveBannerLabel`/`isResolved` drive a calm banner and
+  terminal reconciliation. The Settings "Background work" line now renders the
+  unified phase label + tone, so queued work reads exactly like inline phases. Fast
+  inline chat turns stay ephemeral by design (no heavy durable machinery forced on
+  them); the durable, reconnect-relevant work is the queued path.
+
+Resumable event streams, multi-device live continuity, and richer live run detail
+all layer on this snapshot model without changing call sites.
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

@@ -103,10 +103,10 @@ import {
   canRetry,
   cancelJob,
   fetchRecentJobs,
-  jobStatusLabel,
   retryJob,
   type Job,
 } from "@/lib/jobs";
+import { jobLivePhase } from "@/lib/live-status";
 import {
   clearAllPreferences,
   fetchPreferences,
@@ -1160,21 +1160,24 @@ function RecentResourcesCard() {
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
               <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Background work</p>
               <div className="grid gap-2">
-                {bgJobs.map((j) => (
+                {bgJobs.map((j) => {
+                  const phase = jobLivePhase(j);
+                  return (
                   <div key={j.id} className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2">
                       <span
                         className={cn(
                           "h-1.5 w-1.5 shrink-0 rounded-full",
-                          j.status === "failed" ? "bg-[var(--warning)]"
-                            : j.status === "canceled" ? "bg-[var(--text-subtle)]"
+                          phase.tone === "bad" ? "bg-[var(--warning)]"
+                            : phase.tone === "warn" ? "bg-[var(--text-subtle)]"
+                            : phase.tone === "good" ? "bg-[var(--success)]"
                             : "animate-pulse bg-[var(--accent)]"
                         )}
                         aria-hidden="true"
                       />
                       <span className="truncate text-xs text-[var(--text-muted)]">
                         <span className="font-semibold text-[var(--text-strong)]">{j.title || "Background task"}</span>
-                        {` · ${jobStatusLabel(j.status)}`}
+                        {` · ${phase.label}`}
                       </span>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
@@ -1200,7 +1203,8 @@ function RecentResourcesCard() {
                       )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
