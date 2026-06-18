@@ -187,6 +187,7 @@ def operator_alerts(request: Request, limit: int = 200) -> dict:
 class DestinationBody(BaseModel):
     name: str = Field(..., max_length=120)
     url: str = Field(..., max_length=500)
+    kind: str = Field(default="webhook", max_length=24)
     subscription: str = Field(default="alerts", max_length=16)
     min_severity: str = Field(default="warning", max_length=16)
     event_filter: str | None = Field(default=None, max_length=255)
@@ -212,11 +213,11 @@ def operator_create_destination(body: DestinationBody, request: Request) -> dict
     from app.webhooks import delivery_service
 
     dest = delivery_service.create_destination(
-        name=body.name, url=body.url, subscription=body.subscription,
+        name=body.name, url=body.url, kind=body.kind, subscription=body.subscription,
         min_severity=body.min_severity, event_filter=body.event_filter,
         secret=body.secret, enabled=body.enabled)
     if dest is None:
-        raise HTTPException(status_code=400, detail="Invalid destination (url/subscription/severity).")
+        raise HTTPException(status_code=400, detail="Invalid destination (url/kind/subscription/severity).")
     return {"destination": dest}
 
 
@@ -251,13 +252,40 @@ def operator_delete_destination(dest_id: str, request: Request) -> dict:
 def operator_list_deliveries(
     request: Request, status: str | None = None, destination_id: str | None = None, limit: int = 50,
 ) -> dict:
-    """Inspect recent delivery attempts — status, attempts, last error class. The
-    dead-letter view: filter `?status=failed` for terminally-failed deliveries."""
+    """Inspect recent delivery attempts — status, attempts, last error class, and
+    redrive lineage. Filter `?status=failed` for terminally-failed deliveries."""
     _require_operator(request)
     from app.webhooks import delivery_service
 
     return {"deliveries": delivery_service.recent_deliveries(
         status=status, destination_id=destination_id, limit=limit)}
+
+
+@router.get("/deliveries/dead-letters")
+def operator_dead_letters(request: Request, limit: int = 50) -> dict:
+    """Terminal-failed deliveries needing attention, classified from redrive
+    lineage (redrive_candidate / redriven / resolved / exhausted) with source +
+    destination correlation. The dead-letter view — recover without DB surgery."""
+    _require_operator(request)
+    from app.webhooks import delivery_service
+
+    return {"dead_letters": delivery_service.dead_letters(limit=limit)}
+
+
+@router.post("/deliveries/{delivery_id}/redrive")
+def operator_redrive_delivery(delivery_id: str, request: Request) -> dict:
+    """Redrive a terminal-failed delivery — a real new attempt linked via
+    `redrive_of`, bounded and idempotent. Separate from job retry/replay and from
+    automatic delivery retry."""
+    _require_operator(request)
+    from app.webhooks import delivery_service
+
+    result = delivery_service.redrive(delivery_id)
+    if result.get("not_found"):
+        raise HTTPException(status_code=404, detail="Delivery not found.")
+    if not result.get("ok"):
+        raise HTTPException(status_code=409, detail=result.get("message", "Cannot redrive this delivery."))
+    return result
 
 
 @router.get("/deliveries/{delivery_id}")

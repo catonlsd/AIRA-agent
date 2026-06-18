@@ -256,6 +256,10 @@ class WebhookDelivery(Base):
     response_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(120), nullable=True)  # error CLASS, not body
     dedup_key: Mapped[str | None] = mapped_column(String(160), index=True, nullable=True)
+    # Operator redrive lineage: the terminal-failed delivery this attempt re-drives
+    # (None = an original delivery). A redrive is a NEW row, so source/destination
+    # correlation is preserved and "already redriven" is just a child lookup.
+    redrive_of: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
     payload_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)

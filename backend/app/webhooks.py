@@ -51,6 +51,67 @@ STATUS_PENDING = "pending"
 STATUS_DELIVERED = "delivered"
 STATUS_FAILED = "failed"
 
+# Dead-letter classification for a terminal-failed delivery (derived from lineage).
+DL_REDRIVE_CANDIDATE = "redrive_candidate"  # failed, never redriven, under the cap
+DL_REDRIVEN = "redriven"                    # a redrive attempt is in flight
+DL_RESOLVED = "resolved"                    # a redrive attempt succeeded
+DL_EXHAUSTED = "exhausted"                  # redrive cap reached, none succeeded
+
+KIND_WEBHOOK = "webhook"
+KIND_SLACK = "slack"
+_KINDS = {KIND_WEBHOOK, KIND_SLACK}
+
+
+# ── destination adapters ──────────────────────────────────────────────────────
+#
+# An adapter owns ONLY payload shaping + which (url, secret) to use. The actual
+# HTTP transport stays a single injectable primitive (`DeliveryService._send`), so
+# the delivery state machine, retry, redrive, and tests are adapter-agnostic and
+# later adapters (PagerDuty, email, a queue) are a one-class addition.
+
+class WebhookAdapter:
+    """The generic outbound HTTP adapter: POST the curated payload as-is, signed."""
+
+    kind = KIND_WEBHOOK
+
+    def prepare(self, dest, payload: dict) -> tuple[str, str, Optional[str]]:
+        return dest.url, json.dumps(payload, default=str), dest.secret
+
+
+class SlackAdapter:
+    """A minimal Slack-compatible adapter: reshape the curated payload into Slack's
+    `{"text": ...}` shape. Proves the abstraction without webhook-specific signing
+    (Slack authenticates via the secret URL)."""
+
+    kind = KIND_SLACK
+
+    def prepare(self, dest, payload: dict) -> tuple[str, str, Optional[str]]:
+        label = payload.get("classification") or payload.get("event_type") or "signal"
+        sev = payload.get("severity")
+        ref = payload.get("job_id") or payload.get("source_id") or payload.get("id") or ""
+        text = f"[AIRA-X] {label}" + (f" ({sev})" if sev else "") + (f" — {ref}" if ref else "")
+        return dest.url, json.dumps({"text": text, "aira": payload}, default=str), None
+
+
+class _DestView:
+    """A detached snapshot of a destination's send-relevant fields, so an adapter
+    can shape a payload after the DB session has closed."""
+
+    def __init__(self, row) -> None:
+        self.id = row.id
+        self.url = row.url
+        self.secret = row.secret
+        self.kind = row.kind
+
+
+_ADAPTERS = {a.kind: a for a in (WebhookAdapter(), SlackAdapter())}
+
+
+def adapter_for(kind: Optional[str]):
+    """Resolve the adapter for a destination kind; unknown kinds fall back to the
+    generic webhook adapter so a misconfigured destination still delivers safely."""
+    return _ADAPTERS.get(kind or KIND_WEBHOOK, _ADAPTERS[KIND_WEBHOOK])
+
 
 class DeliveryService:
     def __init__(self, session_factory: Callable[[], Any] = SessionLocal) -> None:
@@ -67,18 +128,18 @@ class DeliveryService:
     # ── destinations (operator-only config) ───────────────────────────────────
 
     def create_destination(
-        self, *, name: str, url: str, subscription: str = SUB_ALERTS,
+        self, *, name: str, url: str, kind: str = KIND_WEBHOOK, subscription: str = SUB_ALERTS,
         min_severity: str = "warning", event_filter: Optional[str] = None,
         secret: Optional[str] = None, enabled: bool = True,
     ) -> Optional[dict[str, Any]]:
         name, url = (name or "").strip(), (url or "").strip()
         if not name or not url.lower().startswith(("http://", "https://")):
             return None
-        if subscription not in _SUBSCRIPTIONS or min_severity not in _SEVERITIES:
+        if subscription not in _SUBSCRIPTIONS or min_severity not in _SEVERITIES or kind not in _KINDS:
             return None
         with self._session_factory() as session:
             row = WebhookDestination(
-                id=uuid4().hex, name=name[:120], url=url[:500], kind="webhook",
+                id=uuid4().hex, name=name[:120], url=url[:500], kind=kind,
                 enabled=bool(enabled), subscription=subscription, min_severity=min_severity,
                 event_filter=(event_filter or None), secret=(secret or None),
             )
@@ -87,7 +148,7 @@ class DeliveryService:
             return self._clean_destination(row)
 
     def update_destination(self, dest_id: str, **changes: Any) -> Optional[dict[str, Any]]:
-        allowed = {"name", "url", "enabled", "subscription", "min_severity", "event_filter", "secret"}
+        allowed = {"name", "url", "enabled", "subscription", "min_severity", "event_filter", "secret", "kind"}
         with self._session_factory() as session:
             row = session.get(WebhookDestination, dest_id)
             if row is None:
@@ -98,6 +159,8 @@ class DeliveryService:
                 if key == "subscription" and value not in _SUBSCRIPTIONS:
                     return None
                 if key == "min_severity" and value not in _SEVERITIES:
+                    return None
+                if key == "kind" and value not in _KINDS:
                     return None
                 setattr(row, key, value)
             from datetime import datetime, timezone
@@ -217,11 +280,18 @@ class DeliveryService:
         for delivery_id, dest_id, payload_json, attempts in pending:
             with self._session_factory() as session:
                 dest = session.get(WebhookDestination, dest_id)
-                url = dest.url if dest else None
-                secret = dest.secret if dest else None
+                # Detach the fields the adapter needs (session closes after this).
+                dest_view = _DestView(dest) if dest else None
             ok, code, err = (False, None, "NoDestination")
-            if url:
-                ok, code, err = self._send(url, payload_json, secret)
+            if dest_view is not None:
+                try:
+                    payload = json.loads(payload_json)
+                except (TypeError, ValueError):
+                    payload = {}
+                # The adapter shapes the payload + picks (url, secret); transport
+                # stays the single injectable `_send` so retry/redrive are uniform.
+                url, body, secret = adapter_for(dest_view.kind).prepare(dest_view, payload)
+                ok, code, err = self._send(url, body, secret)
             with self._session_factory() as session:
                 row = session.get(WebhookDelivery, delivery_id)
                 if row is None:
@@ -241,6 +311,81 @@ class DeliveryService:
                     retried += 1
                 session.commit()
         return {"delivered": delivered, "failed": failed, "retried": retried}
+
+    # ── redrive (operator-only recovery of terminal-failed deliveries) ────────
+
+    def redrive(self, delivery_id: str) -> dict[str, Any]:
+        """Operator redrive of a terminal-FAILED delivery: schedules a REAL new
+        delivery attempt (a fresh `pending` row linked via `redrive_of`), preserving
+        source + destination correlation. Distinct from auto-retry, job retry, and
+        job/execution replay. Bounded by `webhook_max_redrives` and idempotent — a
+        redrive already in flight is returned, never duplicated."""
+        with self._session_factory() as session:
+            row = session.get(WebhookDelivery, delivery_id)
+            if row is None:
+                return {"ok": False, "not_found": True, "message": "Delivery not found."}
+            if row.status != STATUS_FAILED:
+                return {"ok": False, "status": row.status,
+                        "message": "Only a terminally-failed delivery can be redriven."}
+            children = (
+                session.query(WebhookDelivery)
+                .filter(WebhookDelivery.redrive_of == delivery_id)
+                .order_by(WebhookDelivery.created_at.asc())
+                .all()
+            )
+            open_child = next((c for c in children if c.status == STATUS_PENDING), None)
+            if open_child is not None:
+                return {"ok": True, "delivery": self._clean_delivery(open_child),
+                        "message": "A redrive is already in flight."}
+            if len(children) >= max(1, settings.webhook_max_redrives):
+                return {"ok": False, "status": STATUS_FAILED,
+                        "message": "Redrive limit reached for this delivery."}
+            child = WebhookDelivery(
+                id=uuid4().hex, destination_id=row.destination_id, source_type=row.source_type,
+                source_id=row.source_id, event_type=row.event_type, severity=row.severity,
+                status=STATUS_PENDING, attempts=0, redrive_of=delivery_id,
+                dedup_key=None, payload_json=row.payload_json,
+            )
+            session.add(child)
+            session.commit()
+            return {"ok": True, "delivery": self._clean_delivery(child),
+                    "message": "Redrive scheduled."}
+
+    def dead_letters(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        """Terminal-failed ORIGINAL deliveries (not themselves redrives), each
+        classified from lineage: redrive_candidate / redriven / resolved / exhausted.
+        The dead-letter view — recoverable without DB surgery."""
+        with self._session_factory() as session:
+            rows = (
+                session.query(WebhookDelivery)
+                .filter(WebhookDelivery.status == STATUS_FAILED, WebhookDelivery.redrive_of.is_(None))
+                .order_by(WebhookDelivery.created_at.desc())
+                .limit(min(limit, 200))
+                .all()
+            )
+            out: list[dict[str, Any]] = []
+            for row in rows:
+                children = (
+                    session.query(WebhookDelivery)
+                    .filter(WebhookDelivery.redrive_of == row.id)
+                    .all()
+                )
+                clean = self._clean_delivery(row)
+                clean["dead_letter_state"] = self._dead_letter_state(children)
+                clean["redrive_count"] = len(children)
+                clean["redrive_ids"] = [c.id for c in children]
+                out.append(clean)
+            return out
+
+    @staticmethod
+    def _dead_letter_state(children: list) -> str:
+        if any(c.status == STATUS_DELIVERED for c in children):
+            return DL_RESOLVED
+        if any(c.status == STATUS_PENDING for c in children):
+            return DL_REDRIVEN
+        if len(children) >= max(1, settings.webhook_max_redrives):
+            return DL_EXHAUSTED
+        return DL_REDRIVE_CANDIDATE
 
     def _send(self, url: str, body_json: str, secret: Optional[str]) -> tuple[bool, Optional[int], Optional[str]]:
         """POST the signed payload. Injected/overridable in tests. Returns
@@ -308,6 +453,8 @@ class DeliveryService:
             "attempts": row.attempts,
             "response_code": row.response_code,
             "last_error": row.last_error,   # error CLASS, never a body/secret
+            "redrive_of": row.redrive_of,   # lineage: the original this re-drives
+            "is_redrive": bool(row.redrive_of),
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,
         }

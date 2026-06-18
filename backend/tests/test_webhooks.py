@@ -15,6 +15,7 @@ from app.accounts import account_service
 from app.auth import make_account_token
 import app.core.config as config_mod
 from app.core.config import Settings
+from app.db.database import ensure_runtime_columns
 import app.execution_queue as eq
 from app.execution_queue import execution_queue
 from app.job_handlers import register_default_handlers
@@ -24,6 +25,7 @@ from app.observability import observability
 from app.ops_policy import SLOPolicy
 from app.webhooks import STATUS_DELIVERED, STATUS_FAILED, STATUS_PENDING, delivery_service
 
+ensure_runtime_columns()
 register_default_handlers()
 client = TestClient(app)
 OP = {"X-API-Key": "service-secret"}

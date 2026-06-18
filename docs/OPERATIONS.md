@@ -792,9 +792,40 @@ policy results to external systems instead of forcing them to poll. Operator-onl
   routes, `GET /jobs/{id}` unchanged, nothing in the user activity feed. The HTTP
   send is injectable, so it's fully testable without a network. No frontend.
 
-Webhook redelivery, Slack/PagerDuty/email adapters, richer per-destination routing
-rules, and a full dead-letter queue all layer on this durable model without
-touching the user surface or the execution path.
+### Redrive, dead-letters & destination adapters
+
+On top of the delivery foundation (`app/webhooks.py`):
+
+- **Adapter abstraction** — a destination has a `kind`, and an **adapter** owns only
+  payload *shaping* + which `(url, secret)` to use; the HTTP transport stays the
+  single injectable `_send`, so the delivery state machine / retry / redrive are
+  adapter-agnostic. `webhook` (generic signed POST) is the full adapter; a minimal
+  `slack` adapter reshapes the curated payload into Slack's `{"text": …}` shape
+  (proves the seam — PagerDuty/email/queue adapters are a one-class addition).
+  `deliver_pending` dispatches via `adapter_for(dest.kind)`; an unknown kind falls
+  back to `webhook` safely.
+- **Operator redrive** (`POST /operator/deliveries/{id}/redrive`): recover a
+  **terminal-failed** delivery without DB surgery. Redrive schedules a **real new
+  attempt** — a fresh `pending` row linked via `redrive_of`, preserving source +
+  destination correlation. It is **bounded** by `webhook_max_redrives` and
+  **idempotent** (a redrive already in flight is returned, never duplicated), and
+  is deliberately **distinct** from auto delivery-retry, job retry, and job replay.
+  Only a `failed` delivery is redrivable (else `409`).
+- **Dead-letters** (`GET /operator/deliveries/dead-letters`): terminal-failed
+  *original* deliveries (not themselves redrives), each classified from lineage —
+  `redrive_candidate` / `redriven` (in flight) / `resolved` (a redrive succeeded) /
+  `exhausted` (redrive cap reached) — with `redrive_count` + child ids. The clean
+  dead-letter view; `GET /operator/deliveries` now carries `redrive_of`/`is_redrive`.
+- **Config** (validated): `webhook_max_redrives` (≥ 1) — a third bound, separate
+  from `webhook_max_attempts` (auto-retry) and `job_max_attempts` (execution).
+  Self-healing migration adds `webhook_deliveries.redrive_of`.
+- **Separation/contract**: redrive/dead-letter routes are operator-only; secrets
+  still never returned; payloads stay the curated F-8 contract; no user-facing
+  routes, `GET /jobs/{id}` unchanged. No frontend.
+
+Redelivery UI, richer per-destination routing rules, adapter-specific retry
+policies, PagerDuty/email/queue adapters, and a full dead-letter queue all layer on
+this without touching the user surface or the execution path.
 
 ## Memory model (session + preference)
 
