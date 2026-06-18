@@ -50,3 +50,75 @@ def operator_replay_job(job_id: str, request: Request) -> dict:
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found.")
     return {"job": job}
+
+
+# ── Inspection (operator-only, curated — never a raw dump) ────────────────────
+
+
+@router.get("/jobs")
+def operator_list_jobs(
+    request: Request,
+    status: str | None = None,
+    origin: str | None = None,
+    kind: str | None = None,
+    failures: bool = False,
+    limit: int = 25,
+) -> dict:
+    """Find the right job to inspect — by status / origin (normal/retry/replay) /
+    kind, or recent failures. A minimal locator, not an admin search console."""
+    _require_operator(request)
+    from app.operator_inspect import support_inspection
+
+    return {"jobs": support_inspection.list_jobs(
+        status=status, origin=origin, kind=kind, failures=failures, limit=limit)}
+
+
+@router.get("/jobs/{job_id}")
+def operator_job_view(job_id: str, request: Request) -> dict:
+    """A curated operator view of one job: summary, current/terminal phase, retry/
+    replay lineage, summarized failure class, and safe artifact references."""
+    _require_operator(request)
+    from app.operator_inspect import support_inspection
+
+    view = support_inspection.job_view(job_id)
+    if view is None:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return {"job": view}
+
+
+@router.get("/jobs/{job_id}/timeline")
+def operator_job_timeline(job_id: str, request: Request) -> dict:
+    """A curated, ordered timeline correlating lifecycle, activity, and lineage."""
+    _require_operator(request)
+    from app.operator_inspect import support_inspection
+
+    timeline = support_inspection.job_timeline(job_id)
+    if timeline is None:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return {"job_id": job_id, "timeline": timeline}
+
+
+@router.get("/runs/{run_id}")
+def operator_run_view(run_id: str, request: Request) -> dict:
+    """A curated operator view of one inline run, from its persisted trace —
+    friendly label, status, source, and curated stage names (no raw payloads)."""
+    _require_operator(request)
+    from app.operator_inspect import support_inspection
+
+    view = support_inspection.run_view(run_id)
+    if view is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    return {"run": view}
+
+
+@router.get("/runs/{run_id}/timeline")
+def operator_run_timeline(run_id: str, request: Request) -> dict:
+    """A curated, ordered run timeline: turn start, stage progression, outcome,
+    and correlated activity — never a raw trace-event dump."""
+    _require_operator(request)
+    from app.operator_inspect import support_inspection
+
+    timeline = support_inspection.run_timeline(run_id)
+    if timeline is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    return {"run_id": run_id, "timeline": timeline}

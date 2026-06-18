@@ -645,6 +645,45 @@ jobs are durable but carried only a freeform progress string. `app/live_status.p
 Resumable event streams, multi-device live continuity, and richer live run detail
 all layer on this snapshot model without changing call sites.
 
+## Operator inspection (support-safe observability)
+
+The data to diagnose a run lives in four disconnected places — the
+`execution_jobs` table, the per-turn trace JSONL, `activity_events`, and the
+retry/replay lineage in job columns. `app/operator_inspect.py`
+(`SupportInspectionService`) correlates them into ONE curated, **operator-only**
+inspection model so support stops meaning raw DB spelunking. It is gated by the
+service api-key (operator principal) exactly like replay, and is **strictly
+separate** from the user-facing activity layer (which stays the minimal summary).
+
+- **`OperatorJobView`** (`GET /operator/jobs/{id}`): job id, kind, status, unified
+  phase, queue internals (exec_class/priority/dedup_key — fine for operators,
+  never for users), scope context (account/workspace/session — derived, not the
+  raw owner key), actor display name, timestamps, **lineage**
+  (`origin`/`parent_job_id`/`retried_into`/`replayed_into`), a **summarized
+  failure class** (e.g. `RuntimeError` — never the full message or a stack trace),
+  and a **safe artifact reference**. Approval is reported honestly (a queued
+  artifact's approval is consumed before enqueue).
+- **`OperatorTimeline`** (`GET /operator/jobs/{id}/timeline`,
+  `/operator/runs/{id}/timeline`): a curated, ordered "what happened" —
+  queued → claimed → terminal, correlated activity (artifact/validation/startup/
+  run events), and lineage markers (`Retried into X` / `Replayed from Y`) — never a
+  raw log concatenation.
+- **`OperatorRunView`** (`GET /operator/runs/{id}`): the inline/trace world — a
+  friendly run label, status, source, and curated **stage names** from the trace
+  (no raw event payloads or blobs).
+- **Locator** (`GET /operator/jobs?status=&origin=&kind=&failures=`): a minimal
+  query to find the right job (recent failures, retry/replay origin) — not an admin
+  search console.
+- **Curation rules**: payloads exclude `payload_json`, raw `result_json`, full
+  error messages, and `trace_events`. **Separation is enforced**: the user-facing
+  `GET /jobs/{id}` gains **no** operator fields (scope/owner/actor/lineage/queue
+  internals) — verified by test. All endpoints `403`/`401` without the service key
+  and `404` on a missing id. No frontend surface — this is a backend/operator API.
+
+Operator replay tools, dead-letter inspection, failure triage, audit-safe support
+tooling, and richer correlation search all layer on this curated model without
+touching the user surface.
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:
