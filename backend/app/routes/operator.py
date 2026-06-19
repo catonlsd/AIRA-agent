@@ -337,15 +337,31 @@ def operator_delete_destination(dest_id: str, request: Request) -> dict:
 
 @router.get("/deliveries")
 def operator_list_deliveries(
-    request: Request, status: str | None = None, destination_id: str | None = None, limit: int = 50,
+    request: Request, status: str | None = None, destination_id: str | None = None,
+    redrives: bool | None = None, limit: int = 50,
 ) -> dict:
-    """Inspect recent delivery attempts — status, attempts, last error class, and
-    redrive lineage. Filter `?status=failed` for terminally-failed deliveries."""
+    """Inspect recent delivery attempts (history) — status, attempts, last error
+    class, destination name, and redrive lineage. Filter `?status=failed` for
+    terminally-failed, `?redrives=true` for redrive attempts, `?destination_id=`."""
     _require_operator(request)
     from app.webhooks import delivery_service
 
     return {"deliveries": delivery_service.recent_deliveries(
-        status=status, destination_id=destination_id, limit=limit)}
+        status=status, destination_id=destination_id, redrives=redrives, limit=limit)}
+
+
+@router.get("/deliveries/{delivery_id}/lineage")
+def operator_delivery_lineage(delivery_id: str, request: Request) -> dict:
+    """The full redrive chain for one delivery — the original attempt plus every
+    redrive, in order, each curated. Operators see history, not just the current
+    dead-letter state."""
+    _require_operator(request)
+    from app.webhooks import delivery_service
+
+    lineage = delivery_service.delivery_lineage(delivery_id)
+    if lineage is None:
+        raise HTTPException(status_code=404, detail="Delivery not found.")
+    return {"lineage": lineage}
 
 
 @router.get("/deliveries/dead-letters")

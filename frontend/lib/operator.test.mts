@@ -6,6 +6,7 @@ import {
   canRedrive,
   deadLetterLabel,
   deadLetterTone,
+  deliveryStatusTone,
   healthTone,
   redriveBlockedReason,
 } from "./operator.ts";
@@ -37,4 +38,11 @@ test("only a candidate is redrivable; others explain why not", () => {
   assert.match(redriveBlockedReason("redriven") ?? "", /in flight/);
   assert.match(redriveBlockedReason("resolved") ?? "", /already succeeded/);
   assert.match(redriveBlockedReason("exhausted") ?? "", /limit reached/);
+});
+
+test("deliveryStatusTone maps a delivery status to a tone", () => {
+  assert.equal(deliveryStatusTone("delivered"), "good");
+  assert.equal(deliveryStatusTone("pending"), "warn");
+  assert.equal(deliveryStatusTone("failed"), "bad");
+  assert.equal(deliveryStatusTone("weird"), "muted");
 });

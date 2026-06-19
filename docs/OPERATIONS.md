@@ -966,6 +966,35 @@ admin surface, so operators stop chaining raw `curl` against `/operator/*`.
 Richer operator dashboards, destination-tuning UIs, redrive history, and SLO
 dashboards all layer on this console + client without touching the user product.
 
+### Operator console — history, tuning & lineage (G-2)
+
+The console grows from a single panel into **three focused tabs** (still one page,
+no admin maze) — **Overview**, **History**, **Recovery**:
+
+- **Delivery history** (`GET /operator/deliveries?status=&destination_id=&redrives=`):
+  recent attempts with quick filters (all / failed / pending / delivered, by
+  destination) — `recent_deliveries` now carries the **destination name** and a
+  `redrives` filter (original-vs-redrive). Each row drills into its **redrive
+  lineage**.
+- **Redrive lineage** (new `delivery_lineage(id)` + `GET /operator/deliveries/{id}/
+  lineage`): the **original attempt plus every redrive, in order**, each curated
+  (status / attempts / error class / time). Resolving lineage from a child id
+  returns the same root chain — operators see *what happened over time*, not just
+  the current dead-letter state. Surfaced in both History and Recovery.
+- **In-console destination tuning** (`PATCH /operator/destinations/{id}`): an
+  inline form edits `enabled` / `min_severity` / `alert_filter` / `suppress_seconds`
+  / `escalate_after` / `max_attempts` (only changed fields are sent; backend
+  validation preserved). **Secrets are never editable or shown** (only `has_secret`).
+- Still operator-gated and separate: pinned by `tests/test_operator_console.py`
+  (history filterable + named + no payload/secret; lineage chains original+redrive
+  and 404s/gates correctly; tuning via PATCH validates + never returns the secret +
+  account tokens denied; no operator field leaks into `GET /jobs/{id}`). Pure UI
+  logic (`deliveryStatusTone`, …) in `frontend/lib/operator.test.mts`. No backend
+  delivery logic changed beyond the additive lineage/name/`redrives` helpers.
+
+Redrive-history timelines, destination-tuning presets, and incident workflows all
+layer on this without touching the user product.
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

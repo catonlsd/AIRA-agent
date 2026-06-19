@@ -86,6 +86,48 @@ export type DestinationPolicy = {
   cooldown_until: string | null;
 };
 
+export type Delivery = {
+  id: string;
+  destination_id: string;
+  destination_name?: string | null;
+  source_type: string;
+  source_id: string | null;
+  event_type: string | null;
+  severity: string | null;
+  status: string;
+  attempts: number;
+  response_code: number | null;
+  last_error: string | null;
+  redrive_of: string | null;
+  is_redrive: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type DeliveryLineage = {
+  root_id: string;
+  destination_id: string;
+  destination_name: string | null;
+  destination_kind: string | null;
+  source_type: string;
+  source_id: string | null;
+  event_type: string | null;
+  state: string;
+  attempts: Delivery[];
+};
+
+/** Tunable destination policy fields an operator may edit (never the secret). */
+export type DestinationTuning = {
+  enabled?: boolean;
+  min_severity?: string;
+  event_filter?: string;
+  alert_filter?: string;
+  origin_filter?: string;
+  suppress_seconds?: number;
+  escalate_after?: number;
+  max_attempts?: number;
+};
+
 export type Tone = "good" | "warn" | "bad" | "muted";
 
 // ── pure helpers (unit-tested) ───────────────────────────────────────────────
@@ -127,6 +169,17 @@ export function redriveBlockedReason(state: DeadLetter["dead_letter_state"]): st
   if (state === "redriven") return "A redrive is already in flight.";
   if (state === "resolved") return "A redrive already succeeded.";
   return "Redrive limit reached — investigate the destination.";
+}
+
+const _STATUS_TONE: Record<string, Tone> = {
+  delivered: "good",
+  pending: "warn",
+  failed: "bad",
+};
+
+/** Tone for a delivery status in the history table. */
+export function deliveryStatusTone(status: string): Tone {
+  return _STATUS_TONE[status] ?? "muted";
 }
 
 export function hasOperatorKey(): boolean {
@@ -242,4 +295,35 @@ export async function runSweep(): Promise<Record<string, number> | null> {
   });
   if (!res.ok) return null;
   return res.json();
+}
+
+export async function fetchDeliveries(opts: { status?: string; destinationId?: string; redrives?: boolean; limit?: number } = {}): Promise<Delivery[]> {
+  const params = new URLSearchParams();
+  if (opts.status) params.set("status", opts.status);
+  if (opts.destinationId) params.set("destination_id", opts.destinationId);
+  if (opts.redrives !== undefined) params.set("redrives", String(opts.redrives));
+  params.set("limit", String(opts.limit ?? 50));
+  const res = await fetch(`${API_URL}/operator/deliveries?${params.toString()}`, { cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return [];
+  const body = await res.json();
+  return Array.isArray(body?.deliveries) ? body.deliveries : [];
+}
+
+export async function fetchLineage(deliveryId: string): Promise<DeliveryLineage | null> {
+  const res = await fetch(`${API_URL}/operator/deliveries/${encodeURIComponent(deliveryId)}/lineage`, {
+    cache: "no-store", headers: opHeaders(),
+  });
+  if (!res.ok) return null;
+  const body = await res.json();
+  return (body?.lineage as DeliveryLineage) ?? null;
+}
+
+/** Tune a destination's policy (never the secret). Returns the updated record. */
+export async function patchDestination(destId: string, fields: DestinationTuning): Promise<{ ok: boolean; message?: string }> {
+  const res = await fetch(`${API_URL}/operator/destinations/${encodeURIComponent(destId)}`, {
+    method: "PATCH", cache: "no-store", headers: opHeaders(true), body: JSON.stringify(fields),
+  });
+  if (res.ok) return { ok: true };
+  const body = await res.json().catch(() => ({}));
+  return { ok: false, message: body?.detail };
 }

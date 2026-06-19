@@ -589,6 +589,39 @@ class DeliveryService:
             return DL_EXHAUSTED
         return DL_REDRIVE_CANDIDATE
 
+    def delivery_lineage(self, delivery_id: str) -> Optional[dict[str, Any]]:
+        """The full redrive chain for one delivery: the ORIGINAL attempt plus every
+        redrive attempt, in order, each curated (status / attempts / error class /
+        time) — so an operator sees what happened over time, not just the current
+        dead-letter state. Works whether the given id is the original or a redrive.
+        Never raw payloads/secrets."""
+        with self._session_factory() as session:
+            row = session.get(WebhookDelivery, delivery_id)
+            if row is None:
+                return None
+            root_id = row.redrive_of or row.id  # resolve to the original
+            root = session.get(WebhookDelivery, root_id) or row
+            children = (
+                session.query(WebhookDelivery)
+                .filter(WebhookDelivery.redrive_of == root.id)
+                .order_by(WebhookDelivery.created_at.asc())
+                .all()
+            )
+            attempts = [self._clean_delivery(root)] + [self._clean_delivery(c) for c in children]
+            dest = session.get(WebhookDestination, root.destination_id)
+            return {
+                "root_id": root.id,
+                "destination_id": root.destination_id,
+                "destination_name": dest.name if dest else None,
+                "destination_kind": dest.kind if dest else None,
+                "source_type": root.source_type,
+                "source_id": root.source_id,
+                "event_type": root.event_type,
+                "state": self._dead_letter_state(children) if root.status == STATUS_FAILED else (
+                    "resolved" if root.status == STATUS_DELIVERED else "in_progress"),
+                "attempts": attempts,  # curated chain, never payloads
+            }
+
     def _send(self, url: str, body_json: str, secret: Optional[str]) -> tuple[bool, Optional[int], Optional[str]]:
         """POST the signed payload. Injected/overridable in tests. Returns
         (ok, status_code, error_class). Never raises."""
@@ -610,15 +643,28 @@ class DeliveryService:
     # ── inspection (operator-only; curated) ───────────────────────────────────
 
     def recent_deliveries(self, *, status: Optional[str] = None, destination_id: Optional[str] = None,
-                          limit: int = 50) -> list[dict[str, Any]]:
+                          redrives: Optional[bool] = None, limit: int = 50) -> list[dict[str, Any]]:
+        """Recent delivery attempts (history). Filterable by status, destination,
+        and original-vs-redrive. Enriched with the destination name for a readable
+        operator history — still curated (no payloads/secrets)."""
         with self._session_factory() as session:
             query = session.query(WebhookDelivery)
             if status:
                 query = query.filter(WebhookDelivery.status == status)
             if destination_id:
                 query = query.filter(WebhookDelivery.destination_id == destination_id)
+            if redrives is True:
+                query = query.filter(WebhookDelivery.redrive_of.isnot(None))
+            elif redrives is False:
+                query = query.filter(WebhookDelivery.redrive_of.is_(None))
             rows = query.order_by(WebhookDelivery.created_at.desc()).limit(min(limit, 200)).all()
-            return [self._clean_delivery(r) for r in rows]
+            names = {d.id: d.name for d in session.query(WebhookDestination).all()}
+            out = []
+            for r in rows:
+                clean = self._clean_delivery(r)
+                clean["destination_name"] = names.get(r.destination_id)
+                out.append(clean)
+            return out
 
     def get_delivery(self, delivery_id: str) -> Optional[dict[str, Any]]:
         with self._session_factory() as session:

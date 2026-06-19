@@ -107,6 +107,83 @@ def test_console_redrive_and_cooldown_actions_are_gated(op):
     assert client.post(f"/operator/destinations/{dest['id']}/cooldown/clear", headers=auth).status_code in (401, 403)
 
 
+# ── Delivery history + redrive lineage (G-2) ─────────────────────────────────
+
+
+def _make_failed_delivery(monkeypatch):
+    """One terminal-failed original delivery on an events destination."""
+    monkeypatch.setattr(config_mod.settings, "webhook_max_attempts", 1)
+    dest = delivery_service.create_destination(name="hist", url="https://h.example.com/x",
+                                               kind="webhook", subscription="events")
+    handler = f"con_{uuid4().hex[:6]}"
+    execution_queue.register_handler(handler, lambda j: {"ok": True})
+    execution_queue.enqueue(f"account:{uuid4().hex}", handler, {}, title="T")
+    execution_queue.drain()
+    monkeypatch.setattr(delivery_service, "_send",
+                        (lambda self, url, body, secret: (False, 500, "HTTP500")).__get__(delivery_service))
+    delivery_service.deliver_pending()
+    failed = delivery_service.recent_deliveries(status="failed")
+    return dest, failed[0]
+
+
+def test_delivery_history_is_filterable_and_named(op, monkeypatch):
+    dest, _ = _make_failed_delivery(monkeypatch)
+    # History carries the destination NAME and supports a status filter.
+    failed = client.get("/operator/deliveries", params={"status": "failed"}, headers=OP).json()["deliveries"]
+    assert failed and any(d["destination_name"] == "hist" for d in failed)
+    assert all(d["status"] == "failed" for d in failed)
+    # No payloads/secrets in the history rows.
+    assert "payload_json" not in str(failed) and "secret" not in str(failed)
+
+
+def test_delivery_lineage_chains_original_and_redrives(op, monkeypatch):
+    dest, failed = _make_failed_delivery(monkeypatch)
+    delivery_service.redrive(failed["id"])  # one redrive attempt
+    lineage = client.get(f"/operator/deliveries/{failed['id']}/lineage", headers=OP).json()["lineage"]
+    assert lineage["root_id"] == failed["id"] and lineage["destination_name"] == "hist"
+    assert len(lineage["attempts"]) == 2  # original + redrive
+    assert lineage["attempts"][1]["is_redrive"] is True
+    # Looking up lineage from the CHILD resolves back to the same root chain.
+    child_id = lineage["attempts"][1]["id"]
+    via_child = client.get(f"/operator/deliveries/{child_id}/lineage", headers=OP).json()["lineage"]
+    assert via_child["root_id"] == failed["id"]
+    assert "payload_json" not in str(lineage)
+
+
+def test_lineage_requires_operator(op, monkeypatch):
+    _, failed = _make_failed_delivery(monkeypatch)
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.get(f"/operator/deliveries/{failed['id']}/lineage", headers=auth).status_code in (401, 403)
+    assert client.get("/operator/deliveries/none/lineage", headers=OP).status_code == 404
+
+
+# ── Destination tuning from the console (PATCH) ──────────────────────────────
+
+
+def test_destination_tuning_via_patch(op):
+    dest = delivery_service.create_destination(name="tune", url="https://h.example.com/t",
+                                               subscription="alerts", min_severity="warning", secret="s")
+    upd = client.patch(f"/operator/destinations/{dest['id']}", headers=OP, json={
+        "min_severity": "critical", "alert_filter": "stuck,retry_exhausted",
+        "suppress_seconds": 120, "escalate_after": 3, "enabled": False}).json()["destination"]
+    assert upd["min_severity"] == "critical" and upd["alert_filter"] == "stuck,retry_exhausted"
+    assert upd["suppress_seconds"] == 120 and upd["escalate_after"] == 3 and upd["enabled"] is False
+    # The PATCH never returns the secret.
+    assert "secret" not in upd and upd["has_secret"] is True
+    # Invalid tuning is rejected, not silently applied.
+    assert client.patch(f"/operator/destinations/{dest['id']}", headers=OP,
+                        json={"min_severity": "bogus"}).status_code == 404
+
+
+def test_tuning_is_operator_only(op):
+    dest = delivery_service.create_destination(name="t2", url="https://h.example.com/t2", subscription="alerts")
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.patch(f"/operator/destinations/{dest['id']}", headers=auth,
+                        json={"enabled": False}).status_code in (401, 403)
+
+
 # ── No operator fields leak into the user product ────────────────────────────
 
 
