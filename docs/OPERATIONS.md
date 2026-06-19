@@ -933,6 +933,39 @@ Adapter-specific backoff timing, delivery SLO dashboards, escalation fallback
 chains, and destination silencing/acknowledgement all layer on this without
 touching the user surface or the execution path.
 
+### Operator delivery console (G-1)
+
+A minimal **operator-only** delivery console at `/operator`
+(`frontend/app/operator/page.tsx`, client `frontend/lib/operator.ts`) — the first
+admin surface, so operators stop chaining raw `curl` against `/operator/*`.
+
+- **Strictly separate**: `AppShell` renders `/operator` **without** the product nav
+  (it is never linked from the user UI). The operator enters the **service key**,
+  kept in `sessionStorage` (a secret — never `localStorage`, never mixed with a
+  user's account token), sent as `X-API-Key` on every call. With no `api_key`
+  configured (the normal product deployment) the whole surface is simply 403 for
+  everyone; with it, only the key holder gets in — verified against
+  `GET /operator/overview` on connect.
+- **Backed only by real, already-gated APIs** (no new backend): a **delivery
+  summary** (`/operator/delivery/analytics`), **destination health**
+  (`/operator/delivery/health` — label + reason, cooldown state, escalation
+  eligibility, routed/suppressed/skipped counts) with **routing explainability**
+  (`/operator/destinations/{id}/routing` — per-alert route/suppress/skip + reason)
+  and **cooldown recovery** (`/operator/destinations/{id}/cooldown/clear`), and a
+  **dead-letter recovery** list (`/operator/deliveries/dead-letters`) with one-click
+  **redrive** (`/operator/deliveries/{id}/redrive`) gated to `redrive_candidate`
+  (others show why not). A **Sweep** button runs `/operator/deliveries/sweep`.
+- **Operator-safe**: secrets are never shown (only `has_secret`); payloads are the
+  curated operator contract (error *class*, not bodies/traces). Pinned by
+  `tests/test_operator_console.py` — every console endpoint is operator-only,
+  account tokens are denied, payloads carry no `secret`, and **no** operator field
+  (`health`/`reason`/`escalation_eligible`/`dead_letter_state`/…) leaks into user
+  routes like `GET /jobs/{id}`. Pure UI logic (`healthTone`/`deadLetter*`/
+  `canRedrive`) is unit-tested in `frontend/lib/operator.test.mts`.
+
+Richer operator dashboards, destination-tuning UIs, redrive history, and SLO
+dashboards all layer on this console + client without touching the user product.
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:
