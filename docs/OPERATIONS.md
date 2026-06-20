@@ -1133,6 +1133,55 @@ ticketing product.
   sync field leak into `/jobs/{id}`) and `frontend/lib/operator.test.mts`
   (`syncStatusTone`).
 
+### Incident adapters, external linking & sync-health (G-6)
+
+Outbound sync grows from "one generic target shape" into a small **adapter +
+external-link** layer — still strictly **outbound-only** (AIRA-X never reads
+external state back; no bidirectional pretence).
+
+- **Adapter registry** (`app/incident_sync.py`): an adapter per target `kind`
+  keeps one curated contract — `shape(payload)` (the outbound body a target
+  expects) and `parse(status, headers, body) → (external_ref, external_url)` — so
+  retry/redrive/linkage/tests stay adapter-agnostic. `GenericIncidentAdapter`
+  (default: sends the curated envelope as-is, reads ref/url from common
+  headers/JSON) and a real `PagerDutyIncidentAdapter` (reshapes into a PagerDuty
+  Events-v2-style envelope — `event_action` mapped from the transition, `dedup_key`
+  = the incident signal — and parses the returned `dedup_key`). `kind=jira/opsgenie`
+  are reserved labels that fall back to generic shaping today (honest — no fake
+  vendor support claimed). New vendors are a one-class addition; the transport
+  (`_send`) stays a single injectable primitive.
+- **Stable external linking** (table `incident_external_links`): on every
+  **successful** sync, the incident→external correlation is **upserted** — one row
+  per (incident, target) holding the latest `external_ref` + (when the target
+  returned one) `external_url`, plus `last_action`/`last_synced_at`. A link is
+  **never invented** (only persisted when the adapter actually parsed a ref/url) and
+  a failed sync **never overwrites a good link** (the link reflects the last
+  success; staleness is derived, not destructive). `IncidentSyncRecord` also gains
+  `external_url` (additive `ensure_runtime_columns` ALTER).
+- **Per-incident sync health** (`incident_sync_status(incident_id)` →
+  `GET /operator/incidents/{id}/sync`): curated **links + recent attempts + an
+  honest summary** — `linked`, `synced`, `behind` (the most recent transition
+  hasn't landed externally), `last_synced_at` / `last_failed_at` / `last_error`,
+  and `recovered_after_redrive` (latest synced record is itself a redrive). This
+  answers "was it synced? to where? is there a stable ref/url? is the link stale or
+  current? did redrive recover it?" without a payload dump.
+- **Target health** (`target_health(id)` → `GET /operator/incident-targets/{id}/
+  health`): recent attempt mix (synced/failed/pending) + last success/failure +
+  `healthy|degraded` from `consecutive_failures`. Secret still never returned.
+- **Console** (`app/operator/page.tsx`): expanding an incident now also loads its
+  **External sync** linkage line — an honest status badge (`incidentSyncSummary`:
+  Not synced / Externally linked / Sync behind / Last sync failed / Recovered after
+  redrive), the target name/kind, the external `ref`, and an **Open ↗** link when a
+  real `external_url` exists. The global sync card's record rows gain the same
+  **Open ↗** when linked. Still operator-only: no link/ref/url field leaks into
+  `GET /jobs/{id}`.
+- Pinned by `backend/tests/test_incident_sync.py` (success persists ref/url + upserts
+  link; link **not invented** when the target returns none; behind→recovered after
+  redrive; PagerDuty adapter shapes the envelope specifically + parses `dedup_key`;
+  per-incident sync status + target health over HTTP with gating/404; no
+  `external_url` leak into `/jobs/{id}`) and `frontend/lib/operator.test.mts`
+  (`incidentSyncSummary`).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

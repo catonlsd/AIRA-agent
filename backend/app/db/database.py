@@ -61,6 +61,9 @@ def ensure_runtime_columns() -> None:
                 ("assignee", "VARCHAR(80)"),
                 ("assigned_at", "DATETIME"),
             ],
+            "incident_sync_records": [
+                ("external_url", "VARCHAR(500)"),
+            ],
         }
         for table, columns in additions.items():
             if table not in inspector.get_table_names():

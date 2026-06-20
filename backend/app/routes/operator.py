@@ -675,3 +675,28 @@ def operator_redrive_incident_sync(record_id: str, request: Request) -> dict:
     if not result.get("ok"):
         raise HTTPException(status_code=409, detail=result.get("message", "Cannot redrive."))
     return result
+
+
+@router.get("/incidents/{incident_id}/sync")
+def operator_incident_sync_status(incident_id: str, request: Request) -> dict:
+    """Per-incident external sync health + linkage (curated): durable external
+    links, recent attempts, and an honest summary (linked / behind / recovered)."""
+    _require_operator(request)
+    from app.incidents import incident_service
+    from app.incident_sync import incident_sync_service
+
+    if incident_service.get(incident_id) is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    return incident_sync_service.incident_sync_status(incident_id)
+
+
+@router.get("/incident-targets/{target_id}/health")
+def operator_incident_target_health(target_id: str, request: Request) -> dict:
+    """Curated health for one sync target (recent attempt mix + last success/fail)."""
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    health = incident_sync_service.target_health(target_id)
+    if health is None:
+        raise HTTPException(status_code=404, detail="Target not found.")
+    return {"target": health}

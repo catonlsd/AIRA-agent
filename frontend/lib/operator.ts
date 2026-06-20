@@ -191,9 +191,35 @@ export type IncidentSyncRecord = {
   attempts: number;
   last_error: string | null;
   external_ref: string | null;
+  external_url: string | null;
   redrive_of: string | null;
   is_redrive: boolean;
   created_at: string | null;
+};
+
+export type IncidentExternalLink = {
+  target_id: string;
+  target_name: string | null;
+  target_kind: string | null;
+  external_ref: string | null;
+  external_url: string | null;
+  last_action: string | null;
+  last_synced_at: string | null;
+};
+
+export type IncidentSyncStatus = {
+  linked: boolean;
+  links: IncidentExternalLink[];
+  records: IncidentSyncRecord[];
+  summary: {
+    linked: boolean;
+    synced: boolean;
+    behind: boolean;
+    last_synced_at: string | null;
+    last_failed_at: string | null;
+    last_error: string | null;
+    recovered_after_redrive: boolean;
+  };
 };
 
 /** Tone for an external-sync record status (pure; unit-tested). */
@@ -202,6 +228,20 @@ export function syncStatusTone(status: string): Tone {
   if (status === "pending") return "warn";
   if (status === "failed") return "bad";
   return "muted";
+}
+
+/** Honest one-line linkage summary for an incident's external sync (pure;
+ * unit-tested). Outbound-only — never claims to have read external state back. */
+export function incidentSyncSummary(s: IncidentSyncStatus["summary"]): { label: string; tone: Tone } {
+  if (!s.synced && !s.linked && !s.behind && !s.last_failed_at) {
+    return { label: "Not synced", tone: "muted" };
+  }
+  if (s.last_error && s.behind) return { label: `Last sync failed: ${s.last_error}`, tone: "bad" };
+  if (s.recovered_after_redrive) return { label: "Recovered after redrive", tone: "good" };
+  if (s.behind) return { label: "Sync behind current state", tone: "warn" };
+  if (s.linked) return { label: "Externally linked", tone: "good" };
+  if (s.synced) return { label: "Synced", tone: "good" };
+  return { label: "Not synced", tone: "muted" };
 }
 
 /** Human-friendly label for an action-trail entry (pure; unit-tested). */
@@ -538,4 +578,10 @@ export async function redriveIncidentSync(id: string): Promise<{ ok: boolean; me
   const body = await res.json().catch(() => null);
   if (res.ok) return { ok: true, message: body?.message };
   return { ok: false, message: body?.detail };
+}
+
+export async function fetchIncidentSyncStatus(incidentId: string): Promise<IncidentSyncStatus | null> {
+  const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(incidentId)}/sync`, { cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return null;
+  return res.json();
 }

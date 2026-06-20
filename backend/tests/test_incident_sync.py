@@ -34,13 +34,15 @@ def op(monkeypatch):
 
 @pytest.fixture
 def capture_send(monkeypatch):
-    """Make the injectable transport succeed and record outbound payloads."""
+    """Make the injectable transport succeed and record outbound payloads. Returns a
+    stable external ref + url so linkage is exercised."""
     import json as _json
     sent: list[dict] = []
 
-    def _ok(self, url, body_json, secret):
-        sent.append({"url": url, "body": _json.loads(body_json), "secret": secret})
-        return (True, 200, None, "ext-123")
+    def _ok(self, url, body_json, secret, adapter=None):
+        sent.append({"url": url, "body": _json.loads(body_json), "secret": secret,
+                     "adapter": getattr(adapter, "kind", None)})
+        return (True, 200, None, "ext-123", "https://ext.example.com/i/ext-123")
 
     monkeypatch.setattr(type(incident_sync_service), "_send", _ok)
     return sent
@@ -138,8 +140,8 @@ def test_failed_sync_is_terminal_after_cap_then_redrivable(monkeypatch):
     monkeypatch.setattr(config_mod.settings, "incident_sync_max_attempts", 1)
     incident_sync_service.create_target(name="t", url="https://h.example.com/i")
 
-    def _fail(self, url, body_json, secret):
-        return (False, 500, "HTTP500", None)
+    def _fail(self, url, body_json, secret, adapter=None):
+        return (False, 500, "HTTP500", None, None)
     monkeypatch.setattr(type(incident_sync_service), "_send", _fail)
 
     incident_service.observe([_alert(job_id="fail-1")])
@@ -148,8 +150,8 @@ def test_failed_sync_is_terminal_after_cap_then_redrivable(monkeypatch):
     assert rec["status"] == "failed" and rec["attempts"] == 1 and rec["last_error"] == "HTTP500"
 
     # Now the transport recovers; redrive schedules a fresh linked record that succeeds.
-    def _ok(self, url, body_json, secret):
-        return (True, 200, None, None)
+    def _ok(self, url, body_json, secret, adapter=None):
+        return (True, 200, None, "ext-9", "https://ext.example.com/i/ext-9")
     monkeypatch.setattr(type(incident_sync_service), "_send", _ok)
     result = incident_sync_service.redrive(rec["id"])
     assert result["ok"] and result["record"]["status"] == "synced"
@@ -199,8 +201,103 @@ def test_no_sync_fields_leak_into_user_routes(capture_send):
     job = execution_queue.enqueue(f"account:{owner['id']}", "noop", {}, title="T")
     auth = {"Authorization": f"Bearer {make_account_token(owner['id'])}"}
     user_job = client.get(f"/jobs/{job['id']}", headers=auth).json()["job"]
-    for operator_only in ("target_id", "sync_actions", "external_ref", "has_secret"):
+    for operator_only in ("target_id", "sync_actions", "external_ref", "external_url", "has_secret"):
         assert operator_only not in user_job
     # No user-facing incident-sync routes exist.
     assert client.get("/incident-sync").status_code == 404
     assert client.get("/incident-targets").status_code == 404
+
+
+# ── G-6: adapters, external linkage & sync health ────────────────────────────
+
+
+def test_successful_sync_records_external_ref_url_and_links(capture_send):
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="link-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "link-1")
+    rec = incident_sync_service.list_records(incident_id=inc["id"])[0]
+    assert rec["external_ref"] == "ext-123" and rec["external_url"].endswith("/ext-123")
+    status = incident_sync_service.incident_sync_status(inc["id"])
+    assert status["linked"] is True and len(status["links"]) == 1
+    link = status["links"][0]
+    assert link["external_ref"] == "ext-123" and link["external_url"].endswith("/ext-123")
+    assert status["summary"]["synced"] is True and status["summary"]["behind"] is False
+
+
+def test_link_is_not_invented_when_target_returns_none(monkeypatch):
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+
+    def _ok_noref(self, url, body_json, secret, adapter=None):
+        return (True, 200, None, None, None)  # success but no ref/url returned
+    monkeypatch.setattr(type(incident_sync_service), "_send", _ok_noref)
+
+    incident_service.observe([_alert(job_id="noref-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "noref-1")
+    status = incident_sync_service.incident_sync_status(inc["id"])
+    # Synced, link row exists, but no fabricated ref/url.
+    assert status["summary"]["synced"] is True and status["linked"] is True
+    assert status["links"][0]["external_ref"] is None and status["links"][0]["external_url"] is None
+
+
+def test_sync_behind_then_recovered_after_redrive(monkeypatch):
+    monkeypatch.setattr(config_mod.settings, "incident_sync_max_attempts", 1)
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+
+    def _fail(self, url, body_json, secret, adapter=None):
+        return (False, 503, "HTTP503", None, None)
+    monkeypatch.setattr(type(incident_sync_service), "_send", _fail)
+    incident_service.observe([_alert(job_id="behind-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "behind-1")
+    behind = incident_sync_service.incident_sync_status(inc["id"])
+    assert behind["summary"]["behind"] is True and behind["linked"] is False
+    assert behind["summary"]["last_error"] == "HTTP503"
+
+    def _ok(self, url, body_json, secret, adapter=None):
+        return (True, 200, None, "ext-7", "https://ext.example.com/i/ext-7")
+    monkeypatch.setattr(type(incident_sync_service), "_send", _ok)
+    failed = incident_sync_service.list_records(incident_id=inc["id"])[0]
+    incident_sync_service.redrive(failed["id"])
+    after = incident_sync_service.incident_sync_status(inc["id"])
+    assert after["summary"]["behind"] is False and after["linked"] is True
+    assert after["summary"]["recovered_after_redrive"] is True
+    assert after["links"][0]["external_ref"] == "ext-7"
+
+
+def test_pagerduty_adapter_shapes_payload_specifically(monkeypatch):
+    incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    captured: dict = {}
+
+    def _capture(self, url, body_json, secret, adapter=None):
+        import json as _json
+        captured["body"] = _json.loads(body_json)
+        captured["adapter"] = getattr(adapter, "kind", None)
+        return (True, 202, None, "pd-key-1", None)
+    monkeypatch.setattr(type(incident_sync_service), "_send", _capture)
+
+    incident_service.observe([_alert(job_id="pd-1")])
+    # PagerDuty-style envelope, not the generic shape.
+    assert captured["adapter"] == "pagerduty"
+    assert captured["body"]["event_action"] == "trigger"
+    assert captured["body"]["dedup_key"] and "payload" in captured["body"]
+    assert "incident" not in captured["body"]  # reshaped, not the generic envelope
+    inc = next(i for i in incident_service.list() if i["subject"] == "pd-1")
+    assert incident_sync_service.incident_sync_status(inc["id"])["links"][0]["external_ref"] == "pd-key-1"
+
+
+def test_incident_sync_status_and_target_health_over_http(op, capture_send):
+    tgt = client.post("/operator/incident-targets", headers=OP,
+                      json={"name": "t", "url": "https://h.example.com/i"}).json()["target"]
+    incident_service.observe([_alert(job_id="status-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "status-1")
+    status = client.get(f"/operator/incidents/{inc['id']}/sync", headers=OP).json()
+    assert status["linked"] is True and status["links"][0]["external_url"].endswith("/ext-123")
+    health = client.get(f"/operator/incident-targets/{tgt['id']}/health", headers=OP).json()["target"]
+    assert health["health"] == "healthy" and health["recent"]["synced"] >= 1
+    assert health["has_secret"] is False and "secret_value" not in health
+    # Gating + 404s.
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.get(f"/operator/incidents/{inc['id']}/sync", headers=auth).status_code in (401, 403)
+    assert client.get(f"/operator/incident-targets/{tgt['id']}/health", headers=auth).status_code in (401, 403)
+    assert client.get("/operator/incidents/nope/sync", headers=OP).status_code == 404
+    assert client.get("/operator/incident-targets/nope/health", headers=OP).status_code == 404

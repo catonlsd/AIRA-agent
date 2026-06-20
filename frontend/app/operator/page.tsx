@@ -16,6 +16,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  ExternalLink,
   Flame,
   GitBranch,
   History,
@@ -49,6 +50,7 @@ import {
   fetchDestinationHealth,
   fetchIncidentHistory,
   fetchIncidentSync,
+  fetchIncidentSyncStatus,
   fetchIncidentTargets,
   fetchIncidents,
   fetchLineage,
@@ -57,6 +59,7 @@ import {
   getOperatorName,
   healthTone,
   incidentEventLabel,
+  incidentSyncSummary,
   incidentTone,
   noteIncident,
   patchDestination,
@@ -80,6 +83,7 @@ import {
   type Incident,
   type IncidentEvent,
   type IncidentSyncRecord,
+  type IncidentSyncStatus,
   type IncidentTarget,
   type RoutingPreview,
   type Tone,
@@ -181,6 +185,11 @@ function SyncPanel({ targets, records, onRedrive, busyId }: {
               <span className="font-black text-[var(--text-strong)]">{incidentEventLabel(r.action)}</span>
               <span className="text-[var(--text-muted)]">{r.classification ?? r.signal} → {r.target_name ?? r.target_kind}{r.is_redrive ? " (redrive)" : ""}</span>
               {r.last_error ? <span className="text-[var(--danger)]">· {r.last_error}</span> : null}
+              {r.external_url ? (
+                <a href={r.external_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-black text-[var(--accent)] hover:underline">
+                  <ExternalLink className="h-3 w-3" /> Open
+                </a>
+              ) : null}
               <span className="ml-auto text-[var(--text-subtle)]">{relTime(r.created_at)}</span>
               {r.status === "failed" ? (
                 <button type="button" disabled={busyId === r.id} onClick={() => onRedrive(r.id)} className={INC_BTN}>
@@ -203,6 +212,7 @@ function IncidentRow({ inc, operatorName, onChanged }: {
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [history, setHistory] = useState<IncidentEvent[] | null>(null);
+  const [sync, setSync] = useState<IncidentSyncStatus | null>(null);
   const [editingNote, setEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState(inc.note ?? "");
   const silenceLeft = inc.state === "silenced" ? relTimeUntil(inc.silenced_until) : "";
@@ -216,8 +226,15 @@ function IncidentRow({ inc, operatorName, onChanged }: {
   const toggleHistory = useCallback(async () => {
     const next = !expanded;
     setExpanded(next);
-    if (next) setHistory(await fetchIncidentHistory(inc.id));
+    if (next) {
+      const [h, s] = await Promise.all([fetchIncidentHistory(inc.id), fetchIncidentSyncStatus(inc.id)]);
+      setHistory(h);
+      setSync(s);
+    }
   }, [expanded, inc.id]);
+
+  const syncLine = sync ? incidentSyncSummary(sync.summary) : null;
+  const link = sync?.links.find((l) => l.external_url) ?? sync?.links[0];
 
   const saveNote = useCallback(async () => {
     setBusy(true);
@@ -320,6 +337,26 @@ function IncidentRow({ inc, operatorName, onChanged }: {
               ))}
             </ol>
           )}
+
+          {syncLine ? (
+            <div className="mt-2.5 border-t border-[var(--border)] pt-2">
+              <p className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
+                <Share2 className="h-3 w-3" /> External sync
+              </p>
+              <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                <Badge tone={syncLine.tone}>{syncLine.label}</Badge>
+                {link?.target_name ? <span className="text-[var(--text-muted)]">{link.target_name}{link.target_kind ? ` · ${link.target_kind}` : ""}</span> : null}
+                {link?.external_ref ? <span className="text-[var(--text-subtle)]">ref {link.external_ref}</span> : null}
+                {link?.external_url ? (
+                  <a href={link.external_url} target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-1 font-black text-[var(--accent)] hover:underline">
+                    <ExternalLink className="h-3 w-3" /> Open
+                  </a>
+                ) : null}
+                {sync && sync.records.length > 0 ? <span className="ml-auto text-[var(--text-subtle)]">{sync.records.length} attempt{sync.records.length === 1 ? "" : "s"}</span> : null}
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

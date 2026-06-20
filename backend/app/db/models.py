@@ -423,8 +423,36 @@ class IncidentSyncRecord(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
     external_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    external_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     redrive_of: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+
+class IncidentExternalLink(Base):
+    """The durable correlation AIRA-X incident → external incident, per target (G-6).
+
+    Upserted on every *successful* outbound sync: it holds the latest stable
+    external reference (`external_ref`) and, when the adapter could safely obtain
+    one, an `external_url` to open the linked incident. One row per
+    (incident_id, target_id) — so "is this incident linked, and where?" is a single
+    cheap read, independent of how many sync records exist. A failed sync never
+    overwrites a good link (the link reflects the last success; staleness is derived
+    by comparing it to the most recent sync record). Operator-only; outbound-only —
+    AIRA-X never claims to read external state back.
+    """
+
+    __tablename__ = "incident_external_links"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    target_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    external_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    external_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    last_action: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    last_record_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
 
 

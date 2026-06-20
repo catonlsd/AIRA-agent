@@ -9,6 +9,7 @@ import {
   deliveryStatusTone,
   healthTone,
   incidentEventLabel,
+  incidentSyncSummary,
   incidentTone,
   redriveBlockedReason,
   syncStatusTone,
@@ -71,4 +72,13 @@ test("syncStatusTone maps each sync status to a tone", () => {
   assert.equal(syncStatusTone("pending"), "warn");
   assert.equal(syncStatusTone("failed"), "bad");
   assert.equal(syncStatusTone("weird"), "muted");
+});
+
+test("incidentSyncSummary states each linkage honestly", () => {
+  const base = { linked: false, synced: false, behind: false, last_synced_at: null, last_failed_at: null, last_error: null, recovered_after_redrive: false };
+  assert.deepEqual(incidentSyncSummary(base), { label: "Not synced", tone: "muted" });
+  assert.equal(incidentSyncSummary({ ...base, synced: true, linked: true }).label, "Externally linked");
+  assert.equal(incidentSyncSummary({ ...base, behind: true }).tone, "warn");
+  assert.equal(incidentSyncSummary({ ...base, behind: true, last_failed_at: "t", last_error: "HTTP500" }).tone, "bad");
+  assert.equal(incidentSyncSummary({ ...base, synced: true, linked: true, recovered_after_redrive: true }).label, "Recovered after redrive");
 });
