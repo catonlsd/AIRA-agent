@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  actionEffectLabel,
   applyActionLabel,
   canRedrive,
   deadLetterLabel,
@@ -112,4 +113,11 @@ test("supportLevelLabel states adapter insight honestly", () => {
   assert.equal(supportLevelLabel("refresh"), "Refresh-capable");
   assert.equal(supportLevelLabel("outbound_only"), "Outbound only");
   assert.equal(supportLevelLabel("none"), "Not linked");
+});
+
+test("actionEffectLabel is explicit about each action's blast radius", () => {
+  assert.equal(actionEffectLabel("local"), "changes local state");
+  assert.equal(actionEffectLabel("external"), "changes external state");
+  assert.equal(actionEffectLabel("linkage"), "linkage only");
+  assert.equal(actionEffectLabel("none"), "observation only");
 });

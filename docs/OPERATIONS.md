@@ -1358,6 +1358,54 @@ source-of-truth (local state stays primary; inbound never mutates it).
   surface after refresh; capabilities endpoint with gating/404; no rich-inbound leak
   into `/jobs/{id}`) and `frontend/lib/operator.test.mts` (`supportLevelLabel`).
 
+### Bounded apply policy, vendor-typed actions & audit-safe refusals (G-11)
+
+The resolution workflow gets a **policy layer separate from capability** and a
+**per-action availability matrix** with explicit blast-radius. Refusals are now
+auditable, and richer adapters expose vendor-typed outbound actions instead of just
+"push". Local state primacy remains absolute — the only path that may change a
+local incident from external observation is still an explicit operator
+`apply_resolved`, which now goes through both capability *and* policy gates.
+
+- **Per-action capabilities.** Every adapter declares
+  `supports_apply_resolved` / `supports_apply_missing` (bounded INBOUND→LOCAL
+  applications), and `supports_external_resolve` / `supports_external_reopen`
+  (vendor-TYPED OUTBOUND actions — PagerDuty maps `recovered → event_action: resolve`
+  and `reopened → trigger`). Generic targets get apply support (they can observe)
+  but no typed outbound mapping; outbound-only kinds (jira/opsgenie) get neither.
+- **`apply_policy(kind, action) → (allowed, code, reason)`** is a pure, stable
+  allow-list separate from capability. Today it just defers to the adapter's
+  capability flags, but the seam is in place for per-target overrides later. Codes
+  (`allowed` / `denied:capability` / `denied:unknown_action` / `denied:state` /
+  `failed`) are stable so the audit trail and console group refusals reliably.
+- **Audited refusals.** `apply_from_external` now logs **every** outcome
+  (`refused:capability` / `refused:state` / `refused:unknown_action`) to
+  `incident_reconciliation_events`, alongside the existing `ok` / `failed`. The
+  audit table answers "was this attempt refused and why?" durably — no payloads,
+  just `{action, outcome, actor, detail, at}`.
+- **Per-action availability matrix** (`summary.available_actions[]`): one entry
+  per action — `refresh` / `redrive` / `detach` / `relink` / `apply_resolved` /
+  `apply_missing` / `push` — with `{action, label, available, reason, effect}`.
+  **`effect`** is the explicit blast radius: `none` (observe only),
+  `linkage` (link state only), `local` (changes the local incident — only ever
+  `apply_resolved`), or `external` (pushes to the external system). Action gating
+  now lives in one place, so the console can't accidentally offer something the
+  policy or capability refuses.
+- **Operator-only API:** `GET /operator/incidents/{id}/sync/actions` exposes just
+  the curated action matrix — a small, focused preview useful for review tooling
+  without pulling the full status payload.
+- **Console:** the existing Apply button now carries an explicit effect hint
+  (e.g. "Apply external resolution (recover locally) · *changes local state*" vs
+  "Detach (external missing) · *linkage only*"), surfaced via the pure
+  `actionEffectLabel` helper.
+- Pinned by `backend/tests/test_incident_sync.py` (apply_policy pure across
+  allowed/capability/unknown; refused apply is audited with stable codes
+  including unknown-action and state-not-applicable; per-action effect matrix is
+  honest about local/linkage/external/none; outbound-only target excludes apply;
+  capability-denied apply records `refused:capability` and leaves local untouched;
+  `/sync/actions` endpoint with gating + 404; HTTP-level 422 on unknown apply
+  action) and `frontend/lib/operator.test.mts` (`actionEffectLabel`).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

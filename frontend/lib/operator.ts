@@ -203,7 +203,22 @@ export type SupportLevel = "rich" | "refresh" | "outbound_only" | "none";
 
 export type AdapterCapabilities = {
   refresh: boolean; push_outward: boolean; relink_validation: boolean;
-  status_sync: boolean; support_level: SupportLevel;
+  status_sync: boolean;
+  apply_resolved: boolean; apply_missing: boolean;
+  external_resolve: boolean; external_reopen: boolean;
+  support_level: SupportLevel;
+};
+
+/** What a sync/resolution action will mutate when invoked (pure presentation; the
+ * backend computes this honestly from capability + state + policy). */
+export type ActionEffect = "none" | "local" | "linkage" | "external";
+
+export type IncidentSyncAction = {
+  action: "refresh" | "redrive" | "detach" | "relink" | "apply_resolved" | "apply_missing" | "push";
+  label: string;
+  available: boolean;
+  reason: string;
+  effect: ActionEffect;
 };
 
 export type ExternalStateSuggestion = { code: string; tone: Tone; text: string };
@@ -261,6 +276,7 @@ export type IncidentSyncStatus = {
       can_refresh: boolean; can_redrive: boolean; can_detach: boolean; can_relink: boolean;
       can_apply: boolean; apply_action: "accept_resolved" | "accept_missing" | null; can_push: boolean;
     };
+    available_actions: IncidentSyncAction[];
     support_level: SupportLevel;
     suggestions: ExternalStateSuggestion[];
   };
@@ -280,6 +296,15 @@ export function applyActionLabel(action: "accept_resolved" | "accept_missing" | 
   if (action === "accept_resolved") return "Apply external resolution (recover locally)";
   if (action === "accept_missing") return "Detach (external missing)";
   return "";
+}
+
+/** Honest, short label for what a sync/resolution action will mutate (pure;
+ * unit-tested). Surfaced as a hint so a button's blast radius is never a surprise. */
+export function actionEffectLabel(effect: ActionEffect): string {
+  if (effect === "local") return "changes local state";
+  if (effect === "external") return "changes external state";
+  if (effect === "linkage") return "linkage only";
+  return "observation only";
 }
 
 /** Human label for an adapter support level (pure; unit-tested). Honest about how
@@ -663,6 +688,13 @@ export async function refreshIncidentSync(incidentId: string): Promise<IncidentS
   const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(incidentId)}/sync/refresh`, { method: "POST", cache: "no-store", headers: opHeaders() });
   if (!res.ok) return null;
   return res.json();
+}
+
+export async function fetchIncidentSyncActions(incidentId: string): Promise<IncidentSyncAction[]> {
+  const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(incidentId)}/sync/actions`, { cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return [];
+  const body = await res.json();
+  return Array.isArray(body?.actions) ? body.actions : [];
 }
 
 export async function redriveIncidentSyncContext(incidentId: string): Promise<{ ok: boolean; message?: string }> {

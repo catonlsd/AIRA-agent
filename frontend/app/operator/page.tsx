@@ -62,6 +62,7 @@ import {
   getOperatorKey,
   getOperatorName,
   healthTone,
+  actionEffectLabel,
   applyActionLabel,
   applyExternalState,
   detachIncidentLink,
@@ -468,7 +469,11 @@ function IncidentRow({ inc, operatorName, onChanged }: {
                 ) : null}
               </div>
               {actions?.can_apply && actions.apply_action ? (
-                <p className="mt-1 text-[10px] text-[var(--text-subtle)]">{applyActionLabel(actions.apply_action)}</p>
+                <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
+                  {applyActionLabel(actions.apply_action)}
+                  {" · "}
+                  <span className="font-bold">{actionEffectLabel(actions.apply_action === "accept_resolved" ? "local" : "linkage")}</span>
+                </p>
               ) : null}
 
               {relinking ? (

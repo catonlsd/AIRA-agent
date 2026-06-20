@@ -585,12 +585,21 @@ def test_adapter_capabilities_are_explicit_and_honest():
     gen = adapter_capabilities("generic")
     assert gen["refresh"] and gen["push_outward"] and gen["relink_validation"]
     assert gen["status_sync"] is False and gen["support_level"] == "refresh"
+    # Generic: refresh-capable → can apply observed external state; NO typed vendor
+    # actions (push is generic state notification only).
+    assert gen["apply_resolved"] and gen["apply_missing"]
+    assert gen["external_resolve"] is False and gen["external_reopen"] is False
     pd = adapter_capabilities("pagerduty")
     assert pd["push_outward"] and pd["status_sync"] is True and pd["support_level"] == "rich"
-    # Outbound-only: can push, cannot refresh / validate a relink / status-sync.
+    # PagerDuty: vendor-typed external_resolve/reopen via event_action mapping.
+    assert pd["apply_resolved"] and pd["apply_missing"]
+    assert pd["external_resolve"] is True and pd["external_reopen"] is True
+    # Outbound-only: can push, cannot refresh / validate / status-sync / apply / typed action.
     jira = adapter_capabilities("jira")
     assert jira == {"refresh": False, "push_outward": True, "relink_validation": False,
-                    "status_sync": False, "support_level": "outbound_only"}
+                    "status_sync": False, "apply_resolved": False, "apply_missing": False,
+                    "external_resolve": False, "external_reopen": False,
+                    "support_level": "outbound_only"}
 
 
 def test_external_resolved_is_actionable_without_silently_mutating_local(capture_send, monkeypatch):
@@ -817,5 +826,124 @@ def test_no_rich_inbound_fields_leak_into_user_routes(capture_send, monkeypatch)
     auth = {"Authorization": f"Bearer {make_account_token(owner['id'])}"}
     user_job = client.get(f"/jobs/{job['id']}", headers=auth).json()["job"]
     for operator_only in ("external_assignee", "external_severity", "external_comment_count",
-                          "support_level", "suggestions", "capabilities"):
+                          "support_level", "suggestions", "capabilities", "available_actions"):
         assert operator_only not in user_job
+
+
+# ── G-11: bounded apply policy + vendor-typed actions + audit refusals ────────
+
+
+def test_apply_policy_is_pure_and_explicit():
+    from app.incident_sync import apply_policy, POLICY_ALLOWED, POLICY_DENIED_CAPABILITY, POLICY_DENIED_UNKNOWN
+    # Allowed combinations.
+    ok, code, _ = apply_policy("generic", "accept_resolved")
+    assert ok and code == POLICY_ALLOWED
+    ok, code, _ = apply_policy("pagerduty", "accept_missing")
+    assert ok and code == POLICY_ALLOWED
+    # Capability denial — outbound-only adapter cannot apply external state.
+    ok, code, reason = apply_policy("jira", "accept_resolved")
+    assert ok is False and code == POLICY_DENIED_CAPABILITY and "does not support" in reason
+    # Unknown action.
+    ok, code, _ = apply_policy("generic", "weird")
+    assert ok is False and code == POLICY_DENIED_UNKNOWN
+
+
+def test_apply_refusal_is_audited_with_reason(capture_send, monkeypatch):
+    """A refused apply (policy/state/unknown) MUST land in the reconciliation trail."""
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="refuse-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "refuse-1")
+    # No external observation yet → accept_resolved is not currently applicable.
+    refused = incident_sync_service.apply_from_external(inc["id"], "accept_resolved", actor="alice")
+    assert refused["ok"] is False and refused["code"] == "denied:state"
+    # Unknown action also audited.
+    weird = incident_sync_service.apply_from_external(inc["id"], "nonsense", actor="alice")
+    assert weird["ok"] is False
+    trail = incident_sync_service.incident_sync_status(inc["id"])["reconciliation"]
+    refusals = [e for e in trail if e["action"].startswith("apply:") and e["outcome"].startswith("refused:")]
+    assert any(r["action"] == "apply:accept_resolved" and "state" in r["outcome"] for r in refusals)
+    assert any(r["action"] == "apply:nonsense" for r in refusals)
+    # Local state untouched.
+    assert incident_service.get(inc["id"])["state"] == "open"
+
+
+def test_available_actions_carries_per_action_effect(capture_send, monkeypatch):
+    incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    incident_service.observe([_alert(job_id="actions-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "actions-1")
+    # External resolved while local open → apply_resolved is now offered.
+    _fetch_returning(monkeypatch, ok=True, exists=True, status="resolved")
+    incident_sync_service.refresh(inc["id"])
+    actions = incident_sync_service.incident_actions(inc["id"])
+    by_action = {a["action"]: a for a in actions}
+    # The list is the SAME shape regardless of availability.
+    assert set(a["action"] for a in actions) == {
+        "refresh", "redrive", "detach", "relink", "apply_resolved", "apply_missing", "push"}
+    assert all(set(a) == {"action", "label", "available", "reason", "effect"} for a in actions)
+    # Effects are honest about blast radius.
+    assert by_action["refresh"]["effect"] == "none"
+    assert by_action["detach"]["effect"] == "linkage" and by_action["apply_missing"]["effect"] == "linkage"
+    assert by_action["apply_resolved"]["effect"] == "local"  # the only "changes local" action
+    assert by_action["push"]["effect"] == "external" and by_action["redrive"]["effect"] == "external"
+    # apply_resolved is currently available; apply_missing has a "state" reason.
+    assert by_action["apply_resolved"]["available"] is True
+    assert by_action["apply_missing"]["available"] is False and by_action["apply_missing"]["reason"]
+
+
+def test_available_actions_on_outbound_only_target_excludes_apply(monkeypatch):
+    # A successful outbound send is what CREATES the link row; stub it so jira has one.
+    def _ok(self, url, body_json, secret, adapter=None):
+        return (True, 200, None, "j-1", None)
+    monkeypatch.setattr(type(incident_sync_service), "_send", _ok)
+    incident_sync_service.create_target(name="j", url="https://h.example.com/j", kind="jira")
+    incident_service.observe([_alert(job_id="actions-jira")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "actions-jira")
+    actions = {a["action"]: a for a in incident_sync_service.incident_actions(inc["id"])}
+    # Jira: no refresh → no refresh / relink / apply offers; push remains available.
+    assert actions["refresh"]["available"] is False and actions["refresh"]["reason"]
+    assert actions["relink"]["available"] is False and actions["relink"]["reason"]
+    assert actions["apply_resolved"]["available"] is False
+    assert actions["apply_missing"]["available"] is False
+    assert actions["push"]["available"] is True
+
+
+def test_apply_policy_denial_audited_with_capability_code(capture_send, monkeypatch):
+    """Even when state would offer the action, a target whose policy denies it
+    records a `refused:capability` event."""
+    incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    incident_service.observe([_alert(job_id="cap-deny")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "cap-deny")
+    _fetch_returning(monkeypatch, ok=True, exists=True, status="resolved")
+    incident_sync_service.refresh(inc["id"])
+    # Monkey-patch the adapter capability OFF to simulate a future policy-denied case.
+    from app.incident_sync import adapter_for
+    pd = adapter_for("pagerduty")
+    monkeypatch.setattr(pd, "supports_apply_resolved", False)
+    refused = incident_sync_service.apply_from_external(inc["id"], "accept_resolved", actor="bob")
+    assert refused["ok"] is False and refused["code"] == "denied:capability"
+    trail = incident_sync_service.incident_sync_status(inc["id"])["reconciliation"]
+    assert any(e["action"] == "apply:accept_resolved" and "capability" in e["outcome"] for e in trail)
+    assert incident_service.get(inc["id"])["state"] == "open"  # local untouched
+
+
+def test_sync_actions_endpoint_with_gating(op, capture_send, monkeypatch):
+    client.post("/operator/incident-targets", headers=OP, json={"name": "t", "url": "https://h.example.com/i"})
+    incident_service.observe([_alert(job_id="http-actions")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "http-actions")
+    res = client.get(f"/operator/incidents/{inc['id']}/sync/actions", headers=OP).json()["actions"]
+    assert any(a["action"] == "refresh" and a["effect"] == "none" for a in res)
+    assert any(a["action"] == "apply_resolved" and a["effect"] == "local" for a in res)
+    # Gating + 404.
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.get(f"/operator/incidents/{inc['id']}/sync/actions", headers=auth).status_code in (401, 403)
+    assert client.get("/operator/incidents/nope/sync/actions", headers=OP).status_code == 404
+
+
+def test_unknown_apply_action_over_http_is_validated(op, capture_send):
+    client.post("/operator/incident-targets", headers=OP, json={"name": "t", "url": "https://h.example.com/i"})
+    incident_service.observe([_alert(job_id="bad-action")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "bad-action")
+    # The Pydantic body rejects unknown actions at the boundary (pattern), so 422.
+    bad = client.post(f"/operator/incidents/{inc['id']}/sync/apply", headers=OP, json={"action": "foo"})
+    assert bad.status_code == 422

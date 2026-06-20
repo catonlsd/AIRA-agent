@@ -723,6 +723,21 @@ def operator_incident_sync_status(incident_id: str, request: Request) -> dict:
     return incident_sync_service.incident_sync_status(incident_id, incident_state=incident.get("state"))
 
 
+@router.get("/incidents/{incident_id}/sync/actions")
+def operator_incident_sync_actions(incident_id: str, request: Request) -> dict:
+    """Per-action availability + EFFECT (local / linkage / external / none) for this
+    incident — curated for the console so action gating lives in one place. Each
+    entry says exactly what an action will change before the operator clicks."""
+    _require_operator(request)
+    from app.incidents import incident_service
+    from app.incident_sync import incident_sync_service
+
+    incident = incident_service.get(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    return {"actions": incident_sync_service.incident_actions(incident_id, incident_state=incident.get("state"))}
+
+
 @router.post("/incidents/{incident_id}/sync/refresh")
 def operator_incident_sync_refresh(incident_id: str, request: Request) -> dict:
     """Bounded inbound recheck of the incident's external links (only adapters that

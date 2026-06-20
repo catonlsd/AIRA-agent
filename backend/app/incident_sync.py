@@ -73,6 +73,12 @@ class GenericIncidentAdapter:
     supports_refresh = True        # bounded inbound GET of {exists,status,url}
     supports_push_outward = True   # operator can explicitly re-send local state outward
     supports_status_sync = False   # only basic existence/status — NOT richer vendor fields
+    # Per-action capabilities (G-11). Capability = what the adapter CAN do; the apply
+    # policy (in `apply_policy`) checks this + state before allowing an action.
+    supports_apply_resolved = True   # generic: if we observed resolved, operator may apply local recovery
+    supports_apply_missing = True    # generic: if external is gone, operator may detach
+    supports_external_resolve = False  # generic push has no typed "resolve" — just state notification
+    supports_external_reopen = False   # ditto for reopen
 
     def shape(self, payload: dict) -> dict:
         return payload
@@ -118,6 +124,13 @@ class PagerDutyIncidentAdapter:
     supports_refresh = True
     supports_push_outward = True   # event_action maps recovered→resolve, reopen→trigger
     supports_status_sync = True    # richer bounded inbound: assignee / urgency / updated / count
+    # Vendor-specific outbound action mapping (G-11): a PagerDuty push of a local
+    # `recovered` maps to a typed `resolve` event; a local `reopened` maps to a typed
+    # `trigger` event. Generic targets can only re-send state, not a typed action.
+    supports_apply_resolved = True
+    supports_apply_missing = True
+    supports_external_resolve = True
+    supports_external_reopen = True
     _EVENT_ACTION = {
         "opened": "trigger", "reopened": "trigger", "recovered": "resolve",
         "acknowledged": "acknowledge",
@@ -201,6 +214,11 @@ class OutboundOnlyAdapter(GenericIncidentAdapter):
 
     supports_refresh = False
     # supports_push_outward stays True (inherited): outbound is exactly what it does.
+    # Cannot observe → cannot apply external state locally. Cannot map typed actions.
+    supports_apply_resolved = False
+    supports_apply_missing = False
+    supports_external_resolve = False
+    supports_external_reopen = False
 
 
 _ADAPTERS = {
@@ -221,6 +239,10 @@ def adapter_capabilities(kind: Optional[str]) -> dict[str, Any]:
     """The honest, explicit capability set for a target kind. `relink_validation`
     needs a bounded inbound check, so it tracks `supports_refresh`. `status_sync` is
     the richer-than-generic inbound (bounded assignee/severity/updated/count).
+    Per-action capabilities (G-11): `apply_resolved`/`apply_missing` are bounded
+    INBOUND-state→LOCAL applications (only meaningful when the adapter can observe);
+    `external_resolve`/`external_reopen` are vendor-typed OUTBOUND actions a richer
+    adapter maps onto a real vendor event (vs generic push which just sends state).
     `support_level` is a single label for the console: rich / refresh / outbound_only."""
     adapter = adapter_for(kind)
     refresh = bool(getattr(adapter, "supports_refresh", False))
@@ -231,8 +253,42 @@ def adapter_capabilities(kind: Optional[str]) -> dict[str, Any]:
         "push_outward": bool(getattr(adapter, "supports_push_outward", False)),
         "relink_validation": refresh,
         "status_sync": status_sync,
+        "apply_resolved": bool(getattr(adapter, "supports_apply_resolved", False)),
+        "apply_missing": bool(getattr(adapter, "supports_apply_missing", False)),
+        "external_resolve": bool(getattr(adapter, "supports_external_resolve", False)),
+        "external_reopen": bool(getattr(adapter, "supports_external_reopen", False)),
         "support_level": level,
     }
+
+
+# ── Inbound apply policy (G-11): the bounded allow-list separate from capability ──
+#
+# Capability = "what the adapter CAN do" (declared on the adapter class).
+# Policy     = "what AIRA-X ALLOWS as a system for this adapter + action."
+# Keeping them distinct gives future room (e.g. per-target policy overrides) without
+# touching the adapter classes. Today: refusal is granular and audited.
+
+POLICY_ALLOWED = "allowed"
+POLICY_DENIED_CAPABILITY = "denied:capability"
+POLICY_DENIED_UNKNOWN = "denied:unknown_action"
+
+
+def apply_policy(adapter_kind: Optional[str], apply_action: str) -> tuple[bool, str, str]:
+    """Bounded allow-list for inbound-state applications → (allowed, code, reason).
+    The code is stable (`allowed` / `denied:capability` / `denied:unknown_action`)
+    so the audit trail and console can group refusals reliably."""
+    caps = adapter_capabilities(adapter_kind)
+    if apply_action == "accept_resolved":
+        if not caps["apply_resolved"]:
+            return (False, POLICY_DENIED_CAPABILITY,
+                    "adapter does not support applying external resolution")
+        return (True, POLICY_ALLOWED, "external resolved → local recovered is policy-allowed")
+    if apply_action == "accept_missing":
+        if not caps["apply_missing"]:
+            return (False, POLICY_DENIED_CAPABILITY,
+                    "adapter does not support applying missing external")
+        return (True, POLICY_ALLOWED, "external missing → detach is policy-allowed")
+    return (False, POLICY_DENIED_UNKNOWN, f"unknown apply action: {apply_action!r}")
 
 
 # ── external status normalization + link-status classification (pure) ─────────
@@ -330,6 +386,71 @@ def external_state_suggestions(local_incident: Optional[dict], link: dict) -> li
         if aligned:
             out.append({"code": "aligned", "tone": "good", "text": "Aligned with external — no action needed."})
     return out[:4]
+
+
+# Effect of an action on truth: which side does it actually mutate? Operators see this
+# label so a button's blast radius is never a surprise.
+EFFECT_NONE = "none"          # observe only (e.g. refresh)
+EFFECT_LOCAL = "local"        # changes the LOCAL incident state (only apply_resolved)
+EFFECT_LINKAGE = "linkage"    # changes incident↔external link state, not the incident
+EFFECT_EXTERNAL = "external"  # pushes a change to the external system
+
+
+_ACTION_LABELS = {
+    "refresh": "Refresh", "redrive": "Redrive failed sync", "detach": "Detach",
+    "relink": "Relink", "apply_resolved": "Apply external resolution",
+    "apply_missing": "Detach missing external", "push": "Push outward",
+}
+
+
+def _available_actions(*, links: list[dict], active_links: list[dict],
+                       failed: list[dict], latest: Optional[dict],
+                       apply_action: Optional[str]) -> list[dict]:
+    """Per-action availability list — `{action, label, available, reason, effect}`.
+    Combines capability + current state + policy into one curated list so the
+    console (and the `/sync/actions` endpoint) doesn't re-derive gating logic."""
+    out: list[dict] = []
+
+    def push(action: str, available: bool, reason: str, effect: str) -> None:
+        out.append({"action": action, "label": _ACTION_LABELS[action],
+                    "available": available, "reason": reason, "effect": effect})
+
+    # Refresh — observe only. Available if any active link has a refresh-capable adapter.
+    refresh_ok = any(link["refresh_supported"] and not link["detached"] for link in links)
+    push("refresh", refresh_ok, "" if refresh_ok else "no refresh-capable target",
+         EFFECT_NONE)
+
+    # Redrive — re-send a previously failed external sync.
+    redrive_ok = bool(failed and (latest is None or latest["status"] != STATUS_SYNCED))
+    push("redrive", redrive_ok,
+         "" if redrive_ok else ("no failed sync to redrive" if not failed else "external sync is already up to date"),
+         EFFECT_EXTERNAL)
+
+    # Detach — linkage only.
+    detach_ok = any(not link["detached"] for link in links)
+    push("detach", detach_ok, "" if detach_ok else "no active link to detach", EFFECT_LINKAGE)
+
+    # Relink — linkage only (adapter must support verification).
+    relink_ok = any(link["refresh_supported"] for link in links)
+    push("relink", relink_ok, "" if relink_ok else "adapter cannot verify links",
+         EFFECT_LINKAGE)
+
+    # Apply-from-external (split into the two distinct typed actions). Available only
+    # when the observed disagreement supports it AND policy/capability allow it.
+    target_kind = active_links[0]["target_kind"] if active_links else None
+    for typed in ("accept_resolved", "accept_missing"):
+        action_key = "apply_resolved" if typed == "accept_resolved" else "apply_missing"
+        effect = EFFECT_LOCAL if typed == "accept_resolved" else EFFECT_LINKAGE
+        if apply_action == typed:
+            allowed, _code, reason = apply_policy(target_kind, typed)
+            push(action_key, allowed, "" if allowed else reason, effect)
+        else:
+            push(action_key, False, "external state does not currently offer this", effect)
+
+    # Push outward — external. Available if any active link's adapter can push.
+    push_ok = any(link["capabilities"]["push_outward"] and not link["detached"] for link in links)
+    push("push", push_ok, "" if push_ok else "no push-capable target", EFFECT_EXTERNAL)
+    return out
 
 
 def classify_link_status(*, local_state: Optional[str], last_synced_at: Optional[datetime],
@@ -756,6 +877,7 @@ class IncidentSyncService:
                                          "can_detach": False, "can_relink": False,
                                          "can_apply": False, "apply_action": None,
                                          "can_push": False},
+                             "available_actions": [],
                              "support_level": "none", "suggestions": []}}
         try:
             local_incident = self._local_incident(incident_id)
@@ -805,6 +927,13 @@ class IncidentSyncService:
                 "apply_action": apply_action,
                 "can_push": any(link["capabilities"]["push_outward"] and not link["detached"] for link in links),
             }
+            # G-11: curated PER-ACTION availability + effect. Each entry tells the
+            # operator exactly what an action will change (local / linkage / external
+            # / none) and why it's available or not. The console renders from this
+            # list directly so action-gating logic doesn't live in two places.
+            available_actions = _available_actions(
+                links=links, active_links=active_links, failed=failed, latest=latest,
+                apply_action=apply_action)
             # Operator-facing suggestions from the worst active link's observed state.
             primary = max(active_links, key=lambda link: _LINK_SEVERITY.get(link["link_status"], 0)) if active_links else None
             suggestions = external_state_suggestions(local_incident, primary) if primary else []
@@ -823,6 +952,7 @@ class IncidentSyncService:
                 "refresh_supported": any(link["refresh_supported"] for link in active_links),
                 "last_checked_at": max([link["last_checked_at"] for link in links if link["last_checked_at"]], default=None),
                 "actions": actions,
+                "available_actions": available_actions,
                 "support_level": support_level,
                 "suggestions": suggestions,
             }
@@ -1077,28 +1207,49 @@ class IncidentSyncService:
           recover the local incident (an explicit operator recovery, on the trail).
         - `accept_missing`: external is gone → detach the dead link.
         """
+        # G-11: unknown apply actions are audited as policy refusals (so an attempt
+        # against a future/unrecognized action leaves a trail too).
         if apply_action not in ("accept_resolved", "accept_missing"):
-            return {"ok": False, "message": "Unknown apply action."}
+            self._record_apply(incident_id, None, apply_action or "unknown",
+                               "refused:" + POLICY_DENIED_UNKNOWN.split(":", 1)[1],
+                               actor=actor, detail="unknown apply action")
+            return {"ok": False, "code": POLICY_DENIED_UNKNOWN, "message": "Unknown apply action."}
         status = self.incident_sync_status(incident_id)
         if not status["links"]:
-            return {"ok": False, "message": "Incident has no external link."}
+            self._record_apply(incident_id, None, apply_action, "refused:state",
+                               actor=actor, detail="no external link")
+            return {"ok": False, "code": "denied:state", "message": "Incident has no external link."}
         offered = status["summary"]["actions"].get("apply_action")
         if offered != apply_action:
-            return {"ok": False, "message": "That external state is not currently applicable."}
+            self._record_apply(incident_id, None, apply_action, "refused:state", actor=actor,
+                               detail=f"not currently applicable (offered={offered})")
+            return {"ok": False, "code": "denied:state",
+                    "message": "That external state is not currently applicable."}
         active = [link for link in status["links"] if not link["detached"]]
+        # Pick the relevant link FIRST so the policy check is per-target-kind.
         if apply_action == "accept_missing":
             link = next((l for l in active if l["link_status"] == LINK_MISSING), active[0] if active else None)
-            if link is None:
-                return {"ok": False, "message": "No external link to detach."}
+        else:  # accept_resolved
+            link = next((l for l in active if l["link_status"] == LINK_DRIFTED), None)
+        if link is None:
+            self._record_apply(incident_id, None, apply_action, "refused:state", actor=actor,
+                               detail="no matching active link for action")
+            return {"ok": False, "code": "denied:state",
+                    "message": "No matching external link for that action."}
+        # Policy gate (vendor-specific allow-list). Capability + system policy in one.
+        allowed, code, reason = apply_policy(link["target_kind"], apply_action)
+        if not allowed:
+            self._record_apply(incident_id, link["target_id"], apply_action, "refused:" + code.split(":", 1)[1],
+                               actor=actor, detail=reason)
+            return {"ok": False, "code": code, "message": reason}
+        if apply_action == "accept_missing":
             self.detach(incident_id, link["target_id"], actor=actor)
             self._record_apply(incident_id, link["target_id"], "accept_missing", "ok",
                                actor=actor, detail="detached missing external link (linkage only)")
-            return {"ok": True, "changed_local": False,
+            return {"ok": True, "changed_local": False, "code": POLICY_ALLOWED,
                     "status": self.incident_sync_status(incident_id),
                     "message": "Detached the missing external link."}
-        # accept_resolved → explicit LOCAL recovery.
-        link = next((l for l in active if l["link_status"] == LINK_DRIFTED), None)
-        target_id = link["target_id"] if link else None
+        # accept_resolved → explicit LOCAL recovery (the only path that changes local).
         applied = None
         try:
             from app.incidents import incident_service
@@ -1107,11 +1258,12 @@ class IncidentSyncService:
         except Exception:
             applied = None
         outcome = "ok" if applied else "failed"
-        self._record_apply(incident_id, target_id, "accept_resolved", outcome, actor=actor,
+        self._record_apply(incident_id, link["target_id"], "accept_resolved", outcome, actor=actor,
                            detail="local incident recovered from external resolved")
         if not applied:
-            return {"ok": False, "message": "Could not apply external resolution."}
-        return {"ok": True, "changed_local": True,
+            return {"ok": False, "code": "failed",
+                    "message": "Could not apply external resolution."}
+        return {"ok": True, "changed_local": True, "code": POLICY_ALLOWED,
                 "status": self.incident_sync_status(incident_id),
                 "message": "Applied external resolution — local incident recovered."}
 
@@ -1235,6 +1387,15 @@ class IncidentSyncService:
                 return [self._clean_event(r) for r in rows]
         except Exception:
             return []
+
+    def incident_actions(self, incident_id: str, *,
+                         incident_state: Optional[str] = None) -> list[dict[str, Any]]:
+        """Curated per-action availability + effect for one incident (G-11). Mirrors
+        what `incident_sync_status` returns as `summary.available_actions`, exposed
+        directly so the console (or an external review tool) can grab just the
+        actionable preview without the full status payload."""
+        status = self.incident_sync_status(incident_id, incident_state=incident_state)
+        return status["summary"].get("available_actions", [])
 
     @staticmethod
     def _log_reconcile(session, incident_id: str, target_id: Optional[str], action: str,
