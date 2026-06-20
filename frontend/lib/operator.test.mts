@@ -76,7 +76,7 @@ test("syncStatusTone maps each sync status to a tone", () => {
 });
 
 test("incidentSyncSummary states each linkage honestly, drift first", () => {
-  const base = { linked: false, synced: false, behind: false, last_synced_at: null, last_failed_at: null, last_error: null, recovered_after_redrive: false, link_status: "never_linked" as const, reason: "never linked", refresh_supported: false, last_checked_at: null };
+  const base = { linked: false, synced: false, behind: false, last_synced_at: null, last_failed_at: null, last_error: null, recovered_after_redrive: false, link_status: "never_linked" as const, reason: "never linked", refresh_supported: false, last_checked_at: null, actions: { can_refresh: false, can_redrive: false, can_detach: false, can_relink: false } };
   assert.deepEqual(incidentSyncSummary(base), { label: "Not synced", tone: "muted" });
   assert.equal(incidentSyncSummary({ ...base, synced: true, linked: true, link_status: "linked" }).label, "Externally linked");
   assert.equal(incidentSyncSummary({ ...base, behind: true }).tone, "warn");
@@ -86,6 +86,7 @@ test("incidentSyncSummary states each linkage honestly, drift first", () => {
   assert.equal(incidentSyncSummary({ ...base, linked: true, link_status: "missing_external" }).label, "External incident missing");
   assert.equal(incidentSyncSummary({ ...base, linked: true, link_status: "drifted", reason: "external resolved but incident still open" }).tone, "bad");
   assert.equal(incidentSyncSummary({ ...base, linked: true, link_status: "stale" }).label, "External link stale");
+  assert.deepEqual(incidentSyncSummary({ ...base, link_status: "detached" }), { label: "Link detached", tone: "muted" });
 });
 
 test("linkStatusTone maps each reconciliation status to a tone", () => {
@@ -95,4 +96,5 @@ test("linkStatusTone maps each reconciliation status to a tone", () => {
   assert.equal(linkStatusTone("linked"), "good");
   assert.equal(linkStatusTone("refreshed"), "good");
   assert.equal(linkStatusTone("never_linked"), "muted");
+  assert.equal(linkStatusTone("detached"), "muted");
 });

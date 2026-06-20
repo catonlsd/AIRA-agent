@@ -428,3 +428,142 @@ def test_stale_config_rejected():
     from app.core.config import Settings
     with pytest.raises(ValueError):
         Settings(incident_link_stale_seconds=0)
+
+
+# ── G-8: drift resolution, link repair & scheduled reconciliation ────────────
+
+
+def _target_id_for(incident_id):
+    return incident_sync_service.incident_sync_status(incident_id)["links"][0]["target_id"]
+
+
+def test_detach_excludes_link_from_drift_without_touching_local(capture_send, monkeypatch):
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="det-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "det-1")
+    _fetch_returning(monkeypatch, ok=True, exists=False, status="missing")  # external gone -> missing
+    incident_sync_service.refresh(inc["id"])
+    assert incident_sync_service.incident_sync_status(inc["id"])["summary"]["link_status"] == "missing_external"
+    # Detach the bad link.
+    status = incident_sync_service.detach(inc["id"], _target_id_for(inc["id"]))
+    assert status["summary"]["link_status"] == "detached" and status["linked"] is False
+    assert status["links"][0]["detached"] is True and status["links"][0]["detached_at"]
+    # No longer surfaced as actionable drift; local incident untouched.
+    assert all(link["incident_id"] != inc["id"] for link in incident_sync_service.drifted())
+    assert incident_service.get(inc["id"])["state"] == "open"
+    # A reconciliation event records the repair.
+    assert any(e["action"] == "detach" and e["outcome"] == "ok" for e in status["reconciliation"])
+
+
+def test_relink_requires_adapter_verification(capture_send, monkeypatch):
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="rel-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "rel-1")
+    target_id = _target_id_for(inc["id"])
+    incident_sync_service.detach(inc["id"], target_id)
+    # Verification fails → relink refused, link stays detached, no blind trust.
+    _fetch_returning(monkeypatch, ok=True, exists=False, status="missing")
+    refused = incident_sync_service.relink(inc["id"], target_id, "EXT-NEW")
+    assert refused["ok"] is False
+    assert incident_sync_service.incident_sync_status(inc["id"])["links"][0]["detached"] is True
+    # Verification succeeds → relink reattaches with the verified ref.
+    _fetch_returning(monkeypatch, ok=True, exists=True, status="open", url="https://ext.example.com/i/EXT-NEW")
+    ok = incident_sync_service.relink(inc["id"], target_id, "EXT-NEW")
+    assert ok["ok"] is True
+    link = ok["status"]["links"][0]
+    assert link["detached"] is False and link["external_ref"] == "EXT-NEW"
+    assert link["external_url"].endswith("/EXT-NEW") and link["external_status"] == "open"
+
+
+def test_relink_unsupported_adapter_is_refused_honestly(capture_send, monkeypatch):
+    incident_sync_service.create_target(name="j", url="https://h.example.com/j", kind="jira")
+    incident_service.observe([_alert(job_id="rel-jira")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "rel-jira")
+    target_id = _target_id_for(inc["id"])
+    called = {"n": 0}
+    def _should_not_run(self, target_url, ref, secret, adapter=None):
+        called["n"] += 1
+        return (True, True, "open", None, None)
+    monkeypatch.setattr(type(incident_sync_service), "_fetch", _should_not_run)
+    result = incident_sync_service.relink(inc["id"], target_id, "EXT-X")
+    assert result["ok"] is False and called["n"] == 0  # outbound-only can't verify → refused, no fetch
+
+
+def test_redrive_from_incident_context(monkeypatch):
+    monkeypatch.setattr(config_mod.settings, "incident_sync_max_attempts", 1)
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    def _fail(self, url, body_json, secret, adapter=None):
+        return (False, 500, "HTTP500", None, None)
+    monkeypatch.setattr(type(incident_sync_service), "_send", _fail)
+    incident_service.observe([_alert(job_id="rd-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "rd-1")
+    assert incident_sync_service.incident_sync_status(inc["id"])["summary"]["actions"]["can_redrive"] is True
+    def _ok(self, url, body_json, secret, adapter=None):
+        return (True, 200, None, "ext-rd", "https://ext.example.com/i/ext-rd")
+    monkeypatch.setattr(type(incident_sync_service), "_send", _ok)
+    result = incident_sync_service.redrive_incident_latest(inc["id"])
+    assert result["ok"] and result["record"]["status"] == "synced"
+    # Nothing failed left to redrive now.
+    assert incident_sync_service.redrive_incident_latest(inc["id"])["ok"] is False
+
+
+def test_reconcile_sweep_rechecks_stale_links_bounded(capture_send, monkeypatch):
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="rec-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "rec-1")
+    # Age the link so reconcile considers it; external now reports resolved → drift.
+    with SessionLocal() as s:
+        link = s.query(IncidentExternalLink).filter(IncidentExternalLink.incident_id == inc["id"]).first()
+        link.last_synced_at = _now() - timedelta(days=2)
+        s.commit()
+    _fetch_returning(monkeypatch, ok=True, exists=True, status="resolved")
+    counts = incident_sync_service.reconcile()
+    assert counts["checked"] >= 1
+    status = incident_sync_service.incident_sync_status(inc["id"], incident_state="open")
+    assert status["summary"]["link_status"] == "drifted" and status["links"][0]["last_checked_at"]
+    # Reconcile never mutates local incident state.
+    assert incident_service.get(inc["id"])["state"] == "open"
+
+
+def test_drift_resolution_over_http_and_gating(op, capture_send, monkeypatch):
+    client.post("/operator/incident-targets", headers=OP, json={"name": "t", "url": "https://h.example.com/i"})
+    incident_service.observe([_alert(job_id="http-resolve")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "http-resolve")
+    target_id = _target_id_for(inc["id"])
+    # Detach over HTTP.
+    detached = client.post(f"/operator/incidents/{inc['id']}/sync/detach", headers=OP,
+                           json={"target_id": target_id}).json()
+    assert detached["links"][0]["detached"] is True
+    # Relink over HTTP (verified).
+    _fetch_returning(monkeypatch, ok=True, exists=True, status="open", url="https://ext.example.com/i/RE-1")
+    relinked = client.post(f"/operator/incidents/{inc['id']}/sync/relink", headers=OP,
+                           json={"target_id": target_id, "external_ref": "RE-1"})
+    assert relinked.status_code == 200 and relinked.json()["status"]["links"][0]["detached"] is False
+    # Reconcile sweep over HTTP.
+    assert "reconciled" in client.post("/operator/incident-sync/reconcile", headers=OP).json()
+    # Curated payload — no secrets / raw internals.
+    assert "secret_value" not in str(relinked.json())
+    # Gating: normal account token denied on every resolution endpoint.
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.post(f"/operator/incidents/{inc['id']}/sync/detach", headers=auth, json={"target_id": target_id}).status_code in (401, 403)
+    assert client.post(f"/operator/incidents/{inc['id']}/sync/relink", headers=auth, json={"target_id": target_id, "external_ref": "x"}).status_code in (401, 403)
+    assert client.post(f"/operator/incidents/{inc['id']}/sync/redrive", headers=auth).status_code in (401, 403)
+    assert client.post("/operator/incident-sync/reconcile", headers=auth).status_code in (401, 403)
+
+
+def test_reconcile_config_rejected():
+    from app.core.config import Settings
+    with pytest.raises(ValueError):
+        Settings(incident_reconcile_max_per_sweep=0)
+
+
+def test_no_reconciliation_fields_leak_into_user_routes(capture_send):
+    from app.execution_queue import execution_queue
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    owner = _account()
+    job = execution_queue.enqueue(f"account:{owner['id']}", "noop", {}, title="T")
+    auth = {"Authorization": f"Bearer {make_account_token(owner['id'])}"}
+    user_job = client.get(f"/jobs/{job['id']}", headers=auth).json()["job"]
+    for operator_only in ("detached", "detached_at", "link_status", "reconciliation", "external_status"):
+        assert operator_only not in user_job

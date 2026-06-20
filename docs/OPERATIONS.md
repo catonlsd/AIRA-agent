@@ -1226,6 +1226,53 @@ local incident**, it only records what was observed externally.
   rejected) and `frontend/lib/operator.test.mts` (`incidentSyncSummary` drift-first,
   `linkStatusTone`).
 
+### Drift resolution, link repair & scheduled reconciliation (G-8)
+
+Detected drift becomes **actionable**: an operator can repair a bad/missing link
+from the incident view without DB edits, and a bounded sweep keeps stale links
+fresh — still **outbound-primary** (these actions never mutate local incident state).
+
+- **Repair actions** (`app/incident_sync.py`, all operator-only, none touch local
+  state): `detach(incident, target)` marks a bad link **intentionally detached**
+  (preserved for lineage via `detached_at`, excluded from drift/reconcile — a new
+  `detached` link verdict); `relink(incident, target, external_ref)` repairs/
+  establishes a link but **only after the adapter verifies the ref exists** (a
+  bounded inbound `_fetch`) — refused honestly for outbound-only adapters or
+  unverifiable refs, **never trusting an arbitrary link blindly**;
+  `redrive_incident_latest(incident)` redrives the most recent failed sync straight
+  from the incident context.
+- **Action availability is honest.** The per-incident summary now carries an
+  `actions` block — `can_refresh` / `can_redrive` / `can_detach` / `can_relink` —
+  computed from real link/record state, so the console only offers what will work.
+- **Audit trail.** New `incident_reconciliation_events` table appends one curated row
+  per repair action (refresh / redrive / detach / relink / reconcile) with its
+  outcome (`ok` / `failed` / `unsupported` / `missing` / `skipped`) — answering "was
+  a repair attempted, and did it work?" durably, no payloads/secrets. Surfaced as
+  `reconciliation` in the sync status.
+- **Scheduled reconciliation.** `reconcile(max_incidents=)` rechecks the active,
+  refresh-capable links that most need it (never-checked first, then stale), **capped
+  by `incident_reconcile_max_per_sweep`** (default 25) so external systems are never
+  spammed. Wired into the operator sweep (alongside `flush_pending`) and exposed as
+  `POST /operator/incident-sync/reconcile` (the path a scheduled worker can call).
+- **Operator-only APIs:** `POST /operator/incidents/{id}/sync/redrive`,
+  `POST .../sync/detach` (`{target_id}`), `POST .../sync/relink`
+  (`{target_id, external_ref, external_url?}` → 409 when refused),
+  `POST /operator/incident-sync/reconcile`. Refresh/detach/relink/redrive all thread
+  the declared operator as the action's `actor`.
+- **Console:** the incident's External-sync line now offers **Refresh / Redrive /
+  Detach / Relink** (gated by the `actions` flags), an inline relink input
+  ("External reference · verified via adapter"), and a "last action (outcome)"
+  footnote. Detached links read "Link detached" (muted). Still operator-only — no
+  `detached` / `link_status` / `reconciliation` field leaks into `GET /jobs/{id}`.
+- Pinned by `backend/tests/test_incident_sync.py` (detach excludes from drift without
+  touching local state + records the event; relink requires adapter verification —
+  refused when unverifiable or outbound-only, reattaches on success; redrive from
+  incident context; bounded reconcile sweep rechecks stale links without mutating
+  local state; HTTP gating across every resolution endpoint; reconcile config
+  rejected; no reconciliation field leaks into `/jobs/{id}`) and
+  `frontend/lib/operator.test.mts` (`detached` in `incidentSyncSummary` /
+  `linkStatusTone`).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

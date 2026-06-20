@@ -418,9 +418,10 @@ def operator_deliveries_sweep(request: Request) -> dict:
     routing = delivery_service.route_alerts_detailed(alerts)
     result = delivery_service.deliver_pending()
     incident_service.recover_stale([signal_of(a) for a in alerts])
-    try:  # best-effort: retry any pending external incident syncs
+    try:  # best-effort: retry pending syncs + bounded reconciliation of stale links
         from app.incident_sync import incident_sync_service
         incident_sync_service.flush_pending()
+        incident_sync_service.reconcile()
     except Exception:
         pass
     return {"routing": routing, **result}
@@ -599,6 +600,16 @@ class IncidentTargetUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class SyncDetachBody(BaseModel):
+    target_id: str = Field(..., min_length=1, max_length=36)
+
+
+class SyncRelinkBody(BaseModel):
+    target_id: str = Field(..., min_length=1, max_length=36)
+    external_ref: str = Field(..., min_length=1, max_length=120)
+    external_url: str | None = Field(default=None, max_length=500)
+
+
 @router.get("/incident-targets")
 def operator_list_incident_targets(request: Request) -> dict:
     """Configured outbound incident-sync targets (curated; secrets never returned)."""
@@ -715,10 +726,76 @@ def operator_incident_sync_refresh(incident_id: str, request: Request) -> dict:
     incident = incident_service.get(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found.")
-    refreshed = incident_sync_service.refresh(incident_id, incident_state=incident.get("state"))
+    refreshed = incident_sync_service.refresh(incident_id, incident_state=incident.get("state"),
+                                              actor=_operator_name(request))
     if refreshed is None:
         raise HTTPException(status_code=409, detail="Incident has no external links to refresh.")
     return refreshed
+
+
+@router.post("/incidents/{incident_id}/sync/redrive")
+def operator_incident_sync_redrive(incident_id: str, request: Request) -> dict:
+    """Redrive the most recent failed external sync for this incident, from its
+    context. 404 if the incident is unknown, 409 if there is nothing to redrive."""
+    _require_operator(request)
+    from app.incidents import incident_service
+    from app.incident_sync import incident_sync_service
+
+    if incident_service.get(incident_id) is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    result = incident_sync_service.redrive_incident_latest(incident_id)
+    if not result.get("ok"):
+        raise HTTPException(status_code=409, detail=result.get("message", "Cannot redrive."))
+    return result
+
+
+@router.post("/incidents/{incident_id}/sync/detach")
+def operator_incident_sync_detach(incident_id: str, body: SyncDetachBody, request: Request) -> dict:
+    """Intentionally detach a bad/missing external link (preserved for lineage,
+    excluded from drift). Local incident state is untouched."""
+    _require_operator(request)
+    from app.incidents import incident_service
+    from app.incident_sync import incident_sync_service
+
+    incident = incident_service.get(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    status = incident_sync_service.detach(incident_id, body.target_id,
+                                          actor=_operator_name(request), incident_state=incident.get("state"))
+    if status is None:
+        raise HTTPException(status_code=404, detail="No external link for that target.")
+    return status
+
+
+@router.post("/incidents/{incident_id}/sync/relink")
+def operator_incident_sync_relink(incident_id: str, body: SyncRelinkBody, request: Request) -> dict:
+    """Repair/establish an external link to a known reference, VALIDATED through the
+    adapter. Refused honestly if the adapter is outbound-only or the reference can't
+    be verified. Local incident state is untouched."""
+    _require_operator(request)
+    from app.incidents import incident_service
+    from app.incident_sync import incident_sync_service
+
+    incident = incident_service.get(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    result = incident_sync_service.relink(incident_id, body.target_id, body.external_ref,
+                                          external_url=body.external_url, actor=_operator_name(request),
+                                          incident_state=incident.get("state"))
+    if not result.get("ok"):
+        raise HTTPException(status_code=409, detail=result.get("message", "Relink refused."))
+    return result
+
+
+@router.post("/incident-sync/reconcile")
+def operator_incident_sync_reconcile(request: Request, limit: int | None = None) -> dict:
+    """Bounded scheduled reconciliation: recheck the active, refresh-capable links
+    that most need it (stale / never-checked), capped per sweep. Operator-triggered;
+    the same path a scheduled worker can call later."""
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    return {"reconciled": incident_sync_service.reconcile(max_incidents=limit, actor=_operator_name(request))}
 
 
 @router.get("/incident-targets/{target_id}/health")

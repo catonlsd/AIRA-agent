@@ -21,9 +21,11 @@ import {
   GitBranch,
   History,
   LayoutGrid,
+  Link2,
   LockKeyhole,
   MessageSquarePlus,
   RefreshCw,
+  Unlink,
   Send,
   Share2,
   ShieldCheck,
@@ -58,11 +60,14 @@ import {
   getOperatorKey,
   getOperatorName,
   healthTone,
+  detachIncidentLink,
   incidentEventLabel,
   incidentSyncSummary,
   incidentTone,
   noteIncident,
+  redriveIncidentSyncContext,
   refreshIncidentSync,
+  relinkIncident,
   patchDestination,
   redriveBlockedReason,
   redriveDelivery,
@@ -234,6 +239,9 @@ function IncidentRow({ inc, operatorName, onChanged }: {
     }
   }, [expanded, inc.id]);
 
+  const [relinking, setRelinking] = useState(false);
+  const [refDraft, setRefDraft] = useState("");
+
   const onRefreshSync = useCallback(async () => {
     setBusy(true);
     try {
@@ -244,6 +252,26 @@ function IncidentRow({ inc, operatorName, onChanged }: {
 
   const syncLine = sync ? incidentSyncSummary(sync.summary) : null;
   const link = sync?.links.find((l) => l.external_url) ?? sync?.links[0];
+  const actions = sync?.summary.actions;
+
+  const onSyncRepair = useCallback(async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    try { await fn(); setSync(await fetchIncidentSyncStatus(inc.id)); } finally { setBusy(false); }
+  }, [inc.id]);
+
+  const onDetach = useCallback(() => {
+    if (!link) return;
+    void onSyncRepair(() => detachIncidentLink(inc.id, link.target_id));
+  }, [inc.id, link, onSyncRepair]);
+
+  const onRelink = useCallback(() => {
+    if (!link || !refDraft.trim()) return;
+    void onSyncRepair(async () => { await relinkIncident(inc.id, link.target_id, refDraft.trim()); setRelinking(false); setRefDraft(""); });
+  }, [inc.id, link, refDraft, onSyncRepair]);
+
+  const onRedriveSyncCtx = useCallback(() => {
+    void onSyncRepair(() => redriveIncidentSyncContext(inc.id));
+  }, [inc.id, onSyncRepair]);
 
   const saveNote = useCallback(async () => {
     setBusy(true);
@@ -362,12 +390,36 @@ function IncidentRow({ inc, operatorName, onChanged }: {
                     <ExternalLink className="h-3 w-3" /> Open
                   </a>
                 ) : null}
-                {sync?.summary.refresh_supported ? (
+                {actions?.can_refresh ? (
                   <button type="button" disabled={busy} onClick={() => void onRefreshSync()} className={INC_BTN}>
                     <RefreshCw className="h-3 w-3" /> Refresh
                   </button>
                 ) : null}
+                {actions?.can_redrive ? (
+                  <button type="button" disabled={busy} onClick={onRedriveSyncCtx} className={INC_BTN}>
+                    <RefreshCw className="h-3 w-3" /> Redrive
+                  </button>
+                ) : null}
+                {actions?.can_detach ? (
+                  <button type="button" disabled={busy} onClick={onDetach} className={INC_BTN}>
+                    <Unlink className="h-3 w-3" /> Detach
+                  </button>
+                ) : null}
+                {actions?.can_relink ? (
+                  <button type="button" disabled={busy} onClick={() => setRelinking((v) => !v)} className={INC_BTN}>
+                    <Link2 className="h-3 w-3" /> Relink
+                  </button>
+                ) : null}
               </div>
+
+              {relinking ? (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <input value={refDraft} onChange={(e) => setRefDraft(e.target.value)} placeholder="External reference (verified via adapter)"
+                    className="min-w-[12rem] flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1 text-[11px] text-[var(--text-strong)] outline-none focus:border-[var(--border-strong)]" />
+                  <button type="button" disabled={busy || !refDraft.trim()} onClick={onRelink} className={INC_BTN}>Verify &amp; relink</button>
+                </div>
+              ) : null}
+
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-[var(--text-subtle)]">
                 {sync?.summary.reason ? <span>{sync.summary.reason}</span> : null}
                 {link?.external_status ? <span>external: {link.external_status}</span> : null}
@@ -375,6 +427,9 @@ function IncidentRow({ inc, operatorName, onChanged }: {
                 {sync?.summary.last_checked_at ? <span>checked {relTime(sync.summary.last_checked_at)}</span> : (
                   sync?.summary.refresh_supported ? <span>never checked</span> : <span>refresh unsupported</span>
                 )}
+                {sync && sync.reconciliation.length > 0 ? (
+                  <span>· last action: {sync.reconciliation[0].action} ({sync.reconciliation[0].outcome})</span>
+                ) : null}
               </div>
             </div>
           ) : null}

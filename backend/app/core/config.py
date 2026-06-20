@@ -205,6 +205,9 @@ class Settings(BaseSettings):
     # An external link with no successful sync within this window reads as "stale"
     # (bounded reconciliation — outbound stays primary; this only flags drift). >= 1.
     incident_link_stale_seconds: int = 86400  # 24h
+    # Max links a single reconciliation sweep will recheck — bounded so a sweep
+    # never spams external systems. >= 1.
+    incident_reconcile_max_per_sweep: int = 25
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -277,11 +280,11 @@ class Settings(BaseSettings):
         return value
 
     @field_validator("incident_sync_max_attempts", "incident_sync_max_redrives",
-                     "incident_link_stale_seconds")
+                     "incident_link_stale_seconds", "incident_reconcile_max_per_sweep")
     @classmethod
     def _validate_incident_sync(cls, value):
         if int(value) < 1:
-            raise ValueError("incident sync attempt/redrive/stale bounds must be >= 1")
+            raise ValueError("incident sync attempt/redrive/stale/reconcile bounds must be >= 1")
         return value
 
     @field_validator("cors_origins", mode="before")

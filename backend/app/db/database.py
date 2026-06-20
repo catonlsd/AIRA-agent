@@ -68,6 +68,7 @@ def ensure_runtime_columns() -> None:
                 ("last_checked_at", "DATETIME"),
                 ("external_status", "VARCHAR(24)"),
                 ("external_exists", "BOOLEAN"),
+                ("detached_at", "DATETIME"),
             ],
         }
         for table, columns in additions.items():

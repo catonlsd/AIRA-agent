@@ -197,7 +197,7 @@ export type IncidentSyncRecord = {
   created_at: string | null;
 };
 
-export type LinkStatus = "linked" | "never_linked" | "stale" | "missing_external" | "drifted" | "refreshed";
+export type LinkStatus = "linked" | "never_linked" | "stale" | "missing_external" | "drifted" | "refreshed" | "detached";
 
 export type IncidentExternalLink = {
   target_id: string;
@@ -210,16 +210,27 @@ export type IncidentExternalLink = {
   last_checked_at: string | null;
   external_status: string | null;
   external_exists: boolean | null;
+  detached: boolean;
+  detached_at: string | null;
   refresh_supported: boolean;
   link_status: LinkStatus;
   reason: string;
   incident_id?: string;
 };
 
+export type ReconciliationEvent = {
+  action: string;
+  outcome: string;
+  actor: string | null;
+  detail: string | null;
+  at: string | null;
+};
+
 export type IncidentSyncStatus = {
   linked: boolean;
   links: IncidentExternalLink[];
   records: IncidentSyncRecord[];
+  reconciliation: ReconciliationEvent[];
   summary: {
     linked: boolean;
     synced: boolean;
@@ -232,6 +243,7 @@ export type IncidentSyncStatus = {
     reason: string;
     refresh_supported: boolean;
     last_checked_at: string | null;
+    actions: { can_refresh: boolean; can_redrive: boolean; can_detach: boolean; can_relink: boolean };
   };
 };
 
@@ -248,13 +260,14 @@ export function linkStatusTone(status: LinkStatus): Tone {
   if (status === "missing_external" || status === "drifted") return "bad";
   if (status === "stale") return "warn";
   if (status === "linked" || status === "refreshed") return "good";
-  return "muted";
+  return "muted"; // never_linked / detached
 }
 
 /** Honest one-line linkage summary for an incident's external sync (pure;
  * unit-tested). Reconciliation drift/staleness wins over plain outbound health;
  * outbound stays primary and AIRA-X never claims it owns external truth. */
 export function incidentSyncSummary(s: IncidentSyncStatus["summary"]): { label: string; tone: Tone } {
+  if (s.link_status === "detached") return { label: "Link detached", tone: "muted" };
   // Reconciliation verdicts (require a real link / refresh) come first.
   if (s.link_status === "missing_external") return { label: "External incident missing", tone: "bad" };
   if (s.link_status === "drifted") return { label: s.reason || "Drifted from external", tone: "bad" };
@@ -614,4 +627,34 @@ export async function refreshIncidentSync(incidentId: string): Promise<IncidentS
   const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(incidentId)}/sync/refresh`, { method: "POST", cache: "no-store", headers: opHeaders() });
   if (!res.ok) return null;
   return res.json();
+}
+
+export async function redriveIncidentSyncContext(incidentId: string): Promise<{ ok: boolean; message?: string }> {
+  const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(incidentId)}/sync/redrive`, { method: "POST", cache: "no-store", headers: opHeaders() });
+  const body = await res.json().catch(() => null);
+  return res.ok ? { ok: true, message: body?.message } : { ok: false, message: body?.detail };
+}
+
+export async function detachIncidentLink(incidentId: string, targetId: string): Promise<IncidentSyncStatus | null> {
+  const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(incidentId)}/sync/detach`, {
+    method: "POST", cache: "no-store", headers: opHeaders(true), body: JSON.stringify({ target_id: targetId }),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function relinkIncident(incidentId: string, targetId: string, externalRef: string, externalUrl?: string): Promise<{ ok: boolean; message?: string }> {
+  const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(incidentId)}/sync/relink`, {
+    method: "POST", cache: "no-store", headers: opHeaders(true),
+    body: JSON.stringify({ target_id: targetId, external_ref: externalRef, external_url: externalUrl }),
+  });
+  const body = await res.json().catch(() => null);
+  return res.ok ? { ok: true, message: body?.message } : { ok: false, message: body?.detail };
+}
+
+export async function reconcileIncidentSync(): Promise<Record<string, number> | null> {
+  const res = await fetch(`${API_URL}/operator/incident-sync/reconcile`, { method: "POST", cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return null;
+  const body = await res.json();
+  return body?.reconciled ?? null;
 }

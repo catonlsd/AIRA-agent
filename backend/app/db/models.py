@@ -457,8 +457,34 @@ class IncidentExternalLink(Base):
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     external_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
     external_exists: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Drift resolution (G-8): an operator may intentionally detach a bad/missing link.
+    # A detached link is preserved (lineage) but excluded from drift/reconciliation.
+    detached_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+
+class IncidentReconciliationEvent(Base):
+    """A curated, append-only record of an operator drift-resolution action (G-8).
+
+    One row per repair/maintenance action on an incident↔external link — refresh /
+    redrive / detach / relink / reconcile — capturing the outcome
+    (ok / failed / unsupported / missing / skipped) and a brief detail. The monotonic
+    integer PK gives stable chronological order. This is what answers "was a repair
+    attempted, and did it work?" durably, without dumping payloads/secrets. Local
+    incident state is never mutated by these actions — they only act on linkage.
+    """
+
+    __tablename__ = "incident_reconciliation_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    incident_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    target_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    action: Mapped[str] = mapped_column(String(24), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(24), nullable=False)
+    actor: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    detail: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
 
 
 class ContextBundle(Base):

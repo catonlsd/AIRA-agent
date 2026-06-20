@@ -32,7 +32,12 @@ from uuid import uuid4
 
 from app.core.config import settings
 from app.db.database import Base, SessionLocal, engine
-from app.db.models import ExternalIncidentTarget, IncidentExternalLink, IncidentSyncRecord
+from app.db.models import (
+    ExternalIncidentTarget,
+    IncidentExternalLink,
+    IncidentReconciliationEvent,
+    IncidentSyncRecord,
+)
 
 STATUS_PENDING = "pending"
 STATUS_SYNCED = "synced"
@@ -182,6 +187,7 @@ LINK_STALE = "stale"
 LINK_MISSING = "missing_external"
 LINK_DRIFTED = "drifted"
 LINK_REFRESHED = "refreshed"
+LINK_DETACHED = "detached"
 
 _LOCAL_OPEN = {"open", "acknowledged", "silenced"}
 _EXT_CLOSED = {EXT_RESOLVED, "closed", "done"}
@@ -204,9 +210,11 @@ def _normalize_status(raw: Optional[str]) -> str:
 def classify_link_status(*, local_state: Optional[str], last_synced_at: Optional[datetime],
                          last_checked_at: Optional[datetime], external_exists: Optional[bool],
                          external_status: Optional[str], now: datetime,
-                         stale_seconds: int) -> tuple[str, str]:
+                         stale_seconds: int, detached: bool = False) -> tuple[str, str]:
     """Pure, bounded reconciliation verdict for one link → (status, reason). Local
     state stays primary; this only *describes* alignment, it never mutates anything."""
+    if detached:
+        return (LINK_DETACHED, "intentionally detached")
     if last_synced_at is None:
         return (LINK_NEVER, "never linked")
     open_local = (local_state in _LOCAL_OPEN)
@@ -227,9 +235,11 @@ def classify_link_status(*, local_state: Optional[str], last_synced_at: Optional
     return (LINK_LINKED, "linked")
 
 
-# Severity ordering for the incident-level rollup (worst link wins).
-_LINK_SEVERITY = {LINK_NEVER: 0, LINK_LINKED: 1, LINK_REFRESHED: 1,
+# Severity ordering for the incident-level rollup (worst link wins). Detached is an
+# intentional operator choice → lowest, never flagged as actionable drift.
+_LINK_SEVERITY = {LINK_DETACHED: 0, LINK_NEVER: 0, LINK_LINKED: 1, LINK_REFRESHED: 1,
                   LINK_STALE: 2, LINK_DRIFTED: 3, LINK_MISSING: 4}
+_ACTIONABLE = {LINK_DRIFTED, LINK_MISSING, LINK_STALE}
 
 
 class IncidentSyncService:
@@ -242,10 +252,11 @@ class IncidentSyncService:
             ExternalIncidentTarget.__table__.create(bind=engine, checkfirst=True)
             IncidentSyncRecord.__table__.create(bind=engine, checkfirst=True)
             IncidentExternalLink.__table__.create(bind=engine, checkfirst=True)
+            IncidentReconciliationEvent.__table__.create(bind=engine, checkfirst=True)
         except Exception:
             Base.metadata.create_all(bind=engine)
         from app.db.database import ensure_runtime_columns
-        ensure_runtime_columns()  # additive: incident_sync_records.external_url on pre-G-6 DBs
+        ensure_runtime_columns()  # additive: external_url / link reconciliation columns
 
     # ── targets (operator-only config) ────────────────────────────────────────
 
@@ -572,10 +583,12 @@ class IncidentSyncService:
         now = now or _now()
         stale_seconds = max(1, int(getattr(settings, "incident_link_stale_seconds", 86400)))
         supports_refresh = bool(getattr(adapter_for(target.get("kind")), "supports_refresh", False))
+        detached = row.detached_at is not None
         status, reason = classify_link_status(
             local_state=local_state, last_synced_at=row.last_synced_at,
             last_checked_at=row.last_checked_at, external_exists=row.external_exists,
-            external_status=row.external_status, now=now, stale_seconds=stale_seconds)
+            external_status=row.external_status, now=now, stale_seconds=stale_seconds,
+            detached=detached)
         return {
             "target_id": row.target_id,
             "target_name": target.get("name"),
@@ -587,6 +600,8 @@ class IncidentSyncService:
             "last_checked_at": row.last_checked_at.isoformat() if row.last_checked_at else None,
             "external_status": row.external_status,
             "external_exists": row.external_exists,
+            "detached": detached,
+            "detached_at": row.detached_at.isoformat() if row.detached_at else None,
             "refresh_supported": supports_refresh,
             "link_status": status,
             "reason": reason,
@@ -599,12 +614,14 @@ class IncidentSyncService:
         recent attempts, and an honest summary (linked? behind? drifted? stale?
         missing? recovered by redrive?). Outbound stays primary — inbound facts are
         only what the last bounded refresh observed, never silent overwrites."""
-        empty = {"linked": False, "links": [], "records": [],
+        empty = {"linked": False, "links": [], "records": [], "reconciliation": [],
                  "summary": {"linked": False, "synced": False, "behind": False,
                              "last_synced_at": None, "last_failed_at": None, "last_error": None,
                              "recovered_after_redrive": False, "link_status": LINK_NEVER,
                              "reason": "never linked", "refresh_supported": False,
-                             "last_checked_at": None}}
+                             "last_checked_at": None,
+                             "actions": {"can_refresh": False, "can_redrive": False,
+                                         "can_detach": False, "can_relink": False}}}
         try:
             local_state = incident_state if incident_state is not None else self._local_state(incident_id)
             now = _now()
@@ -616,18 +633,32 @@ class IncidentSyncService:
                 rec_rows = (session.query(IncidentSyncRecord)
                             .filter(IncidentSyncRecord.incident_id == incident_id)
                             .order_by(IncidentSyncRecord.created_at.desc()).limit(50).all())
+                evt_rows = (session.query(IncidentReconciliationEvent)
+                            .filter(IncidentReconciliationEvent.incident_id == incident_id)
+                            .order_by(IncidentReconciliationEvent.id.desc()).limit(10).all())
             links = [self._clean_link(r, names, local_state=local_state, now=now) for r in link_rows]
             records = [self._clean_record(r, names) for r in rec_rows]
+            reconciliation = [self._clean_event(e) for e in evt_rows]
             synced = [r for r in records if r["status"] == STATUS_SYNCED]
             failed = [r for r in records if r["status"] == STATUS_FAILED]
             latest = records[0] if records else None
-            # Incident-level rollup: the worst (most actionable) link wins.
+            active_links = [link for link in links if not link["detached"]]
+            # Incident-level rollup: the worst (most actionable) active link wins.
             overall, reason = LINK_NEVER, "never linked"
-            if links:
-                worst = max(links, key=lambda link: _LINK_SEVERITY.get(link["link_status"], 0))
+            if active_links:
+                worst = max(active_links, key=lambda link: _LINK_SEVERITY.get(link["link_status"], 0))
                 overall, reason = worst["link_status"], worst["reason"]
+            elif links:
+                overall, reason = LINK_DETACHED, "intentionally detached"
+            # Bounded, honest action availability (what the operator can actually do).
+            actions = {
+                "can_refresh": any(link["refresh_supported"] and not link["detached"] for link in links),
+                "can_redrive": bool(failed and (latest is None or latest["status"] != STATUS_SYNCED)),
+                "can_detach": any(not link["detached"] for link in links),
+                "can_relink": any(link["refresh_supported"] for link in links),
+            }
             summary = {
-                "linked": bool(links),
+                "linked": bool(active_links),
                 "synced": bool(synced),
                 "behind": bool(latest and latest["status"] != STATUS_SYNCED),
                 "last_synced_at": synced[0]["created_at"] if synced else None,
@@ -636,12 +667,24 @@ class IncidentSyncService:
                 "recovered_after_redrive": bool(latest and latest["status"] == STATUS_SYNCED and latest["is_redrive"]),
                 "link_status": overall,
                 "reason": reason,
-                "refresh_supported": any(link["refresh_supported"] for link in links),
+                "refresh_supported": any(link["refresh_supported"] for link in active_links),
                 "last_checked_at": max([link["last_checked_at"] for link in links if link["last_checked_at"]], default=None),
+                "actions": actions,
             }
-            return {"linked": bool(links), "links": links, "records": records, "summary": summary}
+            return {"linked": bool(active_links), "links": links, "records": records,
+                    "reconciliation": reconciliation, "summary": summary}
         except Exception:
             return empty
+
+    @staticmethod
+    def _clean_event(row: IncidentReconciliationEvent) -> dict[str, Any]:
+        return {
+            "action": row.action,
+            "outcome": row.outcome,
+            "actor": row.actor,
+            "detail": row.detail,
+            "at": row.created_at.isoformat() if row.created_at else None,
+        }
 
     @staticmethod
     def _local_state(incident_id: str) -> Optional[str]:
@@ -656,17 +699,18 @@ class IncidentSyncService:
 
     # ── bounded inbound reconciliation (refresh / drift) ──────────────────────
 
-    def refresh(self, incident_id: str, *, incident_state: Optional[str] = None) -> Optional[dict[str, Any]]:
+    def refresh(self, incident_id: str, *, incident_state: Optional[str] = None,
+                actor: Optional[str] = None) -> Optional[dict[str, Any]]:
         """Bounded inbound recheck of each linked external incident (only for
         adapters that support it). Updates the link's last-observed external
         status/existence/url — it NEVER mutates the local incident. Returns the
         refreshed sync status, or None if the incident has no links to check."""
         local_state = incident_state if incident_state is not None else self._local_state(incident_id)
-        checked = 0
         try:
             with self._session_factory() as session:
                 links = (session.query(IncidentExternalLink)
-                         .filter(IncidentExternalLink.incident_id == incident_id).all())
+                         .filter(IncidentExternalLink.incident_id == incident_id,
+                                 IncidentExternalLink.detached_at.is_(None)).all())
                 if not links:
                     return None
                 now = _now()
@@ -676,8 +720,10 @@ class IncidentSyncService:
                         continue
                     adapter = adapter_for(target.kind)
                     if not getattr(adapter, "supports_refresh", False):
+                        self._log_reconcile(session, incident_id, link.target_id, "refresh", "unsupported",
+                                            actor=actor, detail="adapter is outbound-only")
                         continue  # outbound-only adapter — honestly skipped
-                    ok, exists, status, url, _err = self._fetch(target.url, link.external_ref, target.secret, adapter)
+                    ok, exists, status, url, err = self._fetch(target.url, link.external_ref, target.secret, adapter)
                     link.last_checked_at = now
                     if ok or exists is False:
                         link.external_exists = exists
@@ -685,7 +731,12 @@ class IncidentSyncService:
                             link.external_status = status
                         if url:
                             link.external_url = url
-                    checked += 1
+                        outcome = "missing" if exists is False else "ok"
+                        self._log_reconcile(session, incident_id, link.target_id, "refresh", outcome,
+                                            actor=actor, detail=(status or ("not found" if exists is False else None)))
+                    else:
+                        self._log_reconcile(session, incident_id, link.target_id, "refresh", "failed",
+                                            actor=actor, detail=err)
                 session.commit()
         except Exception:
             return self.incident_sync_status(incident_id, incident_state=local_state)
@@ -720,26 +771,192 @@ class IncidentSyncService:
             return (False, None, None, None, type(error).__name__)
 
     def drifted(self, *, limit: int = 50) -> list[dict[str, Any]]:
-        """Operator triage: links whose reconciliation verdict is actionable
-        (drifted / missing_external / stale). Curated, bounded, operator-only."""
-        actionable = {LINK_DRIFTED, LINK_MISSING, LINK_STALE}
+        """Operator triage: active (non-detached) links whose reconciliation verdict
+        is actionable (drifted / missing_external / stale). Curated, operator-only."""
         out: list[dict[str, Any]] = []
         try:
             now = _now()
             with self._session_factory() as session:
                 names = self._target_names(session)
                 rows = (session.query(IncidentExternalLink)
+                        .filter(IncidentExternalLink.detached_at.is_(None))
                         .order_by(IncidentExternalLink.last_synced_at.desc())
                         .limit(min(limit, 200)).all())
-                detached = [(r, self._local_state(r.incident_id)) for r in rows]
-            for row, local_state in detached:
+                resolved = [(r, self._local_state(r.incident_id)) for r in rows]
+            for row, local_state in resolved:
                 clean = self._clean_link(row, names, local_state=local_state, now=now)
-                if clean["link_status"] in actionable:
+                if clean["link_status"] in _ACTIONABLE:
                     clean["incident_id"] = row.incident_id
                     out.append(clean)
         except Exception:
             return []
         return out
+
+    # ── drift resolution / link repair (operator-only; never touches local state) ─
+
+    def detach(self, incident_id: str, target_id: str, *, actor: Optional[str] = None,
+               incident_state: Optional[str] = None) -> Optional[dict[str, Any]]:
+        """Intentionally detach an incident's external link (e.g. the external issue
+        is gone or wrong). The link row is preserved for lineage but excluded from
+        drift/reconciliation. Does NOT touch local incident state."""
+        try:
+            with self._session_factory() as session:
+                link = (session.query(IncidentExternalLink)
+                        .filter(IncidentExternalLink.incident_id == incident_id,
+                                IncidentExternalLink.target_id == target_id).first())
+                if link is None:
+                    return None
+                if link.detached_at is None:
+                    link.detached_at = _now()
+                self._log_reconcile(session, incident_id, target_id, "detach", "ok",
+                                    actor=actor, detail="link detached")
+                session.commit()
+        except Exception:
+            return None
+        return self.incident_sync_status(incident_id, incident_state=incident_state)
+
+    def relink(self, incident_id: str, target_id: str, external_ref: str, *,
+               external_url: Optional[str] = None, actor: Optional[str] = None,
+               incident_state: Optional[str] = None) -> dict[str, Any]:
+        """Repair/establish an external link to a known ref, VALIDATED through the
+        adapter (a bounded inbound check that it exists). Refused honestly when the
+        adapter is outbound-only or the external incident can't be verified. Never
+        trusts an arbitrary link blindly; never mutates local incident state."""
+        external_ref = (external_ref or "").strip()[:120]
+        if not external_ref:
+            return {"ok": False, "message": "An external reference is required to relink."}
+        try:
+            with self._session_factory() as session:
+                target = session.get(ExternalIncidentTarget, target_id)
+                if target is None:
+                    return {"ok": False, "message": "Target not found."}
+                adapter = adapter_for(target.kind)
+                if not getattr(adapter, "supports_refresh", False):
+                    self._log_reconcile(session, incident_id, target_id, "relink", "unsupported",
+                                        actor=actor, detail="adapter cannot verify links")
+                    session.commit()
+                    return {"ok": False, "message": "This target's adapter is outbound-only and cannot verify a relink."}
+                ok, exists, status, url, err = self._fetch(target.url, external_ref, target.secret, adapter)
+                if not ok or exists is False:
+                    self._log_reconcile(session, incident_id, target_id, "relink",
+                                        "missing" if exists is False else "failed",
+                                        actor=actor, detail=(err or "external incident not found"))
+                    session.commit()
+                    return {"ok": False, "message": "Could not verify that external reference; relink refused."}
+                now = _now()
+                link = (session.query(IncidentExternalLink)
+                        .filter(IncidentExternalLink.incident_id == incident_id,
+                                IncidentExternalLink.target_id == target_id).first())
+                if link is None:
+                    link = IncidentExternalLink(id=uuid4().hex, incident_id=incident_id,
+                                                target_id=target_id, created_at=now)
+                    session.add(link)
+                link.external_ref = external_ref
+                link.external_url = external_url or url or link.external_url
+                link.external_status = status
+                link.external_exists = True
+                link.last_checked_at = now
+                link.last_synced_at = link.last_synced_at or now  # operator-established linkage time
+                link.last_action = "relink"
+                link.detached_at = None  # a verified relink reattaches
+                self._log_reconcile(session, incident_id, target_id, "relink", "ok",
+                                    actor=actor, detail=f"→ {external_ref}")
+                session.commit()
+        except Exception:
+            return {"ok": False, "message": "Relink failed."}
+        return {"ok": True, "status": self.incident_sync_status(incident_id, incident_state=incident_state),
+                "message": "Relinked and verified."}
+
+    def redrive_incident_latest(self, incident_id: str) -> dict[str, Any]:
+        """Redrive the most recent terminally-failed sync for an incident, straight
+        from its context (a convenience over per-record redrive)."""
+        try:
+            with self._session_factory() as session:
+                latest = (session.query(IncidentSyncRecord)
+                          .filter(IncidentSyncRecord.incident_id == incident_id)
+                          .order_by(IncidentSyncRecord.created_at.desc()).first())
+                # Already landed (e.g. a prior redrive succeeded) → nothing to do.
+                if latest is not None and latest.status == STATUS_SYNCED:
+                    return {"ok": False, "message": "External sync is already up to date."}
+                latest_failed = (session.query(IncidentSyncRecord)
+                                 .filter(IncidentSyncRecord.incident_id == incident_id,
+                                         IncidentSyncRecord.status == STATUS_FAILED)
+                                 .order_by(IncidentSyncRecord.created_at.desc()).first())
+                record_id = latest_failed.id if latest_failed else None
+            if record_id is None:
+                return {"ok": False, "message": "No failed sync to redrive for this incident."}
+            result = self.redrive(record_id)
+            with self._session_factory() as session:
+                self._log_reconcile(session, incident_id, None, "redrive",
+                                    "ok" if result.get("ok") else "failed",
+                                    detail=result.get("message"))
+                session.commit()
+            return result
+        except Exception:
+            return {"ok": False, "message": "Redrive failed."}
+
+    def reconcile(self, *, max_incidents: Optional[int] = None, actor: Optional[str] = None) -> dict[str, int]:
+        """Bounded scheduled reconciliation: recheck the active, refresh-capable links
+        that most need it (stale / never-checked / already drifted), capped per sweep
+        so external systems are never spammed. Never mutates local incident state."""
+        cap = max_incidents if max_incidents is not None else int(getattr(settings, "incident_reconcile_max_per_sweep", 25))
+        cap = max(1, int(cap))
+        stale_seconds = max(1, int(getattr(settings, "incident_link_stale_seconds", 86400)))
+        counts = {"checked": 0, "ok": 0, "missing": 0, "failed": 0, "skipped": 0}
+        try:
+            now = _now()
+            with self._session_factory() as session:
+                names = self._target_names(session)
+                # NULL last_checked_at (never reconciled) sorts first under SQLite ASC,
+                # so the longest-unchecked links are prioritized.
+                rows = (session.query(IncidentExternalLink)
+                        .filter(IncidentExternalLink.detached_at.is_(None))
+                        .order_by(IncidentExternalLink.last_checked_at.asc())
+                        .limit(200).all())
+                candidates = []
+                for link in rows:
+                    kind = names.get(link.target_id, {}).get("kind")
+                    if not getattr(adapter_for(kind), "supports_refresh", False):
+                        continue
+                    needs = (link.last_checked_at is None
+                             or (link.last_synced_at is not None and (now - link.last_synced_at).total_seconds() > stale_seconds)
+                             or (link.last_checked_at is not None and (now - link.last_checked_at).total_seconds() > stale_seconds))
+                    if needs:
+                        candidates.append(link.incident_id)
+                    if len(candidates) >= cap:
+                        break
+            for incident_id in candidates:
+                status = self.refresh(incident_id, actor=actor)
+                if status is None:
+                    counts["skipped"] += 1
+                    continue
+                counts["checked"] += 1
+                verdict = status["summary"]["link_status"]
+                if verdict == LINK_MISSING:
+                    counts["missing"] += 1
+                elif verdict in (LINK_REFRESHED, LINK_LINKED, LINK_DRIFTED):
+                    counts["ok"] += 1
+        except Exception:
+            return counts
+        return counts
+
+    def reconciliation_events(self, incident_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
+        try:
+            with self._session_factory() as session:
+                rows = (session.query(IncidentReconciliationEvent)
+                        .filter(IncidentReconciliationEvent.incident_id == incident_id)
+                        .order_by(IncidentReconciliationEvent.id.desc()).limit(min(limit, 100)).all())
+                return [self._clean_event(r) for r in rows]
+        except Exception:
+            return []
+
+    @staticmethod
+    def _log_reconcile(session, incident_id: str, target_id: Optional[str], action: str,
+                       outcome: str, *, actor: Optional[str] = None, detail: Optional[str] = None) -> None:
+        actor = (actor or "").strip()[:80] or None
+        session.add(IncidentReconciliationEvent(
+            incident_id=incident_id, target_id=target_id, action=action, outcome=outcome,
+            actor=actor, detail=(detail[:200] if detail else None), created_at=_now()))
 
     def target_health(self, target_id: str) -> Optional[dict[str, Any]]:
         """Curated health for one target: recent attempt mix + last success/failure."""
@@ -767,6 +984,7 @@ class IncidentSyncService:
     def clear_all(self) -> None:
         try:
             with self._session_factory() as session:
+                session.query(IncidentReconciliationEvent).delete()
                 session.query(IncidentExternalLink).delete()
                 session.query(IncidentSyncRecord).delete()
                 session.query(ExternalIncidentTarget).delete()
