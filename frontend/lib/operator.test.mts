@@ -8,6 +8,7 @@ import {
   deadLetterTone,
   deliveryStatusTone,
   healthTone,
+  incidentTone,
   redriveBlockedReason,
 } from "./operator.ts";
 
@@ -45,4 +46,11 @@ test("deliveryStatusTone maps a delivery status to a tone", () => {
   assert.equal(deliveryStatusTone("pending"), "warn");
   assert.equal(deliveryStatusTone("failed"), "bad");
   assert.equal(deliveryStatusTone("weird"), "muted");
+});
+
+test("incidentTone maps each workflow state to a tone", () => {
+  assert.equal(incidentTone("open"), "bad");
+  assert.equal(incidentTone("acknowledged"), "warn");
+  assert.equal(incidentTone("silenced"), "muted");
+  assert.equal(incidentTone("recovered"), "good");
 });

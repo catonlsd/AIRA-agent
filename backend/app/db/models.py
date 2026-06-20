@@ -309,6 +309,36 @@ class AlertOccurrence(Base):
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
 
+class OperatorIncident(Base):
+    """A durable operator workflow record for a recurring operational condition.
+
+    Operator-only — distinct from delivery suppression, destination cooldown, and
+    dead-letter state. Keyed by the alert SIGNAL (`classification:subject`), so one
+    incident tracks one recurring condition across sweeps. State runs
+    open → acknowledged / silenced → recovered (and reopens honestly if a recovered
+    or silence-expired condition recurs). `silenced_until` is always BOUNDED — a
+    silenced incident still exists in operator state (never a black hole) and gates
+    only *alert routing* for its signal, never delivery/execution truth.
+    """
+
+    __tablename__ = "operator_incidents"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    signal: Mapped[str] = mapped_column(String(160), unique=True, index=True, nullable=False)
+    classification: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    subject: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    source: Mapped[str] = mapped_column(String(16), default="alert")
+    state: Mapped[str] = mapped_column(String(16), default="open", index=True)  # open|acknowledged|silenced|recovered
+    severity: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    occurrences: Mapped[int] = mapped_column(Integer, default=1)
+    note: Mapped[str | None] = mapped_column(String(280), nullable=True)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    silenced_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    recovered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    first_seen: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+
+
 class ContextBundle(Base):
     """A durable, scope-owned "handoff pack" — a saved combination of context
     references (documents, artifacts, runs) that can be reloaded into chat later.

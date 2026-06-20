@@ -995,6 +995,52 @@ no admin maze) — **Overview**, **History**, **Recovery**:
 Redrive-history timelines, destination-tuning presets, and incident workflows all
 layer on this without touching the user product.
 
+### Incident workflow — acknowledge, silence & honest recovery (G-3)
+
+Repeated operational conditions (a stuck-job alert, a retry-exhausted delivery
+class, a degrading destination) now get a **durable operator-incident identity**
+instead of re-firing as anonymous noise. The console gains a fourth tab —
+**Incidents** — and a small, focused workflow on top of the existing alert
+pipeline. This is a support workflow, **not** a ticketing/pager product.
+
+- **Durable identity = the alert signal.** An `OperatorIncident`
+  (`backend/app/db/models.py`, table `operator_incidents`) is keyed by the alert
+  **signal** (`f"{classification}:{job_id or exec_class}"`), the same identity the
+  routing/suppression layer already uses. `IncidentWorkflowService`
+  (`backend/app/incidents.py`) `observe()`s the live alert set on every console
+  read and sweep: a new condition **opens**, a recurring one **bumps occurrences**
+  (no duplicates), and a recovered/silence-expired one **reopens as a fresh
+  episode** (clearing ack/note/silence).
+- **States are distinct and honest:** `open` → `acknowledged` (being worked, still
+  active) → `silenced` (muted for a **bounded** window) → `recovered` (condition
+  cleared). `recover_stale(active_signals)` flips any incident whose signal is no
+  longer active to **recovered** with a timestamp — a cleared, redriven, or
+  re-healthy condition surfaces as recovered rather than vanishing.
+- **Silence is bounded and never a black hole.** `silence(id, seconds)` clamps to
+  `incident_max_silence_seconds` (default cap 24h; default window 1h) and is the
+  **only** new coupling into routing: `route_alerts_detailed` skips signals in
+  `incident_service.silenced_signals()` and counts them as `silenced` (a *distinct*
+  skip reason). A silenced incident **still exists** in operator state and history;
+  on expiry it stops muting and reopens on the next recurrence. Silence (per-signal,
+  operator-driven) stays cleanly separate from **delivery suppression**
+  (per-destination/signal/window), **destination cooldown** (per-destination
+  health), and **dead-letter** (terminal delivery failure).
+- **Operator-only APIs** (`backend/app/routes/operator.py`, all service-key gated):
+  `GET /operator/incidents`, `GET /operator/incidents/{id}`,
+  `POST .../{id}/ack`, `POST .../{id}/silence` (bounded), `POST .../{id}/unsilence`,
+  `PATCH /operator/incidents/{id}` (≤280-char note). Payloads are curated — no raw
+  payloads/traces/secrets.
+- **Console tab** groups incidents into **Unresolved / Acknowledged / Silenced
+  (with time-left) / Recovered**, each with one-click **Acknowledge / Silence /
+  Unsilence**, the source/severity/occurrence summary, the operator note, and an
+  open-count badge. The normal product UI is untouched: no incident fields leak
+  into `GET /jobs/{id}` and there is no user-facing `/incidents` route.
+- Pinned by `backend/tests/test_operator_incidents.py` (open→ack, occurrence
+  bumping, bounded silence muting routing while still existing, honest
+  silence-expiry reopen, unsilence preserving ack, recovery + fresh-episode
+  recurrence, silence ≠ suppression, HTTP gating/actions, config bounds, no
+  user-route leak) and `frontend/lib/operator.test.mts` (`incidentTone`).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

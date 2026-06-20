@@ -341,11 +341,19 @@ class DeliveryService:
         much it escalated. Records per-signal occurrences (for repeated-condition
         escalation) and bumps durable per-destination routing counters."""
         if not getattr(settings, "webhooks_enabled", True) or not alerts:
-            return {"routed": 0, "suppressed": 0, "skipped": 0, "escalated": 0}
+            return {"routed": 0, "suppressed": 0, "skipped": 0, "escalated": 0, "silenced": 0}
         default_window = int(getattr(settings, "webhook_suppress_seconds", 300))
         resolve_seconds = int(getattr(settings, "webhook_escalation_resolve_seconds", 1800))
         now = _utc_now()
-        counts = {"routed": 0, "suppressed": 0, "skipped": 0, "escalated": 0}
+        counts = {"routed": 0, "suppressed": 0, "skipped": 0, "escalated": 0, "silenced": 0}
+        # Operator silence is a DISTINCT concept from suppression/cooldown: a
+        # signal an operator has muted (bounded) is not routed anywhere. Best-effort
+        # — never let the incident layer break delivery.
+        try:
+            from app.incidents import incident_service
+            silenced = incident_service.silenced_signals()
+        except Exception:
+            silenced = set()
         try:
             with self._session_factory() as session:
                 # One occurrence bump per (alert signal) per sweep — episodic so a
@@ -371,6 +379,9 @@ class DeliveryService:
                     window = dest.suppress_seconds if dest.suppress_seconds is not None else default_window
                     for alert in alerts:
                         sig = _alert_signal(alert)
+                        if sig in silenced:  # operator-muted — distinct from suppression
+                            counts["silenced"] += 1
+                            continue
                         dedup = f"alert:{dest.id}:{sig}"
                         in_flight, last_sev, last_age = self._dedup_state(session, dedup, now)
                         decision, _reason = alert_routing_decision(

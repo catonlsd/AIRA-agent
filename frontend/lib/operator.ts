@@ -128,6 +128,26 @@ export type DestinationTuning = {
   max_attempts?: number;
 };
 
+export type IncidentState = "open" | "acknowledged" | "silenced" | "recovered";
+
+export type Incident = {
+  id: string;
+  signal: string;
+  classification: string | null;
+  subject: string | null;
+  source: string;
+  state: IncidentState;
+  severity: string | null;
+  occurrences: number;
+  note: string | null;
+  acknowledged: boolean;
+  acknowledged_at: string | null;
+  silenced_until: string | null;
+  recovered_at: string | null;
+  first_seen: string | null;
+  last_seen: string | null;
+};
+
 export type Tone = "good" | "warn" | "bad" | "muted";
 
 // ── pure helpers (unit-tested) ───────────────────────────────────────────────
@@ -180,6 +200,18 @@ const _STATUS_TONE: Record<string, Tone> = {
 /** Tone for a delivery status in the history table. */
 export function deliveryStatusTone(status: string): Tone {
   return _STATUS_TONE[status] ?? "muted";
+}
+
+const _INCIDENT_TONE: Record<IncidentState, Tone> = {
+  open: "bad",
+  acknowledged: "warn",
+  silenced: "muted",
+  recovered: "good",
+};
+
+/** Tone for an incident's workflow state. */
+export function incidentTone(state: IncidentState): Tone {
+  return _INCIDENT_TONE[state] ?? "muted";
 }
 
 export function hasOperatorKey(): boolean {
@@ -326,4 +358,30 @@ export async function patchDestination(destId: string, fields: DestinationTuning
   if (res.ok) return { ok: true };
   const body = await res.json().catch(() => ({}));
   return { ok: false, message: body?.detail };
+}
+
+// ── incident workflow ────────────────────────────────────────────────────────
+
+export async function fetchIncidents(): Promise<Incident[]> {
+  const res = await fetch(`${API_URL}/operator/incidents`, { cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return [];
+  const body = await res.json();
+  return Array.isArray(body?.incidents) ? body.incidents : [];
+}
+
+export async function ackIncident(id: string): Promise<boolean> {
+  const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(id)}/ack`, { method: "POST", cache: "no-store", headers: opHeaders() });
+  return res.ok;
+}
+
+export async function silenceIncident(id: string, seconds?: number): Promise<boolean> {
+  const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(id)}/silence`, {
+    method: "POST", cache: "no-store", headers: opHeaders(true), body: JSON.stringify({ seconds }),
+  });
+  return res.ok;
+}
+
+export async function unsilenceIncident(id: string): Promise<boolean> {
+  const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(id)}/unsilence`, { method: "POST", cache: "no-store", headers: opHeaders() });
+  return res.ok;
 }

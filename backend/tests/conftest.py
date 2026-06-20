@@ -63,6 +63,7 @@ def _isolate_guided_flows():
     from app.observability import observability
     from app.pins import pin_service
     from app.usage_limits import usage_limiter
+    from app.incidents import incident_service
     from app.webhooks import delivery_service
 
     # Keep tests hermetic: no live web grounding, no network image sourcing.
@@ -81,6 +82,7 @@ def _isolate_guided_flows():
     execution_queue.clear_all()
     observability.clear_all()
     delivery_service.clear_all()
+    incident_service.clear_all()
     yield
     guided_flow_store.clear_all()
     usage_limiter.reset()

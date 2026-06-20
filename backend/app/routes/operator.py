@@ -406,11 +406,110 @@ def operator_get_delivery(delivery_id: str, request: Request) -> dict:
 def operator_deliveries_sweep(request: Request) -> dict:
     """Route current alert-worthy policy results to subscribed destinations, then
     flush pending deliveries. The manual trigger for the delivery foundation (a
-    scheduled worker calls the same path later). Returns routing + delivery counts."""
+    scheduled worker calls the same path later). Also refreshes operator incidents:
+    opens/bumps current conditions and recovers cleared ones."""
     _require_operator(request)
+    from app.incidents import incident_service, signal_of
     from app.ops_policy import ops_policy
     from app.webhooks import delivery_service
 
-    routing = delivery_service.route_alerts_detailed(ops_policy.alerts())
+    alerts = ops_policy.alerts()
+    incident_service.observe(alerts)  # open/bump before routing (silence then gates)
+    routing = delivery_service.route_alerts_detailed(alerts)
     result = delivery_service.deliver_pending()
+    incident_service.recover_stale([signal_of(a) for a in alerts])
     return {"routing": routing, **result}
+
+
+# ── Operator incident workflow (acknowledge / silence / recovery) ─────────────
+
+
+class IncidentNote(BaseModel):
+    note: str = Field(..., max_length=280)
+
+
+class SilenceBody(BaseModel):
+    seconds: int | None = None
+
+
+def _refresh_incidents() -> None:
+    """Make the incident list a live view: open/bump current conditions and recover
+    cleared ones from the current policy alert set. Best-effort."""
+    try:
+        from app.incidents import incident_service, signal_of
+        from app.ops_policy import ops_policy
+
+        alerts = ops_policy.alerts()
+        incident_service.observe(alerts)
+        incident_service.recover_stale([signal_of(a) for a in alerts])
+    except Exception:
+        pass
+
+
+@router.get("/incidents")
+def operator_list_incidents(request: Request, include_recovered: bool = True, limit: int = 100) -> dict:
+    """Current operator incidents (live): open / acknowledged / silenced / recovered
+    for recurring operational conditions. Operator-only; curated (no internals)."""
+    _require_operator(request)
+    from app.incidents import incident_service
+
+    _refresh_incidents()
+    return {"incidents": incident_service.list(include_recovered=include_recovered, limit=limit)}
+
+
+@router.get("/incidents/{incident_id}")
+def operator_get_incident(incident_id: str, request: Request) -> dict:
+    _require_operator(request)
+    from app.incidents import incident_service
+
+    incident = incident_service.get(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    return {"incident": incident}
+
+
+@router.post("/incidents/{incident_id}/ack")
+def operator_ack_incident(incident_id: str, request: Request) -> dict:
+    _require_operator(request)
+    from app.incidents import incident_service
+
+    incident = incident_service.acknowledge(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    return {"incident": incident}
+
+
+@router.post("/incidents/{incident_id}/silence")
+def operator_silence_incident(incident_id: str, body: SilenceBody, request: Request) -> dict:
+    """Silence a noisy recurring condition for a BOUNDED window (capped by
+    `incident_max_silence_seconds`). The incident still exists; routing for its
+    signal is muted until the window elapses, then it reopens honestly if it recurs."""
+    _require_operator(request)
+    from app.incidents import incident_service
+
+    incident = incident_service.silence(incident_id, seconds=body.seconds)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    return {"incident": incident}
+
+
+@router.post("/incidents/{incident_id}/unsilence")
+def operator_unsilence_incident(incident_id: str, request: Request) -> dict:
+    _require_operator(request)
+    from app.incidents import incident_service
+
+    incident = incident_service.unsilence(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    return {"incident": incident}
+
+
+@router.patch("/incidents/{incident_id}")
+def operator_note_incident(incident_id: str, body: IncidentNote, request: Request) -> dict:
+    _require_operator(request)
+    from app.incidents import incident_service
+
+    incident = incident_service.set_note(incident_id, body.note)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    return {"incident": incident}

@@ -11,7 +11,11 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
+  BellOff,
+  BellRing,
+  Check,
   CheckCircle2,
+  Flame,
   GitBranch,
   History,
   LayoutGrid,
@@ -25,6 +29,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  ackIncident,
   canRedrive,
   clearCooldown,
   clearOperatorKey,
@@ -35,15 +40,19 @@ import {
   fetchDeadLetters,
   fetchDeliveries,
   fetchDestinationHealth,
+  fetchIncidents,
   fetchLineage,
   fetchRoutingPreview,
   getOperatorKey,
   healthTone,
+  incidentTone,
   patchDestination,
   redriveBlockedReason,
   redriveDelivery,
   runSweep,
   setOperatorKey,
+  silenceIncident,
+  unsilenceIncident,
   verifyOperator,
   type DeadLetter,
   type Delivery,
@@ -51,6 +60,7 @@ import {
   type DeliveryLineage,
   type DestinationHealth,
   type DestinationTuning,
+  type Incident,
   type RoutingPreview,
   type Tone,
 } from "@/lib/operator";
@@ -97,7 +107,64 @@ function relTime(iso: string | null): string {
   return `${Math.round(s / 86400)}d ago`;
 }
 
-type Tab = "overview" | "history" | "recovery";
+type Tab = "overview" | "incidents" | "history" | "recovery";
+
+function relTimeUntil(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso).getTime();
+  if (Number.isNaN(d)) return "";
+  const s = Math.max(0, Math.round((d - Date.now()) / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.round(s / 60)}m`;
+  return `${Math.round(s / 3600)}h`;
+}
+
+// ── incident row (Incidents tab) ─────────────────────────────────────────────
+function IncidentRow({ inc, busy, onAck, onSilence, onUnsilence }: {
+  inc: Incident; busy: boolean;
+  onAck: () => void; onSilence: () => void; onUnsilence: () => void;
+}) {
+  const silenceLeft = inc.state === "silenced" ? relTimeUntil(inc.silenced_until) : "";
+  return (
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone={incidentTone(inc.state)}>{inc.state}</Badge>
+        <span className="text-sm font-black text-[var(--text-strong)]">{inc.classification}</span>
+        <span className="text-xs text-[var(--text-muted)]">· {inc.subject}</span>
+        {inc.severity ? <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-subtle)]">{inc.severity}</span> : null}
+        <span className="ml-auto text-[11px] text-[var(--text-subtle)]">×{inc.occurrences} · last {relTime(inc.last_seen)}</span>
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--text-muted)]">
+        <span>source: {inc.source}</span>
+        {inc.acknowledged_at ? <span>acknowledged {relTime(inc.acknowledged_at)}</span> : null}
+        {inc.state === "silenced" && silenceLeft ? <span className="font-semibold text-[var(--text-strong)]">silenced · {silenceLeft} left</span> : null}
+        {inc.state === "recovered" && inc.recovered_at ? <span className="font-semibold text-[var(--success)]">recovered {relTime(inc.recovered_at)}</span> : null}
+      </div>
+      {inc.note ? <p className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1.5 text-[11px] text-[var(--text-muted)]">📝 {inc.note}</p> : null}
+      {inc.state !== "recovered" ? (
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {!inc.acknowledged ? (
+            <button type="button" disabled={busy} onClick={onAck}
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-strong)] transition hover:border-[var(--border-strong)] disabled:opacity-50">
+              <Check className="h-3 w-3" /> Acknowledge
+            </button>
+          ) : null}
+          {inc.state === "silenced" ? (
+            <button type="button" disabled={busy} onClick={onUnsilence}
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-strong)] transition hover:border-[var(--border-strong)] disabled:opacity-50">
+              <BellRing className="h-3 w-3" /> Unsilence
+            </button>
+          ) : (
+            <button type="button" disabled={busy} onClick={onSilence}
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-strong)] transition hover:border-[var(--border-strong)] disabled:opacity-50">
+              <BellOff className="h-3 w-3" /> Silence
+            </button>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 // ── delivery-lineage drill-down (shared by History + Recovery) ────────────────
 function LineageChain({ lineage }: { lineage: DeliveryLineage }) {
@@ -127,6 +194,7 @@ export default function OperatorConsole() {
   const [keyInput, setKeyInput] = useState("");
   const [keyError, setKeyError] = useState("");
   const [tab, setTab] = useState<Tab>("overview");
+  const [incidents, setIncidents] = useState<Incident[]>([]);
   const [analytics, setAnalytics] = useState<DeliveryAnalytics | null>(null);
   const [destinations, setDestinations] = useState<DestinationHealth[]>([]);
   const [deadLetters, setDeadLetters] = useState<DeadLetter[]>([]);
@@ -150,16 +218,19 @@ export default function OperatorConsole() {
     setDeliveries(await fetchDeliveries({ status: filter.status || undefined, destinationId: filter.destinationId || undefined, limit: 60 }));
   }, [filter]);
 
+  const loadIncidents = useCallback(async () => { setIncidents(await fetchIncidents()); }, []);
+
   useEffect(() => {
     if (!getOperatorKey()) { setStatus("needs_key"); return; }
     verifyOperator().then((ok) => {
-      if (ok) { setStatus("ready"); void load(); } else { setStatus("needs_key"); }
+      if (ok) { setStatus("ready"); void load(); void loadIncidents(); } else { setStatus("needs_key"); }
     });
-  }, [load]);
+  }, [load, loadIncidents]);
 
   useEffect(() => {
     if (status === "ready" && tab === "history") void loadHistory();
-  }, [status, tab, loadHistory]);
+    if (status === "ready" && tab === "incidents") void loadIncidents();
+  }, [status, tab, loadHistory, loadIncidents]);
 
   const connect = useCallback(async () => {
     setKeyError("");
@@ -208,6 +279,24 @@ export default function OperatorConsole() {
     setTuneForm({}); // tuning fields default to "unchanged" — only edited fields are sent
   }, []);
 
+  const onAck = useCallback(async (id: string) => {
+    setBusy(id);
+    try { if (await ackIncident(id)) flashMsg("Acknowledged."); await loadIncidents(); }
+    finally { setBusy(null); }
+  }, [loadIncidents]);
+
+  const onSilence = useCallback(async (id: string) => {
+    setBusy(id);
+    try { if (await silenceIncident(id)) flashMsg("Silenced (bounded)."); await loadIncidents(); }
+    finally { setBusy(null); }
+  }, [loadIncidents]);
+
+  const onUnsilence = useCallback(async (id: string) => {
+    setBusy(id);
+    try { if (await unsilenceIncident(id)) flashMsg("Unsilenced."); await loadIncidents(); }
+    finally { setBusy(null); }
+  }, [loadIncidents]);
+
   const onSaveTuning = useCallback(async (destId: string) => {
     setBusy(destId);
     try {
@@ -255,8 +344,10 @@ export default function OperatorConsole() {
     );
   }
 
-  const TABS: { id: Tab; label: string; icon: typeof LayoutGrid }[] = [
+  const openIncidentCount = incidents.filter((i) => i.state === "open").length;
+  const TABS: { id: Tab; label: string; icon: typeof LayoutGrid; badge?: number }[] = [
     { id: "overview", label: "Overview", icon: LayoutGrid },
+    { id: "incidents", label: "Incidents", icon: Flame, badge: openIncidentCount },
     { id: "history", label: "History", icon: History },
     { id: "recovery", label: "Recovery", icon: AlertTriangle },
   ];
@@ -299,6 +390,7 @@ export default function OperatorConsole() {
               tab === t.id ? "bg-[var(--accent)] text-[var(--accent-contrast,#fff)]" : "border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:text-[var(--text-strong)]")}>
             <t.icon className="h-3.5 w-3.5" /> {t.label}
             {t.id === "recovery" && deadLetters.length > 0 ? <span className="ml-0.5 rounded-full bg-[var(--danger)] px-1.5 text-[10px] text-white">{deadLetters.length}</span> : null}
+            {t.id === "incidents" && t.badge ? <span className="ml-0.5 rounded-full bg-[var(--danger)] px-1.5 text-[10px] text-white">{t.badge}</span> : null}
           </button>
         ))}
       </div>
@@ -436,6 +528,46 @@ export default function OperatorConsole() {
               </div>
             )}
           </section>
+        </div>
+      ) : null}
+
+      {/* ── Incidents ── */}
+      {tab === "incidents" ? (
+        <div className="grid gap-5">
+          {incidents.length === 0 ? (
+            <section className="sarvam-card rounded-[1.5rem] p-8 text-center">
+              <CheckCircle2 className="mx-auto mb-2 h-7 w-7 text-[var(--success)]" />
+              <p className="text-sm font-black text-[var(--text-strong)]">No incidents.</p>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">Recurring alert conditions appear here for acknowledge / silence / recovery.</p>
+            </section>
+          ) : (
+            <>
+              {([
+                { state: "open", title: "Unresolved", hint: "Active conditions needing attention" },
+                { state: "acknowledged", title: "Acknowledged", hint: "Being worked — still active" },
+                { state: "silenced", title: "Silenced", hint: "Muted for a bounded window — still exists" },
+                { state: "recovered", title: "Recovered", hint: "Condition cleared" },
+              ] as const).map(({ state, title, hint }) => {
+                const rows = incidents.filter((i) => i.state === state);
+                if (rows.length === 0) return null;
+                return (
+                  <section key={state} className="sarvam-card rounded-[1.5rem] p-5">
+                    <div className="mb-3 flex items-baseline gap-2">
+                      <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">{title}</p>
+                      <span className="text-[11px] text-[var(--text-muted)]">· {hint}</span>
+                      <span className="ml-auto text-[11px] font-black text-[var(--text-muted)]">{rows.length}</span>
+                    </div>
+                    <div className="grid gap-2">
+                      {rows.map((inc) => (
+                        <IncidentRow key={inc.id} inc={inc} busy={busy === inc.id}
+                          onAck={() => void onAck(inc.id)} onSilence={() => void onSilence(inc.id)} onUnsilence={() => void onUnsilence(inc.id)} />
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
+            </>
+          )}
         </div>
       ) : null}
 

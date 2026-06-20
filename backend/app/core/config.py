@@ -190,6 +190,13 @@ class Settings(BaseSettings):
     webhook_cooldown_threshold: int = 5
     webhook_cooldown_seconds: int = 600
 
+    # ── Operator incident workflow (acknowledge / silence; operator-only) ──
+    # Max bound for an operator silence so it is NEVER an infinite black hole; a
+    # silenced incident still exists in operator state and auto-reopens on expiry.
+    incident_max_silence_seconds: int = 86400  # 24h
+    # Default silence duration the console offers. >= 1.
+    incident_default_silence_seconds: int = 3600  # 1h
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -251,6 +258,13 @@ class Settings(BaseSettings):
     def _validate_cooldown_threshold(cls, value):
         if int(value) < 1:
             raise ValueError("webhook_cooldown_threshold must be >= 1")
+        return value
+
+    @field_validator("incident_max_silence_seconds", "incident_default_silence_seconds")
+    @classmethod
+    def _validate_incident_silence(cls, value):
+        if int(value) < 1:
+            raise ValueError("incident silence durations must be >= 1")
         return value
 
     @field_validator("cors_origins", mode="before")
