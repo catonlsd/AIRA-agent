@@ -418,6 +418,11 @@ def operator_deliveries_sweep(request: Request) -> dict:
     routing = delivery_service.route_alerts_detailed(alerts)
     result = delivery_service.deliver_pending()
     incident_service.recover_stale([signal_of(a) for a in alerts])
+    try:  # best-effort: retry any pending external incident syncs
+        from app.incident_sync import incident_sync_service
+        incident_sync_service.flush_pending()
+    except Exception:
+        pass
     return {"routing": routing, **result}
 
 
@@ -571,3 +576,102 @@ def operator_note_incident(incident_id: str, body: IncidentNote, request: Reques
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found.")
     return {"incident": incident}
+
+
+# ── External incident sync (operator-only OUTBOUND export targets + records) ──
+
+
+class IncidentTargetBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    url: str = Field(..., min_length=1, max_length=500)
+    kind: str = Field(default="generic", max_length=24)
+    sync_actions: str | None = Field(default=None, max_length=255)
+    secret: str | None = Field(default=None, max_length=255)
+    enabled: bool = True
+
+
+class IncidentTargetUpdate(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
+    url: str | None = Field(default=None, max_length=500)
+    kind: str | None = Field(default=None, max_length=24)
+    sync_actions: str | None = Field(default=None, max_length=255)
+    secret: str | None = Field(default=None, max_length=255)
+    enabled: bool | None = None
+
+
+@router.get("/incident-targets")
+def operator_list_incident_targets(request: Request) -> dict:
+    """Configured outbound incident-sync targets (curated; secrets never returned)."""
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    return {"targets": incident_sync_service.list_targets()}
+
+
+@router.post("/incident-targets")
+def operator_create_incident_target(body: IncidentTargetBody, request: Request) -> dict:
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    target = incident_sync_service.create_target(
+        name=body.name, url=body.url, kind=body.kind,
+        sync_actions=body.sync_actions, secret=body.secret, enabled=body.enabled)
+    if target is None:
+        raise HTTPException(status_code=400, detail="Invalid target (name, http(s) url, and known kind required).")
+    return {"target": target}
+
+
+@router.patch("/incident-targets/{target_id}")
+def operator_update_incident_target(target_id: str, body: IncidentTargetUpdate, request: Request) -> dict:
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    target = incident_sync_service.update_target(target_id, **body.model_dump(exclude_none=True))
+    if target is None:
+        raise HTTPException(status_code=404, detail="Target not found or invalid update.")
+    return {"target": target}
+
+
+@router.delete("/incident-targets/{target_id}")
+def operator_delete_incident_target(target_id: str, request: Request) -> dict:
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    if not incident_sync_service.delete_target(target_id):
+        raise HTTPException(status_code=404, detail="Target not found.")
+    return {"ok": True}
+
+
+@router.get("/incident-sync")
+def operator_list_incident_sync(request: Request, status: str | None = None,
+                                incident_id: str | None = None, limit: int = 50) -> dict:
+    """Recent incident-sync attempts (curated). Filter by status / incident."""
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    return {"records": incident_sync_service.list_records(status=status, incident_id=incident_id, limit=limit)}
+
+
+@router.get("/incident-sync/{record_id}")
+def operator_get_incident_sync(record_id: str, request: Request) -> dict:
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    record = incident_sync_service.get_record(record_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Sync record not found.")
+    return {"record": record}
+
+
+@router.post("/incident-sync/{record_id}/redrive")
+def operator_redrive_incident_sync(record_id: str, request: Request) -> dict:
+    """Operator redrive of a terminal-failed incident sync (bounded, idempotent)."""
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    result = incident_sync_service.redrive(record_id)
+    if not result.get("ok") and result.get("message") == "Sync record not found.":
+        raise HTTPException(status_code=404, detail=result["message"])
+    if not result.get("ok"):
+        raise HTTPException(status_code=409, detail=result.get("message", "Cannot redrive."))
+    return result

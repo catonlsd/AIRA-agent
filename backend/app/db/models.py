@@ -368,6 +368,66 @@ class OperatorIncidentEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
 
 
+class ExternalIncidentTarget(Base):
+    """An operator-configured OUTBOUND destination for incident export/sync (G-5).
+
+    Deliberately separate from `webhook_destinations` (event/alert routing): an
+    incident target mirrors operator *incident* transitions (opened / acknowledged /
+    assigned / recovered / …) to an external incident or ticket tool, one-way. The
+    `secret` is stored for HMAC signing but NEVER returned by read APIs (only
+    `has_secret`). `sync_actions` is an optional CSV allow-list of which transitions
+    to mirror (empty = all). Operator-only; no user-facing surface.
+    """
+
+    __tablename__ = "external_incident_targets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    kind: Mapped[str] = mapped_column(String(24), default="generic")  # generic|pagerduty|… (adapter-ready)
+    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    secret: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    sync_actions: Mapped[str | None] = mapped_column(String(255), nullable=True)  # CSV allow-list; null = all
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+
+class IncidentSyncRecord(Base):
+    """A durable, curated record of one incident transition exported to one target.
+
+    Correlates back to the source incident (`incident_id` / `signal`) and snapshots
+    the curated incident fields at sync time — state, severity, classification,
+    subject, assignee, and a short note summary — so the external payload is stable
+    and never carries raw payloads/traces/secrets/owners. Status runs
+    pending → synced | failed; `attempts` is bounded by `incident_sync_max_attempts`,
+    and a terminal-failed record can be operator-redriven (a fresh record linked via
+    `redrive_of`, bounded by `incident_sync_max_redrives`). Operator-only.
+    """
+
+    __tablename__ = "incident_sync_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    target_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    incident_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    signal: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    action: Mapped[str] = mapped_column(String(24), nullable=False)
+    actor: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    severity: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    classification: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    subject: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    assignee: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(280), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)  # pending|synced|failed
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    external_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    redrive_of: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+
 class ContextBundle(Base):
     """A durable, scope-owned "handoff pack" — a saved combination of context
     references (documents, artifacts, runs) that can be reloaded into chat later.

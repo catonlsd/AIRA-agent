@@ -1083,6 +1083,56 @@ ticketing product — one owner, one short note, one curated trail.
   collab gating + 404, no `assignee` leak into `/jobs/{id}`) and
   `frontend/lib/operator.test.mts` (`incidentEventLabel`).
 
+### External incident sync — outbound export to incident tools (G-5)
+
+Incidents can now **mirror outward** to an external incident/ticket tool instead of
+being copy-pasted by hand. Deliberately **one-way (outbound from AIRA-X)** and
+honest about it — no inbound/bidirectional pretence — and kept **distinct from
+webhook event/alert routing** (`app/webhooks.py` fans job-lifecycle events; this
+mirrors *incident workflow transitions*). A small, durable foundation, not a
+ticketing product.
+
+- **Targets** (`app/incident_sync.py`, table `external_incident_targets`): operator
+  config for an outbound destination — `name`, `url`, `kind` (generic / pagerduty /
+  jira / opsgenie, adapter-ready), optional `sync_actions` CSV allow-list (which
+  transitions to mirror; empty = all), and a `secret` **stored for HMAC signing but
+  never returned** (reads show only `has_secret`).
+- **Records** (table `incident_sync_records`): one durable row per (transition,
+  target), **correlated to the source incident** (`incident_id` / `signal`) and
+  **snapshotting curated fields** at sync time — state, severity, classification,
+  subject, assignee, short note — never raw payloads/traces/secrets/owners. Status
+  runs `pending → synced | failed`.
+- **The hook.** `IncidentWorkflowService` mirrors every committed transition via a
+  guarded `_emit_sync` → `incident_sync_service.export(snapshot, action, actor)`:
+  `observe()` emits opened/reopened, `recover_stale()` emits recovered, and each
+  operator action (ack/silence/unsilence/assign/unassign/reassign/note_updated)
+  emits after commit. Best-effort and a **no-op when no targets exist** — external
+  sync can never break the incident workflow.
+- **Bounded & recoverable.** Each record attempts once on creation; a failed send is
+  **terminal `failed` once `attempts` reaches `incident_sync_max_attempts`**
+  (default 4), else stays `pending` for the sweep's `flush_pending()` retry. A
+  terminal-failed record is **operator-redrivable** (`redrive()` → fresh linked
+  record, bounded by `incident_sync_max_redrives`, idempotent), mirroring the
+  delivery dead-letter pattern. The HTTP send is the single injectable `_send`
+  (HMAC `X-AIRA-Signature`), so the state machine is network-free in tests.
+- **Operator-only APIs** (`app/routes/operator.py`): `GET/POST
+  /operator/incident-targets`, `PATCH/DELETE /operator/incident-targets/{id}`,
+  `GET /operator/incident-sync?status=&incident_id=`, `GET
+  /operator/incident-sync/{id}`, `POST /operator/incident-sync/{id}/redrive`.
+- **Console** (`app/operator/page.tsx`): a calm **External sync** card at the top of
+  the Incidents tab shows configured targets (name/kind/enabled, failure counter)
+  and recent sync attempts (status badge, action, target, error, time) with a
+  **Redrive** button on failed ones — surfacing "was it synced? to where? did it
+  fail? is it behind?" without a payload dump. Still operator-only: no
+  target/record fields leak into `GET /jobs/{id}` and there is no user-facing
+  `/incident-sync` or `/incident-targets` route.
+- Pinned by `backend/tests/test_incident_sync.py` (target CRUD + secret hidden,
+  invalid target/config rejected, opened/ack/assign/note transitions exported with
+  curated correlated payloads, `sync_actions` allow-list filtering, disabled target
+  skipped, bounded-retry terminal failure + redrive recovery, HTTP gating + 404, no
+  sync field leak into `/jobs/{id}`) and `frontend/lib/operator.test.mts`
+  (`syncStatusTone`).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

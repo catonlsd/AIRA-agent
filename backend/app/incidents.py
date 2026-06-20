@@ -77,6 +77,7 @@ class IncidentWorkflowService:
         if not alerts:
             return
         now = _now()
+        transitions: list[tuple[str, str]] = []  # (incident_id, action) to mirror after commit
         try:
             with self._session_factory() as session:
                 for alert in alerts:
@@ -93,6 +94,7 @@ class IncidentWorkflowService:
                             first_seen=now, last_seen=now))
                         self._log(session, new_id, "opened", actor=None,
                                   detail=alert.get("classification"), state=STATE_OPEN)
+                        transitions.append((new_id, "opened"))
                         continue
                     silence_expired = (row.state == STATE_SILENCED
                                        and (row.silenced_until is None or row.silenced_until <= now))
@@ -107,12 +109,15 @@ class IncidentWorkflowService:
                         # Assignment carries over (the owner still owns the recurrence).
                         self._log(session, row.id, "reopened", actor=None,
                                   detail="recurred", state=STATE_OPEN)
+                        transitions.append((row.id, "reopened"))
                     row.occurrences = (row.occurrences or 0) + 1
                     row.severity = sev
                     row.last_seen = now
                 session.commit()
         except Exception:
-            pass  # incident bookkeeping must never break the sweep
+            return  # incident bookkeeping must never break the sweep
+        for incident_id, action in transitions:
+            self._emit_sync(incident_id, action, None)
 
     def recover_stale(self, active_signals: list[str]) -> int:
         """Any tracked, non-recovered incident whose signal is no longer in the
@@ -120,6 +125,7 @@ class IncidentWorkflowService:
         ack/silence). Returns how many recovered."""
         active = set(active_signals)
         now = _now()
+        recovered_ids: list[str] = []
         try:
             with self._session_factory() as session:
                 rows = (
@@ -127,7 +133,6 @@ class IncidentWorkflowService:
                     .filter(OperatorIncident.state != STATE_RECOVERED)
                     .all()
                 )
-                recovered = 0
                 for row in rows:
                     if row.signal not in active:
                         row.state = STATE_RECOVERED
@@ -135,11 +140,13 @@ class IncidentWorkflowService:
                         row.silenced_until = None
                         self._log(session, row.id, "recovered", actor=None,
                                   detail="condition cleared", state=STATE_RECOVERED)
-                        recovered += 1
+                        recovered_ids.append(row.id)
                 session.commit()
-                return recovered
         except Exception:
             return 0
+        for incident_id in recovered_ids:
+            self._emit_sync(incident_id, "recovered", None)
+        return len(recovered_ids)
 
     # ── routing integration (the ONE coupling: silence gates routing) ─────────
 
@@ -222,6 +229,7 @@ class IncidentWorkflowService:
         return self._apply(incident_id, fn, actor)
 
     def _apply(self, incident_id: str, fn, actor: Optional[str]) -> Optional[dict[str, Any]]:
+        emitted_action: Optional[str] = None
         with self._session_factory() as session:
             row = session.get(OperatorIncident, incident_id)
             if row is None:
@@ -230,8 +238,12 @@ class IncidentWorkflowService:
             if result is not None:
                 action, detail = result
                 self._log(session, row.id, action, actor=actor, detail=detail, state=row.state)
+                emitted_action = action
             session.commit()
-            return self._clean(row)
+            clean = self._clean(row)
+        if emitted_action is not None:
+            self._emit_sync(incident_id, emitted_action, actor, incident=clean)
+        return clean
 
     @staticmethod
     def _log(session, incident_id: str, action: str, *, actor: Optional[str],
@@ -240,6 +252,20 @@ class IncidentWorkflowService:
         session.add(OperatorIncidentEvent(
             incident_id=incident_id, action=action, actor=actor,
             detail=(detail[:280] if detail else None), state=state, created_at=_now()))
+
+    def _emit_sync(self, incident_id: str, action: str, actor: Optional[str],
+                   *, incident: Optional[dict[str, Any]] = None) -> None:
+        """Mirror a committed incident transition to external sync targets. Lazily
+        imported and fully guarded — external sync must NEVER break the workflow,
+        and is a no-op when no targets are configured."""
+        try:
+            from app.incident_sync import incident_sync_service
+
+            snapshot = incident if incident is not None else self.get(incident_id)
+            if snapshot is not None:
+                incident_sync_service.export(snapshot, action, actor=actor)
+        except Exception:
+            pass
 
     # ── reads ─────────────────────────────────────────────────────────────────
 

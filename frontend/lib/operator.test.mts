@@ -11,6 +11,7 @@ import {
   incidentEventLabel,
   incidentTone,
   redriveBlockedReason,
+  syncStatusTone,
 } from "./operator.ts";
 
 test("healthTone maps each health label to a calm tone", () => {
@@ -63,4 +64,11 @@ test("incidentEventLabel humanizes each trail action; unknown passes through", (
   assert.equal(incidentEventLabel("note_updated"), "Note updated");
   assert.equal(incidentEventLabel("recovered"), "Recovered");
   assert.equal(incidentEventLabel("mystery"), "mystery");
+});
+
+test("syncStatusTone maps each sync status to a tone", () => {
+  assert.equal(syncStatusTone("synced"), "good");
+  assert.equal(syncStatusTone("pending"), "warn");
+  assert.equal(syncStatusTone("failed"), "bad");
+  assert.equal(syncStatusTone("weird"), "muted");
 });

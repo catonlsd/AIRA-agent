@@ -24,6 +24,7 @@ import {
   MessageSquarePlus,
   RefreshCw,
   Send,
+  Share2,
   ShieldCheck,
   SlidersHorizontal,
   Snowflake,
@@ -47,6 +48,8 @@ import {
   fetchDeliveries,
   fetchDestinationHealth,
   fetchIncidentHistory,
+  fetchIncidentSync,
+  fetchIncidentTargets,
   fetchIncidents,
   fetchLineage,
   fetchRoutingPreview,
@@ -59,10 +62,12 @@ import {
   patchDestination,
   redriveBlockedReason,
   redriveDelivery,
+  redriveIncidentSync,
   runSweep,
   setOperatorKey,
   setOperatorName,
   silenceIncident,
+  syncStatusTone,
   unassignIncident,
   unsilenceIncident,
   verifyOperator,
@@ -74,6 +79,8 @@ import {
   type DestinationTuning,
   type Incident,
   type IncidentEvent,
+  type IncidentSyncRecord,
+  type IncidentTarget,
   type RoutingPreview,
   type Tone,
 } from "@/lib/operator";
@@ -132,8 +139,63 @@ function relTimeUntil(iso: string | null): string {
   return `${Math.round(s / 3600)}h`;
 }
 
-// ── incident row (Incidents tab) — state + assignment + notes + action trail ──
+// ── external incident sync (Incidents tab) — targets + recent attempts ────────
 const INC_BTN = "inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-strong)] transition hover:border-[var(--border-strong)] disabled:opacity-50";
+
+function SyncPanel({ targets, records, onRedrive, busyId }: {
+  targets: IncidentTarget[]; records: IncidentSyncRecord[];
+  onRedrive: (id: string) => void; busyId: string | null;
+}) {
+  if (targets.length === 0 && records.length === 0) return null;
+  const failed = records.filter((r) => r.status === "failed");
+  return (
+    <section className="sarvam-card rounded-[1.5rem] p-5">
+      <div className="mb-3 flex items-baseline gap-2">
+        <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <Share2 className="h-3.5 w-3.5" /> External sync
+        </p>
+        <span className="text-[11px] text-[var(--text-muted)]">· outbound incident export</span>
+        {failed.length > 0 ? <span className="ml-auto rounded-full bg-[var(--danger)] px-1.5 text-[10px] font-black text-white">{failed.length} failed</span> : null}
+      </div>
+
+      {targets.length > 0 ? (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {targets.map((t) => (
+            <span key={t.id} className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold",
+              t.enabled ? "border-[var(--border)] text-[var(--text-strong)]" : "border-[var(--border)] text-[var(--text-subtle)] line-through")}>
+              <span className={cn("h-1.5 w-1.5 rounded-full", t.enabled ? "bg-[var(--success)]" : "bg-[var(--text-subtle)]")} aria-hidden="true" />
+              {t.name} <span className="text-[var(--text-subtle)]">· {t.kind}</span>
+              {t.consecutive_failures > 0 ? <span className="text-[var(--danger)]">⚠ {t.consecutive_failures}</span> : null}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="mb-2 text-[11px] text-[var(--text-muted)]">No sync targets configured — incident transitions stay local.</p>
+      )}
+
+      {records.length > 0 ? (
+        <div className="grid gap-1">
+          {records.slice(0, 8).map((r) => (
+            <div key={r.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1.5 text-[11px]">
+              <Badge tone={syncStatusTone(r.status)}>{r.status}</Badge>
+              <span className="font-black text-[var(--text-strong)]">{incidentEventLabel(r.action)}</span>
+              <span className="text-[var(--text-muted)]">{r.classification ?? r.signal} → {r.target_name ?? r.target_kind}{r.is_redrive ? " (redrive)" : ""}</span>
+              {r.last_error ? <span className="text-[var(--danger)]">· {r.last_error}</span> : null}
+              <span className="ml-auto text-[var(--text-subtle)]">{relTime(r.created_at)}</span>
+              {r.status === "failed" ? (
+                <button type="button" disabled={busyId === r.id} onClick={() => onRedrive(r.id)} className={INC_BTN}>
+                  <RefreshCw className="h-3 w-3" /> Redrive
+                </button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+// ── incident row (Incidents tab) — state + assignment + notes + action trail ──
 
 function IncidentRow({ inc, operatorName, onChanged }: {
   inc: Incident; operatorName: string | null; onChanged: () => void;
@@ -295,6 +357,8 @@ export default function OperatorConsole() {
   const [tab, setTab] = useState<Tab>("overview");
   const [operatorName, setOperatorNameState] = useState<string | null>(null);
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [syncTargets, setSyncTargets] = useState<IncidentTarget[]>([]);
+  const [syncRecords, setSyncRecords] = useState<IncidentSyncRecord[]>([]);
   const [analytics, setAnalytics] = useState<DeliveryAnalytics | null>(null);
   const [destinations, setDestinations] = useState<DestinationHealth[]>([]);
   const [deadLetters, setDeadLetters] = useState<DeadLetter[]>([]);
@@ -318,7 +382,12 @@ export default function OperatorConsole() {
     setDeliveries(await fetchDeliveries({ status: filter.status || undefined, destinationId: filter.destinationId || undefined, limit: 60 }));
   }, [filter]);
 
-  const loadIncidents = useCallback(async () => { setIncidents(await fetchIncidents()); }, []);
+  const loadIncidents = useCallback(async () => {
+    const [inc, targets, records] = await Promise.all([fetchIncidents(), fetchIncidentTargets(), fetchIncidentSync({ limit: 30 })]);
+    setIncidents(inc);
+    setSyncTargets(targets);
+    setSyncRecords(records);
+  }, []);
 
   useEffect(() => {
     setOperatorNameState(getOperatorName());
@@ -347,6 +416,7 @@ export default function OperatorConsole() {
     setOperatorNameState(null);
     setStatus("needs_key");
     setAnalytics(null); setDestinations([]); setDeadLetters([]); setDeliveries([]); setIncidents([]);
+    setSyncTargets([]); setSyncRecords([]);
   }, []);
 
   const flashMsg = (msg: string) => { setFlash(msg); window.setTimeout(() => setFlash(""), 3000); };
@@ -377,6 +447,15 @@ export default function OperatorConsole() {
     const data = await fetchLineage(deliveryId);
     setLineage((l) => ({ ...l, [deliveryId]: data }));
   }, [lineage]);
+
+  const onRedriveSync = useCallback(async (id: string) => {
+    setBusy(id);
+    try {
+      const res = await redriveIncidentSync(id);
+      flashMsg(res.ok ? "Sync redriven." : res.message || "Could not redrive sync.");
+      await loadIncidents();
+    } finally { setBusy(null); }
+  }, [loadIncidents]);
 
   const startEdit = useCallback((d: DestinationHealth) => {
     setEditing(d.destination_id);
@@ -629,6 +708,7 @@ export default function OperatorConsole() {
       {/* ── Incidents ── */}
       {tab === "incidents" ? (
         <div className="grid gap-5">
+          <SyncPanel targets={syncTargets} records={syncRecords} onRedrive={(id) => void onRedriveSync(id)} busyId={busy} />
           {incidents.length === 0 ? (
             <section className="sarvam-card rounded-[1.5rem] p-8 text-center">
               <CheckCircle2 className="mx-auto mb-2 h-7 w-7 text-[var(--success)]" />

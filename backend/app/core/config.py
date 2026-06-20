@@ -197,6 +197,12 @@ class Settings(BaseSettings):
     # Default silence duration the console offers. >= 1.
     incident_default_silence_seconds: int = 3600  # 1h
 
+    # ── External incident sync (operator-only OUTBOUND export to incident tools) ──
+    # Bounded per-record send retry and bounded operator redrive of failed syncs —
+    # distinct from webhook delivery retry/redrive (incidents != event routing).
+    incident_sync_max_attempts: int = 4
+    incident_sync_max_redrives: int = 3
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -265,6 +271,13 @@ class Settings(BaseSettings):
     def _validate_incident_silence(cls, value):
         if int(value) < 1:
             raise ValueError("incident silence durations must be >= 1")
+        return value
+
+    @field_validator("incident_sync_max_attempts", "incident_sync_max_redrives")
+    @classmethod
+    def _validate_incident_sync(cls, value):
+        if int(value) < 1:
+            raise ValueError("incident sync attempt/redrive bounds must be >= 1")
         return value
 
     @field_validator("cors_origins", mode="before")

@@ -158,6 +158,52 @@ export type IncidentEvent = {
   at: string | null;
 };
 
+export type SyncStatus = "pending" | "synced" | "failed";
+
+export type IncidentTarget = {
+  id: string;
+  name: string;
+  kind: string;
+  url: string;
+  enabled: boolean;
+  sync_actions: string | null;
+  has_secret: boolean;
+  consecutive_failures: number;
+  created_at: string | null;
+};
+
+export type IncidentSyncRecord = {
+  id: string;
+  target_id: string;
+  target_name: string | null;
+  target_kind: string | null;
+  incident_id: string;
+  signal: string | null;
+  action: string;
+  actor: string | null;
+  state: string | null;
+  severity: string | null;
+  classification: string | null;
+  subject: string | null;
+  assignee: string | null;
+  note: string | null;
+  status: SyncStatus;
+  attempts: number;
+  last_error: string | null;
+  external_ref: string | null;
+  redrive_of: string | null;
+  is_redrive: boolean;
+  created_at: string | null;
+};
+
+/** Tone for an external-sync record status (pure; unit-tested). */
+export function syncStatusTone(status: string): Tone {
+  if (status === "synced") return "good";
+  if (status === "pending") return "warn";
+  if (status === "failed") return "bad";
+  return "muted";
+}
+
 /** Human-friendly label for an action-trail entry (pure; unit-tested). */
 export function incidentEventLabel(action: string): string {
   const labels: Record<string, string> = {
@@ -464,4 +510,32 @@ export async function fetchIncidentHistory(id: string): Promise<IncidentEvent[]>
   if (!res.ok) return [];
   const body = await res.json();
   return Array.isArray(body?.history) ? body.history : [];
+}
+
+// ── external incident sync (operator-only outbound export) ───────────────────
+
+export async function fetchIncidentTargets(): Promise<IncidentTarget[]> {
+  const res = await fetch(`${API_URL}/operator/incident-targets`, { cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return [];
+  const body = await res.json();
+  return Array.isArray(body?.targets) ? body.targets : [];
+}
+
+export async function fetchIncidentSync(opts: { status?: string; incidentId?: string; limit?: number } = {}): Promise<IncidentSyncRecord[]> {
+  const params = new URLSearchParams();
+  if (opts.status) params.set("status", opts.status);
+  if (opts.incidentId) params.set("incident_id", opts.incidentId);
+  if (opts.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  const res = await fetch(`${API_URL}/operator/incident-sync${qs ? `?${qs}` : ""}`, { cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return [];
+  const body = await res.json();
+  return Array.isArray(body?.records) ? body.records : [];
+}
+
+export async function redriveIncidentSync(id: string): Promise<{ ok: boolean; message?: string }> {
+  const res = await fetch(`${API_URL}/operator/incident-sync/${encodeURIComponent(id)}/redrive`, { method: "POST", cache: "no-store", headers: opHeaders() });
+  const body = await res.json().catch(() => null);
+  if (res.ok) return { ok: true, message: body?.message };
+  return { ok: false, message: body?.detail };
 }
