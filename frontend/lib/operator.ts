@@ -199,7 +199,14 @@ export type IncidentSyncRecord = {
 
 export type LinkStatus = "linked" | "never_linked" | "stale" | "missing_external" | "drifted" | "refreshed" | "detached";
 
-export type AdapterCapabilities = { refresh: boolean; push_outward: boolean; relink_validation: boolean };
+export type SupportLevel = "rich" | "refresh" | "outbound_only" | "none";
+
+export type AdapterCapabilities = {
+  refresh: boolean; push_outward: boolean; relink_validation: boolean;
+  status_sync: boolean; support_level: SupportLevel;
+};
+
+export type ExternalStateSuggestion = { code: string; tone: Tone; text: string };
 
 export type IncidentExternalLink = {
   target_id: string;
@@ -212,6 +219,10 @@ export type IncidentExternalLink = {
   last_checked_at: string | null;
   external_status: string | null;
   external_exists: boolean | null;
+  external_assignee: string | null;
+  external_severity: string | null;
+  external_updated_at: string | null;
+  external_comment_count: number | null;
   detached: boolean;
   detached_at: string | null;
   capabilities: AdapterCapabilities;
@@ -250,6 +261,8 @@ export type IncidentSyncStatus = {
       can_refresh: boolean; can_redrive: boolean; can_detach: boolean; can_relink: boolean;
       can_apply: boolean; apply_action: "accept_resolved" | "accept_missing" | null; can_push: boolean;
     };
+    support_level: SupportLevel;
+    suggestions: ExternalStateSuggestion[];
   };
 };
 
@@ -267,6 +280,15 @@ export function applyActionLabel(action: "accept_resolved" | "accept_missing" | 
   if (action === "accept_resolved") return "Apply external resolution (recover locally)";
   if (action === "accept_missing") return "Detach (external missing)";
   return "";
+}
+
+/** Human label for an adapter support level (pure; unit-tested). Honest about how
+ * much external insight a target's adapter actually provides. */
+export function supportLevelLabel(level: SupportLevel): string {
+  if (level === "rich") return "Rich status sync";
+  if (level === "refresh") return "Refresh-capable";
+  if (level === "outbound_only") return "Outbound only";
+  return "Not linked";
 }
 
 /** Tone for a reconciliation link status (pure; unit-tested). */

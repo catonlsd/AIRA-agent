@@ -457,6 +457,12 @@ class IncidentExternalLink(Base):
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     external_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
     external_exists: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Richer BOUNDED inbound snapshot (G-10) — only for adapters that support status
+    # sync. Strictly normalized + size-bounded; NEVER raw vendor payloads/comments.
+    external_assignee: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    external_severity: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    external_updated_at: Mapped[str | None] = mapped_column(String(40), nullable=True)  # vendor ISO string, bounded
+    external_comment_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Drift resolution (G-8): an operator may intentionally detach a bad/missing link.
     # A detached link is preserved (lineage) but excluded from drift/reconciliation.
     detached_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

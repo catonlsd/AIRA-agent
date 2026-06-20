@@ -73,6 +73,7 @@ import {
   redriveIncidentSyncContext,
   refreshIncidentSync,
   relinkIncident,
+  supportLevelLabel,
   patchDestination,
   redriveBlockedReason,
   redriveDelivery,
@@ -401,7 +402,29 @@ function IncidentRow({ inc, operatorName, onChanged }: {
             <div className="mt-2.5 border-t border-[var(--border)] pt-2">
               <p className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
                 <Share2 className="h-3 w-3" /> External sync
+                {sync ? <span className="ml-1 rounded-full border border-[var(--border)] px-1.5 py-0.5 text-[9px] font-bold normal-case tracking-normal text-[var(--text-muted)]">{supportLevelLabel(sync.summary.support_level)}</span> : null}
               </p>
+
+              {sync && sync.summary.suggestions.length > 0 ? (
+                <ul className="mb-1.5 grid gap-0.5">
+                  {sync.summary.suggestions.map((s, i) => (
+                    <li key={i} className="flex items-center gap-1.5 text-[11px]">
+                      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", TONE_DOT[s.tone])} aria-hidden="true" />
+                      <span className={TONE_TEXT[s.tone]}>{s.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              {link && (link.external_assignee || link.external_severity || link.external_comment_count != null) ? (
+                <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-[var(--text-subtle)]">
+                  {link.external_assignee ? <span>external owner: {link.external_assignee}</span> : null}
+                  {link.external_severity ? <span>severity: {link.external_severity}</span> : null}
+                  {link.external_comment_count != null ? <span>{link.external_comment_count} note{link.external_comment_count === 1 ? "" : "s"}</span> : null}
+                  {link.external_updated_at ? <span>updated {link.external_updated_at}</span> : null}
+                </div>
+              ) : null}
+
               <div className="flex flex-wrap items-center gap-2 text-[11px]">
                 <Badge tone={syncLine.tone}>{syncLine.label}</Badge>
                 {link?.target_name ? <span className="text-[var(--text-muted)]">{link.target_name}{link.target_kind ? ` · ${link.target_kind}` : ""}</span> : null}

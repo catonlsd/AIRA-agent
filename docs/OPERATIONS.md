@@ -1318,6 +1318,46 @@ state from an external observation**; refresh/reconcile still never do.
   adapter + records, and outbound-only kinds still push; apply/push over HTTP with
   re-apply 409 + gating) and `frontend/lib/operator.test.mts` (`applyActionLabel`).
 
+### Richer vendor adapters, bounded inbound status sync & suggestions (G-10)
+
+A supported adapter can now surface a **richer-than-generic** bounded snapshot of
+external state, turned into **operator suggestions** — without ever becoming
+source-of-truth (local state stays primary; inbound never mutates it).
+
+- **Adapter capability tiers.** Adapters gain `supports_status_sync` and a single
+  `support_level` (`rich` / `refresh` / `outbound_only`). Generic = `refresh`
+  (existence/status/url only); **PagerDuty = `rich`** (parses a few bounded
+  normalized fields from an incident-shaped response — assignee *display name*,
+  urgency→severity, `last_status_change_at`, an alert/note **count**); jira/opsgenie
+  = `outbound_only`. `adapter_capabilities(kind)` exposes the full set + level;
+  `GET /operator/incident-targets/{id}/capabilities` surfaces it for the console.
+- **Bounded inbound snapshot.** Every inbound parse goes through `_external_state(…)`
+  — a hard allow-list of `{exists, status, url, assignee, severity, updated_at,
+  comment_count}`, each size-clamped, with **no raw-payload escape hatch** (vendor
+  bodies, emails, comment text never pass through). `IncidentExternalLink` stores
+  `external_assignee` / `external_severity` / `external_updated_at` /
+  `external_comment_count` (additive ALTER), populated **only** by status-sync
+  adapters during `refresh`. `_fetch` now returns `(ok, snapshot, err)`.
+- **Operator suggestions.** Pure `external_state_suggestions(local_incident, link)`
+  → a bounded list (≤4) of `{code, tone, text}`: external resolved while local open
+  (→ consider applying), acknowledged externally by X, external owner ≠ local owner,
+  high external severity, external missing (→ detach), or "aligned — no action".
+  Advisory only; surfaced as `summary.suggestions` + `summary.support_level`.
+- **Explicit workflow preserved.** Refresh updates the bounded snapshot; **apply /
+  push stay explicit and capability-driven** (G-9). Inbound status sync **never**
+  silently mutates local incident state — proven by tests asserting local state +
+  owner are untouched after a rich refresh.
+- **Console:** the External-sync block gains a **support-level chip**, a concise
+  external-state line (owner / severity / note-count / updated) when a rich adapter
+  populated it, and a short **suggestions** list with tone dots. Still operator-only
+  — no `external_assignee` / `support_level` / `suggestions` / `capabilities` leaks
+  into `GET /jobs/{id}`.
+- Pinned by `backend/tests/test_incident_sync.py` (PagerDuty parses a bounded rich
+  snapshot + drops raw body/email; generic stays thin; status-sync stores only
+  normalized fields and keeps local primary; suggestions are bounded/honest +
+  surface after refresh; capabilities endpoint with gating/404; no rich-inbound leak
+  into `/jobs/{id}`) and `frontend/lib/operator.test.mts` (`supportLevelLabel`).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

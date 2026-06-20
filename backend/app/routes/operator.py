@@ -854,3 +854,19 @@ def operator_incident_target_health(target_id: str, request: Request) -> dict:
     if health is None:
         raise HTTPException(status_code=404, detail="Target not found.")
     return {"target": health}
+
+
+@router.get("/incident-targets/{target_id}/capabilities")
+def operator_incident_target_capabilities(target_id: str, request: Request) -> dict:
+    """The honest adapter capability set for a target (refresh / push_outward /
+    relink_validation / status_sync) + a single support_level label. Lets the console
+    show exactly what's possible for this kind, no fake vendor claims."""
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service, adapter_capabilities
+
+    target = incident_sync_service.get_target(target_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Target not found.")
+    caps = adapter_capabilities(target.get("kind"))
+    return {"target_id": target_id, "kind": target.get("kind"),
+            "support_level": caps["support_level"], "capabilities": caps}

@@ -69,6 +69,10 @@ def ensure_runtime_columns() -> None:
                 ("external_status", "VARCHAR(24)"),
                 ("external_exists", "BOOLEAN"),
                 ("detached_at", "DATETIME"),
+                ("external_assignee", "VARCHAR(120)"),
+                ("external_severity", "VARCHAR(24)"),
+                ("external_updated_at", "VARCHAR(40)"),
+                ("external_comment_count", "INTEGER"),
             ],
         }
         for table, columns in additions.items():

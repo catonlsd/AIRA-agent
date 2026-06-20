@@ -309,9 +309,17 @@ def test_incident_sync_status_and_target_health_over_http(op, capture_send):
 # ── G-7: bounded inbound refresh, drift & staleness ──────────────────────────
 
 
-def _fetch_returning(monkeypatch, *, ok=True, exists=True, status=None, url=None, err=None):
+def _fetch_returning(monkeypatch, *, ok=True, exists=True, status=None, url=None, err=None,
+                     assignee=None, severity=None, updated_at=None, comment_count=None):
+    """Stub the injectable inbound transport. `_fetch` now returns (ok, snapshot, err)
+    where snapshot is the bounded `_external_state` dict."""
+    from app.incident_sync import _external_state
+    snap = None if exists is None and status is None else _external_state(
+        exists=exists, status=status, url=url, assignee=assignee, severity=severity,
+        updated_at=updated_at, comment_count=comment_count)
+
     def _fake(self, target_url, ref, secret, adapter=None):
-        return (ok, exists, status, url, err)
+        return (ok, snap, err)
     monkeypatch.setattr(type(incident_sync_service), "_fetch", _fake)
 
 
@@ -381,7 +389,7 @@ def test_unsupported_adapter_stays_outbound_only(capture_send, monkeypatch):
     called = {"n": 0}
     def _should_not_run(self, target_url, ref, secret, adapter=None):
         called["n"] += 1
-        return (True, True, "resolved", None, None)
+        return (True, {"exists": True, "status": "resolved"}, None)
     monkeypatch.setattr(type(incident_sync_service), "_fetch", _should_not_run)
     status = incident_sync_service.refresh(inc["id"])
     assert called["n"] == 0  # outbound-only adapter is honestly skipped
@@ -483,7 +491,7 @@ def test_relink_unsupported_adapter_is_refused_honestly(capture_send, monkeypatc
     called = {"n": 0}
     def _should_not_run(self, target_url, ref, secret, adapter=None):
         called["n"] += 1
-        return (True, True, "open", None, None)
+        return (True, {"exists": True, "status": "open"}, None)
     monkeypatch.setattr(type(incident_sync_service), "_fetch", _should_not_run)
     result = incident_sync_service.relink(inc["id"], target_id, "EXT-X")
     assert result["ok"] is False and called["n"] == 0  # outbound-only can't verify → refused, no fetch
@@ -574,10 +582,15 @@ def test_no_reconciliation_fields_leak_into_user_routes(capture_send):
 
 def test_adapter_capabilities_are_explicit_and_honest():
     from app.incident_sync import adapter_capabilities
-    assert adapter_capabilities("generic") == {"refresh": True, "push_outward": True, "relink_validation": True}
-    assert adapter_capabilities("pagerduty")["push_outward"] is True
-    # Outbound-only: can push, cannot refresh / validate a relink.
-    assert adapter_capabilities("jira") == {"refresh": False, "push_outward": True, "relink_validation": False}
+    gen = adapter_capabilities("generic")
+    assert gen["refresh"] and gen["push_outward"] and gen["relink_validation"]
+    assert gen["status_sync"] is False and gen["support_level"] == "refresh"
+    pd = adapter_capabilities("pagerduty")
+    assert pd["push_outward"] and pd["status_sync"] is True and pd["support_level"] == "rich"
+    # Outbound-only: can push, cannot refresh / validate a relink / status-sync.
+    jira = adapter_capabilities("jira")
+    assert jira == {"refresh": False, "push_outward": True, "relink_validation": False,
+                    "status_sync": False, "support_level": "outbound_only"}
 
 
 def test_external_resolved_is_actionable_without_silently_mutating_local(capture_send, monkeypatch):
@@ -689,3 +702,120 @@ def test_apply_and_push_over_http_with_gating(op, capture_send, monkeypatch):
     auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
     assert client.post(f"/operator/incidents/{inc['id']}/sync/apply", headers=auth, json={"action": "accept_resolved"}).status_code in (401, 403)
     assert client.post(f"/operator/incidents/{inc['id']}/sync/push", headers=auth, json={}).status_code in (401, 403)
+
+
+# ── G-10: richer adapters, bounded inbound status sync & suggestions ─────────
+
+
+def _pd_fetch(monkeypatch, **fields):
+    """Stub a PagerDuty-shaped inbound snapshot (richer bounded fields)."""
+    from app.incident_sync import _external_state
+    snap = _external_state(exists=True, status=fields.get("status", "acknowledged"),
+                           url=fields.get("url"), assignee=fields.get("assignee"),
+                           severity=fields.get("severity"), updated_at=fields.get("updated_at"),
+                           comment_count=fields.get("comment_count"))
+    monkeypatch.setattr(type(incident_sync_service), "_fetch", lambda self, u, r, s, adapter=None: (True, snap, None))
+
+
+def test_pagerduty_adapter_parses_bounded_rich_snapshot():
+    from app.incident_sync import adapter_for
+    pd = adapter_for("pagerduty")
+    body = {
+        "status": "acknowledged", "urgency": "high", "html_url": "https://pd.example.com/i/1",
+        "last_status_change_at": "2026-06-20T10:00:00Z",
+        "assignments": [{"assignee": {"summary": "Dana Ops", "email": "secret@pd.example.com"}}],
+        "alert_counts": {"all": 7, "triggered": 2},
+        "description": "RAW INCIDENT BODY THAT MUST NOT BE INGESTED",
+    }
+    snap = pd.parse_snapshot(200, {}, body)
+    assert snap["status"] == "acknowledged" and snap["assignee"] == "Dana Ops"
+    assert snap["severity"] == "critical" and snap["comment_count"] == 7
+    assert snap["updated_at"] == "2026-06-20T10:00:00Z"
+    # Bounded: only the allowed normalized keys — no raw body / email leaks through.
+    assert set(snap) == {"exists", "status", "url", "assignee", "severity", "updated_at", "comment_count"}
+    assert "secret@pd.example.com" not in str(snap) and "RAW INCIDENT BODY" not in str(snap)
+
+
+def test_generic_adapter_does_not_surface_rich_fields():
+    from app.incident_sync import adapter_for
+    snap = adapter_for("generic").parse_snapshot(200, {}, {"status": "open", "assignee": "X", "urgency": "high"})
+    assert snap["status"] == "open"
+    assert snap["assignee"] is None and snap["severity"] is None  # generic stays thin
+
+
+def test_status_sync_stores_only_normalized_fields_and_keeps_local_primary(monkeypatch):
+    incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+
+    def _push_ok(self, url, body_json, secret, adapter=None):
+        return (True, 200, None, "pd-1", "https://pd.example.com/i/1")
+    monkeypatch.setattr(type(incident_sync_service), "_send", _push_ok)
+    incident_service.observe([_alert(job_id="rich-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "rich-1")
+    incident_service.assign(inc["id"], "alice")  # local owner
+    _pd_fetch(monkeypatch, status="acknowledged", assignee="Dana Ops", severity="critical",
+              updated_at="2026-06-20T10:00:00Z", comment_count=7)
+    status = incident_sync_service.refresh(inc["id"])
+    link = status["links"][0]
+    assert link["external_assignee"] == "Dana Ops" and link["external_severity"] == "critical"
+    assert link["external_comment_count"] == 7 and link["capabilities"]["status_sync"] is True
+    assert status["summary"]["support_level"] == "rich"
+    # Inbound status sync NEVER mutates local state.
+    assert incident_service.get(inc["id"])["state"] == "open"
+    assert incident_service.get(inc["id"])["assignee"] == "alice"
+
+
+def test_external_state_suggestions_are_bounded_and_honest():
+    from app.incident_sync import external_state_suggestions
+    # Aligned → calm.
+    aligned = external_state_suggestions({"state": "open", "assignee": "alice"},
+                                         {"external_status": "open", "external_exists": True, "detached": False})
+    assert [s["code"] for s in aligned] == ["aligned"]
+    # Acknowledged externally + owner mismatch + high severity → multiple high-signal hints.
+    rich = external_state_suggestions(
+        {"state": "open", "assignee": "alice"},
+        {"external_status": "acknowledged", "external_exists": True, "external_assignee": "Dana Ops",
+         "external_severity": "critical", "detached": False})
+    codes = {s["code"] for s in rich}
+    assert "external_acknowledged" in codes and "owner_mismatch" in codes and "high_severity" in codes
+    assert all(set(s) == {"code", "tone", "text"} for s in rich) and len(rich) <= 4
+    # Missing → detach hint, nothing else.
+    missing = external_state_suggestions({"state": "open"},
+                                         {"external_exists": False, "detached": False})
+    assert [s["code"] for s in missing] == ["external_missing"]
+    # Detached / never-observed → no suggestions.
+    assert external_state_suggestions({"state": "open"}, {"detached": True, "external_status": "resolved"}) == []
+    assert external_state_suggestions({"state": "open"}, {"external_status": None, "external_exists": True, "detached": False}) == []
+
+
+def test_suggestions_surface_in_status_after_refresh(capture_send, monkeypatch):
+    incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    incident_service.observe([_alert(job_id="sugg-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "sugg-1")
+    _pd_fetch(monkeypatch, status="resolved", severity="critical")
+    status = incident_sync_service.refresh(inc["id"])
+    codes = {s["code"] for s in status["summary"]["suggestions"]}
+    assert "external_resolved" in codes  # resolved-while-open is surfaced
+
+
+def test_target_capabilities_endpoint(op):
+    pd = client.post("/operator/incident-targets", headers=OP,
+                     json={"name": "pd", "url": "https://h.example.com/pd", "kind": "pagerduty"}).json()["target"]
+    caps = client.get(f"/operator/incident-targets/{pd['id']}/capabilities", headers=OP).json()
+    assert caps["support_level"] == "rich" and caps["capabilities"]["status_sync"] is True
+    # Gating + 404.
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.get(f"/operator/incident-targets/{pd['id']}/capabilities", headers=auth).status_code in (401, 403)
+    assert client.get("/operator/incident-targets/nope/capabilities", headers=OP).status_code == 404
+
+
+def test_no_rich_inbound_fields_leak_into_user_routes(capture_send, monkeypatch):
+    from app.execution_queue import execution_queue
+    incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    owner = _account()
+    job = execution_queue.enqueue(f"account:{owner['id']}", "noop", {}, title="T")
+    auth = {"Authorization": f"Bearer {make_account_token(owner['id'])}"}
+    user_job = client.get(f"/jobs/{job['id']}", headers=auth).json()["job"]
+    for operator_only in ("external_assignee", "external_severity", "external_comment_count",
+                          "support_level", "suggestions", "capabilities"):
+        assert operator_only not in user_job

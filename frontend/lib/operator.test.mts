@@ -14,6 +14,7 @@ import {
   incidentTone,
   linkStatusTone,
   redriveBlockedReason,
+  supportLevelLabel,
   syncStatusTone,
 } from "./operator.ts";
 
@@ -104,4 +105,11 @@ test("applyActionLabel is explicit about local-vs-linkage effect", () => {
   assert.match(applyActionLabel("accept_resolved"), /recover locally/);
   assert.match(applyActionLabel("accept_missing"), /Detach/);
   assert.equal(applyActionLabel(null), "");
+});
+
+test("supportLevelLabel states adapter insight honestly", () => {
+  assert.equal(supportLevelLabel("rich"), "Rich status sync");
+  assert.equal(supportLevelLabel("refresh"), "Refresh-capable");
+  assert.equal(supportLevelLabel("outbound_only"), "Outbound only");
+  assert.equal(supportLevelLabel("none"), "Not linked");
 });

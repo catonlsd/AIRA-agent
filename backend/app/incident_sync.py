@@ -70,8 +70,9 @@ class GenericIncidentAdapter:
     headers or a small JSON body (never invents a link the target didn't return)."""
 
     kind = "generic"
-    supports_refresh = True       # bounded inbound GET of {exists,status,url}
-    supports_push_outward = True  # operator can explicitly re-send local state outward
+    supports_refresh = True        # bounded inbound GET of {exists,status,url}
+    supports_push_outward = True   # operator can explicitly re-send local state outward
+    supports_status_sync = False   # only basic existence/status — NOT richer vendor fields
 
     def shape(self, payload: dict) -> dict:
         return payload
@@ -97,6 +98,14 @@ class GenericIncidentAdapter:
         return (exists, _normalize_status(body.get("status") or body.get("state")),
                 (str(url)[:500] if url else None))
 
+    def parse_snapshot(self, status_code: Optional[int], headers: dict, body: Optional[dict]) -> dict:
+        """Bounded normalized inbound snapshot. The base (generic) adapter only knows
+        existence/status/url — richer fields are None. Adapters with
+        `supports_status_sync` override this to add a few SAFE bounded fields. Never
+        returns raw vendor bodies/comments."""
+        exists, status, url = self.parse_status(status_code, headers, body)
+        return _external_state(exists=exists, status=status, url=url)
+
 
 class PagerDutyIncidentAdapter:
     """Adapter-specific pathway shaping the snapshot into a PagerDuty Events-v2-style
@@ -107,11 +116,13 @@ class PagerDutyIncidentAdapter:
 
     kind = "pagerduty"
     supports_refresh = True
-    supports_push_outward = True  # event_action maps recovered→resolve, reopen→trigger
+    supports_push_outward = True   # event_action maps recovered→resolve, reopen→trigger
+    supports_status_sync = True    # richer bounded inbound: assignee / urgency / updated / count
     _EVENT_ACTION = {
         "opened": "trigger", "reopened": "trigger", "recovered": "resolve",
         "acknowledged": "acknowledge",
     }
+    _URGENCY = {"high": "critical", "low": "warning"}
 
     def shape(self, payload: dict) -> dict:
         incident = payload.get("incident", {})
@@ -152,6 +163,35 @@ class PagerDutyIncidentAdapter:
         url = body.get("url") or body.get("html_url")
         return (True, _normalize_status(body.get("status")), (str(url)[:500] if url else None))
 
+    def parse_snapshot(self, status_code: Optional[int], headers: dict, body: Optional[dict]) -> dict:
+        """Richer BOUNDED PagerDuty snapshot: a few safe normalized fields parsed from
+        an incident-shaped response (the `assignments[].assignee.summary`, `urgency`,
+        `last_status_change_at`, and an alert/note *count* — never the bodies)."""
+        exists, status, url = self.parse_status(status_code, headers, body)
+        if not body:
+            return _external_state(exists=exists, status=status, url=url)
+        # Assignee display name (first assignment) — bounded, no contact details.
+        assignee = None
+        assignments = body.get("assignments")
+        if isinstance(assignments, list) and assignments:
+            who = (assignments[0] or {}).get("assignee") or {}
+            assignee = who.get("summary") or who.get("name")
+        assignee = assignee or body.get("assignee")
+        severity = self._URGENCY.get(str(body.get("urgency") or "").lower())
+        updated = body.get("last_status_change_at") or body.get("updated_at")
+        # A bounded COUNT only — never the alert/note contents.
+        count = None
+        for key in ("alert_counts", "alerts", "notes"):
+            value = body.get(key)
+            if isinstance(value, dict) and "all" in value:
+                count = value.get("all")
+                break
+            if isinstance(value, list):
+                count = len(value)
+                break
+        return _external_state(exists=exists, status=status, url=url, assignee=assignee,
+                               severity=severity, updated_at=updated, comment_count=count)
+
 
 class OutboundOnlyAdapter(GenericIncidentAdapter):
     """Reserved target kinds with no real inbound adapter yet: outbound shaping +
@@ -177,15 +217,21 @@ def adapter_for(kind: Optional[str]):
     return _ADAPTERS.get(kind or "generic", _GENERIC)
 
 
-def adapter_capabilities(kind: Optional[str]) -> dict[str, bool]:
+def adapter_capabilities(kind: Optional[str]) -> dict[str, Any]:
     """The honest, explicit capability set for a target kind. `relink_validation`
-    needs a bounded inbound check, so it tracks `supports_refresh`."""
+    needs a bounded inbound check, so it tracks `supports_refresh`. `status_sync` is
+    the richer-than-generic inbound (bounded assignee/severity/updated/count).
+    `support_level` is a single label for the console: rich / refresh / outbound_only."""
     adapter = adapter_for(kind)
     refresh = bool(getattr(adapter, "supports_refresh", False))
+    status_sync = bool(getattr(adapter, "supports_status_sync", False))
+    level = "rich" if status_sync else ("refresh" if refresh else "outbound_only")
     return {
         "refresh": refresh,
         "push_outward": bool(getattr(adapter, "supports_push_outward", False)),
         "relink_validation": refresh,
+        "status_sync": status_sync,
+        "support_level": level,
     }
 
 
@@ -221,6 +267,69 @@ def _normalize_status(raw: Optional[str]) -> str:
     if value in ("acknowledged", "ack", "acked"):
         return EXT_ACKNOWLEDGED
     return value[:24]
+
+
+_HIGH_SEVERITY = {"critical", "high", "urgent", "sev1", "p1"}
+
+
+def _external_state(*, exists: Optional[bool], status: Optional[str], url: Optional[str] = None,
+                    assignee: Optional[str] = None, severity: Optional[str] = None,
+                    updated_at: Optional[str] = None, comment_count: Optional[int] = None) -> dict[str, Any]:
+    """A BOUNDED, normalized external snapshot. Every field is size-clamped and there
+    is NO raw-payload escape hatch — adapters can only ever surface these few fields."""
+    try:
+        count = int(comment_count) if comment_count is not None else None
+    except (TypeError, ValueError):
+        count = None
+    return {
+        "exists": exists,
+        "status": status,
+        "url": (str(url)[:500] if url else None),
+        "assignee": (str(assignee)[:120] if assignee else None),
+        "severity": (str(severity)[:24] if severity else None),
+        "updated_at": (str(updated_at)[:40] if updated_at else None),
+        "comment_count": (count if (count is None or 0 <= count <= 100000) else None),
+    }
+
+
+def external_state_suggestions(local_incident: Optional[dict], link: dict) -> list[dict[str, str]]:
+    """Pure, bounded operator suggestions derived from the last observed external
+    snapshot vs the local incident. Suggestions are advisory only — never mutations.
+    Empty until a refresh has actually observed external state."""
+    out: list[dict[str, str]] = []
+    if not link or link.get("detached"):
+        return out
+    local = local_incident or {}
+    local_state = local.get("state")
+    local_owner = local.get("assignee")
+    ext_status = link.get("external_status")
+    ext_assignee = link.get("external_assignee")
+    ext_severity = link.get("external_severity")
+    if link.get("external_exists") is False:
+        out.append({"code": "external_missing", "tone": "bad",
+                    "text": "External incident no longer exists — consider detaching."})
+        return out
+    if ext_status is None:
+        return out  # nothing observed yet
+    open_local = local_state in _LOCAL_OPEN
+    if ext_status in _EXT_CLOSED and open_local:
+        out.append({"code": "external_resolved", "tone": "bad",
+                    "text": "External is resolved while this incident is still open — consider applying."})
+    if ext_status == EXT_ACKNOWLEDGED and open_local:
+        who = f" by {ext_assignee}" if ext_assignee else ""
+        out.append({"code": "external_acknowledged", "tone": "warn",
+                    "text": f"Acknowledged externally{who}."})
+    if ext_assignee and local_owner and ext_assignee != local_owner:
+        out.append({"code": "owner_mismatch", "tone": "warn",
+                    "text": f"External owner ({ext_assignee}) differs from local owner ({local_owner})."})
+    if (ext_severity or "").lower() in _HIGH_SEVERITY:
+        out.append({"code": "high_severity", "tone": "warn",
+                    "text": f"External severity is {ext_severity} — worth a review."})
+    if not out:
+        aligned = (ext_status in _EXT_OPEN and open_local) or (ext_status in _EXT_CLOSED and local_state == "recovered")
+        if aligned:
+            out.append({"code": "aligned", "tone": "good", "text": "Aligned with external — no action needed."})
+    return out[:4]
 
 
 def classify_link_status(*, local_state: Optional[str], last_synced_at: Optional[datetime],
@@ -617,6 +726,11 @@ class IncidentSyncService:
             "last_checked_at": row.last_checked_at.isoformat() if row.last_checked_at else None,
             "external_status": row.external_status,
             "external_exists": row.external_exists,
+            # Richer bounded inbound snapshot (only populated by status-sync adapters).
+            "external_assignee": row.external_assignee,
+            "external_severity": row.external_severity,
+            "external_updated_at": row.external_updated_at,
+            "external_comment_count": row.external_comment_count,
             "detached": detached,
             "detached_at": row.detached_at.isoformat() if row.detached_at else None,
             "capabilities": caps,
@@ -641,9 +755,11 @@ class IncidentSyncService:
                              "actions": {"can_refresh": False, "can_redrive": False,
                                          "can_detach": False, "can_relink": False,
                                          "can_apply": False, "apply_action": None,
-                                         "can_push": False}}}
+                                         "can_push": False},
+                             "support_level": "none", "suggestions": []}}
         try:
-            local_state = incident_state if incident_state is not None else self._local_state(incident_id)
+            local_incident = self._local_incident(incident_id)
+            local_state = incident_state if incident_state is not None else (local_incident or {}).get("state")
             now = _now()
             with self._session_factory() as session:
                 names = self._target_names(session)
@@ -689,6 +805,11 @@ class IncidentSyncService:
                 "apply_action": apply_action,
                 "can_push": any(link["capabilities"]["push_outward"] and not link["detached"] for link in links),
             }
+            # Operator-facing suggestions from the worst active link's observed state.
+            primary = max(active_links, key=lambda link: _LINK_SEVERITY.get(link["link_status"], 0)) if active_links else None
+            suggestions = external_state_suggestions(local_incident, primary) if primary else []
+            support_level = primary["capabilities"]["support_level"] if primary else (
+                links[0]["capabilities"]["support_level"] if links else "none")
             summary = {
                 "linked": bool(active_links),
                 "synced": bool(synced),
@@ -702,6 +823,8 @@ class IncidentSyncService:
                 "refresh_supported": any(link["refresh_supported"] for link in active_links),
                 "last_checked_at": max([link["last_checked_at"] for link in links if link["last_checked_at"]], default=None),
                 "actions": actions,
+                "support_level": support_level,
+                "suggestions": suggestions,
             }
             return {"linked": bool(active_links), "links": links, "records": records,
                     "reconciliation": reconciliation, "summary": summary}
@@ -719,15 +842,18 @@ class IncidentSyncService:
         }
 
     @staticmethod
-    def _local_state(incident_id: str) -> Optional[str]:
-        """Read the current local incident state (guarded lazy import — sync must not
+    def _local_incident(incident_id: str) -> Optional[dict[str, Any]]:
+        """Read the current local incident (guarded lazy import — sync must not
         hard-depend on the incident service)."""
         try:
             from app.incidents import incident_service
-            inc = incident_service.get(incident_id)
-            return inc.get("state") if inc else None
+            return incident_service.get(incident_id)
         except Exception:
             return None
+
+    def _local_state(self, incident_id: str) -> Optional[str]:
+        inc = self._local_incident(incident_id)
+        return inc.get("state") if inc else None
 
     # ── bounded inbound reconciliation (refresh / drift) ──────────────────────
 
@@ -755,17 +881,24 @@ class IncidentSyncService:
                         self._log_reconcile(session, incident_id, link.target_id, "refresh", "unsupported",
                                             actor=actor, detail="adapter is outbound-only")
                         continue  # outbound-only adapter — honestly skipped
-                    ok, exists, status, url, err = self._fetch(target.url, link.external_ref, target.secret, adapter)
+                    ok, snap, err = self._fetch(target.url, link.external_ref, target.secret, adapter)
                     link.last_checked_at = now
-                    if ok or exists is False:
+                    exists = snap.get("exists") if snap else None
+                    if snap is not None and (ok or exists is False):
                         link.external_exists = exists
-                        if status:
-                            link.external_status = status
-                        if url:
-                            link.external_url = url
+                        if snap.get("status"):
+                            link.external_status = snap["status"]
+                        if snap.get("url"):
+                            link.external_url = snap["url"]
+                        # Richer bounded fields ONLY for status-sync adapters.
+                        if getattr(adapter, "supports_status_sync", False):
+                            link.external_assignee = snap.get("assignee")
+                            link.external_severity = snap.get("severity")
+                            link.external_updated_at = snap.get("updated_at")
+                            link.external_comment_count = snap.get("comment_count")
                         outcome = "missing" if exists is False else "ok"
                         self._log_reconcile(session, incident_id, link.target_id, "refresh", outcome,
-                                            actor=actor, detail=(status or ("not found" if exists is False else None)))
+                                            actor=actor, detail=(snap.get("status") or ("not found" if exists is False else None)))
                     else:
                         self._log_reconcile(session, incident_id, link.target_id, "refresh", "failed",
                                             actor=actor, detail=err)
@@ -775,10 +908,11 @@ class IncidentSyncService:
         return self.incident_sync_status(incident_id, incident_state=local_state)
 
     def _fetch(self, target_url: str, ref: Optional[str], secret: Optional[str],
-               adapter=None) -> tuple[bool, Optional[bool], Optional[str], Optional[str], Optional[str]]:
+               adapter=None) -> tuple[bool, Optional[dict], Optional[str]]:
         """Bounded inbound GET of an external incident's current state. Returns
-        (ok, external_exists, normalized_status, external_url, error_class). The
-        adapter parses the response. Injectable/overridable in tests. Never raises."""
+        (ok, snapshot, error_class), where `snapshot` is the adapter's BOUNDED
+        normalized `_external_state` dict (exists/status/url + richer fields only for
+        status-sync adapters). Injectable/overridable in tests. Never raises."""
         adapter = adapter or _GENERIC
         try:
             import requests
@@ -797,10 +931,10 @@ class IncidentSyncService:
                 resp_body = resp.json()
             except Exception:
                 resp_body = None
-            exists, status, url = adapter.parse_status(resp.status_code, resp_headers, resp_body)
-            return (ok, exists, status, url, None if ok else f"HTTP{resp.status_code}")
+            snapshot = adapter.parse_snapshot(resp.status_code, resp_headers, resp_body)
+            return (ok, snapshot, None if ok else f"HTTP{resp.status_code}")
         except Exception as error:
-            return (False, None, None, None, type(error).__name__)
+            return (False, None, type(error).__name__)
 
     def drifted(self, *, limit: int = 50) -> list[dict[str, Any]]:
         """Operator triage: active (non-detached) links whose reconciliation verdict
@@ -868,7 +1002,10 @@ class IncidentSyncService:
                                         actor=actor, detail="adapter cannot verify links")
                     session.commit()
                     return {"ok": False, "message": "This target's adapter is outbound-only and cannot verify a relink."}
-                ok, exists, status, url, err = self._fetch(target.url, external_ref, target.secret, adapter)
+                ok, snap, err = self._fetch(target.url, external_ref, target.secret, adapter)
+                exists = snap.get("exists") if snap else None
+                status = snap.get("status") if snap else None
+                url = snap.get("url") if snap else None
                 if not ok or exists is False:
                     self._log_reconcile(session, incident_id, target_id, "relink",
                                         "missing" if exists is False else "failed",
