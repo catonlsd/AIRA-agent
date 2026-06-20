@@ -64,6 +64,11 @@ def ensure_runtime_columns() -> None:
             "incident_sync_records": [
                 ("external_url", "VARCHAR(500)"),
             ],
+            "incident_external_links": [
+                ("last_checked_at", "DATETIME"),
+                ("external_status", "VARCHAR(24)"),
+                ("external_exists", "BOOLEAN"),
+            ],
         }
         for table, columns in additions.items():
             if table not in inspector.get_table_names():

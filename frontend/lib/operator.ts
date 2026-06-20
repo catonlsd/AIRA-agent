@@ -197,6 +197,8 @@ export type IncidentSyncRecord = {
   created_at: string | null;
 };
 
+export type LinkStatus = "linked" | "never_linked" | "stale" | "missing_external" | "drifted" | "refreshed";
+
 export type IncidentExternalLink = {
   target_id: string;
   target_name: string | null;
@@ -205,6 +207,13 @@ export type IncidentExternalLink = {
   external_url: string | null;
   last_action: string | null;
   last_synced_at: string | null;
+  last_checked_at: string | null;
+  external_status: string | null;
+  external_exists: boolean | null;
+  refresh_supported: boolean;
+  link_status: LinkStatus;
+  reason: string;
+  incident_id?: string;
 };
 
 export type IncidentSyncStatus = {
@@ -219,6 +228,10 @@ export type IncidentSyncStatus = {
     last_failed_at: string | null;
     last_error: string | null;
     recovered_after_redrive: boolean;
+    link_status: LinkStatus;
+    reason: string;
+    refresh_supported: boolean;
+    last_checked_at: string | null;
   };
 };
 
@@ -230,15 +243,26 @@ export function syncStatusTone(status: string): Tone {
   return "muted";
 }
 
+/** Tone for a reconciliation link status (pure; unit-tested). */
+export function linkStatusTone(status: LinkStatus): Tone {
+  if (status === "missing_external" || status === "drifted") return "bad";
+  if (status === "stale") return "warn";
+  if (status === "linked" || status === "refreshed") return "good";
+  return "muted";
+}
+
 /** Honest one-line linkage summary for an incident's external sync (pure;
- * unit-tested). Outbound-only — never claims to have read external state back. */
+ * unit-tested). Reconciliation drift/staleness wins over plain outbound health;
+ * outbound stays primary and AIRA-X never claims it owns external truth. */
 export function incidentSyncSummary(s: IncidentSyncStatus["summary"]): { label: string; tone: Tone } {
-  if (!s.synced && !s.linked && !s.behind && !s.last_failed_at) {
-    return { label: "Not synced", tone: "muted" };
-  }
+  // Reconciliation verdicts (require a real link / refresh) come first.
+  if (s.link_status === "missing_external") return { label: "External incident missing", tone: "bad" };
+  if (s.link_status === "drifted") return { label: s.reason || "Drifted from external", tone: "bad" };
+  if (s.link_status === "stale") return { label: "External link stale", tone: "warn" };
   if (s.last_error && s.behind) return { label: `Last sync failed: ${s.last_error}`, tone: "bad" };
   if (s.recovered_after_redrive) return { label: "Recovered after redrive", tone: "good" };
   if (s.behind) return { label: "Sync behind current state", tone: "warn" };
+  if (s.link_status === "refreshed") return { label: "Checked · aligned", tone: "good" };
   if (s.linked) return { label: "Externally linked", tone: "good" };
   if (s.synced) return { label: "Synced", tone: "good" };
   return { label: "Not synced", tone: "muted" };
@@ -582,6 +606,12 @@ export async function redriveIncidentSync(id: string): Promise<{ ok: boolean; me
 
 export async function fetchIncidentSyncStatus(incidentId: string): Promise<IncidentSyncStatus | null> {
   const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(incidentId)}/sync`, { cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function refreshIncidentSync(incidentId: string): Promise<IncidentSyncStatus | null> {
+  const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(incidentId)}/sync/refresh`, { method: "POST", cache: "no-store", headers: opHeaders() });
   if (!res.ok) return null;
   return res.json();
 }

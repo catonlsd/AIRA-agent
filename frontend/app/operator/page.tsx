@@ -62,6 +62,7 @@ import {
   incidentSyncSummary,
   incidentTone,
   noteIncident,
+  refreshIncidentSync,
   patchDestination,
   redriveBlockedReason,
   redriveDelivery,
@@ -233,6 +234,14 @@ function IncidentRow({ inc, operatorName, onChanged }: {
     }
   }, [expanded, inc.id]);
 
+  const onRefreshSync = useCallback(async () => {
+    setBusy(true);
+    try {
+      const s = await refreshIncidentSync(inc.id);
+      if (s) setSync(s);
+    } finally { setBusy(false); }
+  }, [inc.id]);
+
   const syncLine = sync ? incidentSyncSummary(sync.summary) : null;
   const link = sync?.links.find((l) => l.external_url) ?? sync?.links[0];
 
@@ -353,7 +362,19 @@ function IncidentRow({ inc, operatorName, onChanged }: {
                     <ExternalLink className="h-3 w-3" /> Open
                   </a>
                 ) : null}
-                {sync && sync.records.length > 0 ? <span className="ml-auto text-[var(--text-subtle)]">{sync.records.length} attempt{sync.records.length === 1 ? "" : "s"}</span> : null}
+                {sync?.summary.refresh_supported ? (
+                  <button type="button" disabled={busy} onClick={() => void onRefreshSync()} className={INC_BTN}>
+                    <RefreshCw className="h-3 w-3" /> Refresh
+                  </button>
+                ) : null}
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-[var(--text-subtle)]">
+                {sync?.summary.reason ? <span>{sync.summary.reason}</span> : null}
+                {link?.external_status ? <span>external: {link.external_status}</span> : null}
+                {sync?.summary.last_synced_at ? <span>synced {relTime(sync.summary.last_synced_at)}</span> : null}
+                {sync?.summary.last_checked_at ? <span>checked {relTime(sync.summary.last_checked_at)}</span> : (
+                  sync?.summary.refresh_supported ? <span>never checked</span> : <span>refresh unsupported</span>
+                )}
               </div>
             </div>
           ) : null}

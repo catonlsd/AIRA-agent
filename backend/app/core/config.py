@@ -202,6 +202,9 @@ class Settings(BaseSettings):
     # distinct from webhook delivery retry/redrive (incidents != event routing).
     incident_sync_max_attempts: int = 4
     incident_sync_max_redrives: int = 3
+    # An external link with no successful sync within this window reads as "stale"
+    # (bounded reconciliation — outbound stays primary; this only flags drift). >= 1.
+    incident_link_stale_seconds: int = 86400  # 24h
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -273,11 +276,12 @@ class Settings(BaseSettings):
             raise ValueError("incident silence durations must be >= 1")
         return value
 
-    @field_validator("incident_sync_max_attempts", "incident_sync_max_redrives")
+    @field_validator("incident_sync_max_attempts", "incident_sync_max_redrives",
+                     "incident_link_stale_seconds")
     @classmethod
     def _validate_incident_sync(cls, value):
         if int(value) < 1:
-            raise ValueError("incident sync attempt/redrive bounds must be >= 1")
+            raise ValueError("incident sync attempt/redrive/stale bounds must be >= 1")
         return value
 
     @field_validator("cors_origins", mode="before")

@@ -1182,6 +1182,50 @@ external state back; no bidirectional pretence).
   `external_url` leak into `/jobs/{id}`) and `frontend/lib/operator.test.mts`
   (`incidentSyncSummary`).
 
+### Bounded inbound reconciliation, drift & staleness (G-7)
+
+Outbound sync gains a **bounded inbound recheck** so AIRA-X can tell whether the
+external system still matches the local incident — explicitly **not** full
+bidirectional sync: local state stays primary, and a refresh **never mutates the
+local incident**, it only records what was observed externally.
+
+- **Adapter refresh capability.** Each adapter declares `supports_refresh` and a
+  `parse_status(code, headers, body) → (external_exists, normalized_status,
+  external_url)`. `GenericIncidentAdapter` + `PagerDutyIncidentAdapter` support a
+  bounded inbound GET; `jira`/`opsgenie` now map to an `OutboundOnlyAdapter`
+  (`supports_refresh = False`) — honestly outbound-only until a real adapter lands.
+  External statuses normalize to `open` / `acknowledged` / `resolved` / `missing` /
+  `unknown`. The inbound transport is a single injectable `_fetch` (GET `?ref=`,
+  network-free in tests).
+- **Link reconciliation state.** `incident_external_links` gains `last_checked_at`,
+  `external_status`, `external_exists` (additive `ensure_runtime_columns` ALTER).
+  `refresh(incident_id)` rechecks each linked target whose adapter supports it and
+  records the observation on the link — outbound-only adapters are skipped, never
+  faked.
+- **Pure drift classifier.** `classify_link_status(local_state, last_synced_at,
+  last_checked_at, external_exists, external_status, now, stale_seconds)` →
+  `(status, reason)` over six honest states: `never_linked`, `linked`, `refreshed`,
+  `stale` (no successful sync within `incident_link_stale_seconds`, default 24h),
+  `drifted` (external resolved while local open, or local recovered while external
+  open), `missing_external` (external not found). The incident-level rollup takes the
+  **worst (most actionable) link**.
+- **Operator-only APIs:** `GET /operator/incidents/{id}/sync` now carries
+  `link_status` / `reason` / `refresh_supported` / `last_checked_at` + per-link
+  external state; `POST /operator/incidents/{id}/sync/refresh` (409 if no links);
+  `GET /operator/incident-sync/drift` (triage list of drifted/missing/stale links —
+  declared *before* `/incident-sync/{record_id}` so "drift" isn't parsed as an id).
+- **Console:** the incident's External-sync line shows an honest reconciliation badge
+  (`incidentSyncSummary` now puts drift/missing/stale ahead of plain outbound
+  health), the reason, the observed external status, synced/checked times, a
+  **Refresh** button when the adapter supports it, and "refresh unsupported" when it
+  doesn't. Still operator-only — no link/drift field leaks into `GET /jobs/{id}`.
+- Pinned by `backend/tests/test_incident_sync.py` (pure classifier across all six
+  verdicts; refresh detects external-resolved drift / missing / aligned without
+  mutating the local incident; outbound-only adapter is honestly skipped; age-based
+  stale; refresh-without-links 409; refresh+drift over HTTP with gating; stale config
+  rejected) and `frontend/lib/operator.test.mts` (`incidentSyncSummary` drift-first,
+  `linkStatusTone`).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

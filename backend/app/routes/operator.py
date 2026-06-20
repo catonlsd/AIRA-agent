@@ -652,6 +652,17 @@ def operator_list_incident_sync(request: Request, status: str | None = None,
     return {"records": incident_sync_service.list_records(status=status, incident_id=incident_id, limit=limit)}
 
 
+@router.get("/incident-sync/drift")
+def operator_incident_sync_drift(request: Request, limit: int = 50) -> dict:
+    """Operator triage list: externally-linked incidents whose reconciliation verdict
+    is actionable (drifted / missing_external / stale). Declared before the
+    `/{record_id}` route so "drift" is not parsed as a record id."""
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    return {"links": incident_sync_service.drifted(limit=limit)}
+
+
 @router.get("/incident-sync/{record_id}")
 def operator_get_incident_sync(record_id: str, request: Request) -> dict:
     _require_operator(request)
@@ -680,14 +691,34 @@ def operator_redrive_incident_sync(record_id: str, request: Request) -> dict:
 @router.get("/incidents/{incident_id}/sync")
 def operator_incident_sync_status(incident_id: str, request: Request) -> dict:
     """Per-incident external sync health + linkage (curated): durable external
-    links, recent attempts, and an honest summary (linked / behind / recovered)."""
+    links, recent attempts, and an honest reconciliation summary (linked / behind /
+    stale / drifted / missing / recovered)."""
     _require_operator(request)
     from app.incidents import incident_service
     from app.incident_sync import incident_sync_service
 
-    if incident_service.get(incident_id) is None:
+    incident = incident_service.get(incident_id)
+    if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found.")
-    return incident_sync_service.incident_sync_status(incident_id)
+    return incident_sync_service.incident_sync_status(incident_id, incident_state=incident.get("state"))
+
+
+@router.post("/incidents/{incident_id}/sync/refresh")
+def operator_incident_sync_refresh(incident_id: str, request: Request) -> dict:
+    """Bounded inbound recheck of the incident's external links (only adapters that
+    support it). Updates last-observed external status/existence — never mutates the
+    local incident. 409 if the incident has no external links to refresh."""
+    _require_operator(request)
+    from app.incidents import incident_service
+    from app.incident_sync import incident_sync_service
+
+    incident = incident_service.get(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    refreshed = incident_sync_service.refresh(incident_id, incident_state=incident.get("state"))
+    if refreshed is None:
+        raise HTTPException(status_code=409, detail="Incident has no external links to refresh.")
+    return refreshed
 
 
 @router.get("/incident-targets/{target_id}/health")

@@ -11,6 +11,7 @@ import {
   incidentEventLabel,
   incidentSyncSummary,
   incidentTone,
+  linkStatusTone,
   redriveBlockedReason,
   syncStatusTone,
 } from "./operator.ts";
@@ -74,11 +75,24 @@ test("syncStatusTone maps each sync status to a tone", () => {
   assert.equal(syncStatusTone("weird"), "muted");
 });
 
-test("incidentSyncSummary states each linkage honestly", () => {
-  const base = { linked: false, synced: false, behind: false, last_synced_at: null, last_failed_at: null, last_error: null, recovered_after_redrive: false };
+test("incidentSyncSummary states each linkage honestly, drift first", () => {
+  const base = { linked: false, synced: false, behind: false, last_synced_at: null, last_failed_at: null, last_error: null, recovered_after_redrive: false, link_status: "never_linked" as const, reason: "never linked", refresh_supported: false, last_checked_at: null };
   assert.deepEqual(incidentSyncSummary(base), { label: "Not synced", tone: "muted" });
-  assert.equal(incidentSyncSummary({ ...base, synced: true, linked: true }).label, "Externally linked");
+  assert.equal(incidentSyncSummary({ ...base, synced: true, linked: true, link_status: "linked" }).label, "Externally linked");
   assert.equal(incidentSyncSummary({ ...base, behind: true }).tone, "warn");
   assert.equal(incidentSyncSummary({ ...base, behind: true, last_failed_at: "t", last_error: "HTTP500" }).tone, "bad");
   assert.equal(incidentSyncSummary({ ...base, synced: true, linked: true, recovered_after_redrive: true }).label, "Recovered after redrive");
+  // Reconciliation verdicts take priority over plain outbound health.
+  assert.equal(incidentSyncSummary({ ...base, linked: true, link_status: "missing_external" }).label, "External incident missing");
+  assert.equal(incidentSyncSummary({ ...base, linked: true, link_status: "drifted", reason: "external resolved but incident still open" }).tone, "bad");
+  assert.equal(incidentSyncSummary({ ...base, linked: true, link_status: "stale" }).label, "External link stale");
+});
+
+test("linkStatusTone maps each reconciliation status to a tone", () => {
+  assert.equal(linkStatusTone("drifted"), "bad");
+  assert.equal(linkStatusTone("missing_external"), "bad");
+  assert.equal(linkStatusTone("stale"), "warn");
+  assert.equal(linkStatusTone("linked"), "good");
+  assert.equal(linkStatusTone("refreshed"), "good");
+  assert.equal(linkStatusTone("never_linked"), "muted");
 });

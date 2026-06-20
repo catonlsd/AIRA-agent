@@ -8,6 +8,7 @@ incident. A failed send is honest (terminal `failed` after the bounded attempt c
 and operator-redrivable. Strictly operator-gated; secrets and raw internals never
 leak; the user product gains nothing."""
 
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -16,7 +17,9 @@ from fastapi.testclient import TestClient
 from app.accounts import account_service
 from app.auth import make_account_token
 import app.core.config as config_mod
-from app.incident_sync import incident_sync_service
+from app.db.database import SessionLocal
+from app.db.models import IncidentExternalLink
+from app.incident_sync import incident_sync_service, classify_link_status, _now
 from app.incidents import incident_service
 from app.main import app
 from app.middleware import reset_rate_limit
@@ -301,3 +304,127 @@ def test_incident_sync_status_and_target_health_over_http(op, capture_send):
     assert client.get(f"/operator/incident-targets/{tgt['id']}/health", headers=auth).status_code in (401, 403)
     assert client.get("/operator/incidents/nope/sync", headers=OP).status_code == 404
     assert client.get("/operator/incident-targets/nope/health", headers=OP).status_code == 404
+
+
+# ── G-7: bounded inbound refresh, drift & staleness ──────────────────────────
+
+
+def _fetch_returning(monkeypatch, *, ok=True, exists=True, status=None, url=None, err=None):
+    def _fake(self, target_url, ref, secret, adapter=None):
+        return (ok, exists, status, url, err)
+    monkeypatch.setattr(type(incident_sync_service), "_fetch", _fake)
+
+
+def test_classify_link_status_is_pure_and_bounded():
+    now = _now()
+    recent, old = now - timedelta(minutes=1), now - timedelta(days=2)
+    # Never linked.
+    assert classify_link_status(local_state="open", last_synced_at=None, last_checked_at=None,
+                                external_exists=None, external_status=None, now=now, stale_seconds=3600)[0] == "never_linked"
+    # Missing external.
+    assert classify_link_status(local_state="open", last_synced_at=recent, last_checked_at=now,
+                                external_exists=False, external_status=None, now=now, stale_seconds=3600)[0] == "missing_external"
+    # Drift: external resolved while local still open.
+    assert classify_link_status(local_state="open", last_synced_at=recent, last_checked_at=now,
+                                external_exists=True, external_status="resolved", now=now, stale_seconds=3600)[0] == "drifted"
+    # Drift: local recovered while external still open.
+    assert classify_link_status(local_state="recovered", last_synced_at=recent, last_checked_at=now,
+                                external_exists=True, external_status="open", now=now, stale_seconds=3600)[0] == "drifted"
+    # Stale by age.
+    assert classify_link_status(local_state="open", last_synced_at=old, last_checked_at=None,
+                                external_exists=None, external_status=None, now=now, stale_seconds=3600)[0] == "stale"
+    # Refreshed & aligned.
+    assert classify_link_status(local_state="open", last_synced_at=recent, last_checked_at=now,
+                                external_exists=True, external_status="open", now=now, stale_seconds=3600)[0] == "refreshed"
+    # Linked (synced, not yet checked, fresh).
+    assert classify_link_status(local_state="open", last_synced_at=recent, last_checked_at=None,
+                                external_exists=None, external_status=None, now=now, stale_seconds=3600)[0] == "linked"
+
+
+def test_refresh_detects_external_resolved_drift(capture_send, monkeypatch):
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="drift-ext")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "drift-ext")
+    # Externally resolved, but the local incident is still open → drift.
+    _fetch_returning(monkeypatch, ok=True, exists=True, status="resolved")
+    status = incident_sync_service.refresh(inc["id"])
+    assert status["summary"]["link_status"] == "drifted"
+    assert status["links"][0]["external_status"] == "resolved" and status["links"][0]["last_checked_at"]
+    # Refresh NEVER mutates the local incident.
+    assert incident_service.get(inc["id"])["state"] == "open"
+
+
+def test_refresh_detects_missing_external(capture_send, monkeypatch):
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="gone-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "gone-1")
+    _fetch_returning(monkeypatch, ok=True, exists=False, status="missing")
+    status = incident_sync_service.refresh(inc["id"])
+    assert status["summary"]["link_status"] == "missing_external"
+    assert status["links"][0]["external_exists"] is False
+
+
+def test_refresh_aligned_marks_refreshed(capture_send, monkeypatch):
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="ok-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "ok-1")
+    _fetch_returning(monkeypatch, ok=True, exists=True, status="open")
+    status = incident_sync_service.refresh(inc["id"])
+    assert status["summary"]["link_status"] == "refreshed" and status["summary"]["refresh_supported"] is True
+
+
+def test_unsupported_adapter_stays_outbound_only(capture_send, monkeypatch):
+    incident_sync_service.create_target(name="j", url="https://h.example.com/j", kind="jira")
+    incident_service.observe([_alert(job_id="jira-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "jira-1")
+    # Even if a refresh is attempted, the jira adapter is outbound-only → no inbound state.
+    called = {"n": 0}
+    def _should_not_run(self, target_url, ref, secret, adapter=None):
+        called["n"] += 1
+        return (True, True, "resolved", None, None)
+    monkeypatch.setattr(type(incident_sync_service), "_fetch", _should_not_run)
+    status = incident_sync_service.refresh(inc["id"])
+    assert called["n"] == 0  # outbound-only adapter is honestly skipped
+    assert status["summary"]["refresh_supported"] is False
+    assert status["links"][0]["external_status"] is None and status["links"][0]["last_checked_at"] is None
+
+
+def test_stale_link_detected_by_age(capture_send):
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="stale-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "stale-1")
+    # Age the last successful sync past the default stale window (24h).
+    with SessionLocal() as s:
+        link = s.query(IncidentExternalLink).filter(IncidentExternalLink.incident_id == inc["id"]).first()
+        link.last_synced_at = _now() - timedelta(days=2)
+        s.commit()
+    status = incident_sync_service.incident_sync_status(inc["id"], incident_state="open")
+    assert status["summary"]["link_status"] == "stale"
+
+
+def test_refresh_without_links_is_409_over_http(op):
+    incident_service.observe([_alert(job_id="nolink-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "nolink-1")
+    assert client.post(f"/operator/incidents/{inc['id']}/sync/refresh", headers=OP).status_code == 409
+
+
+def test_refresh_and_drift_over_http(op, capture_send, monkeypatch):
+    client.post("/operator/incident-targets", headers=OP, json={"name": "t", "url": "https://h.example.com/i"})
+    incident_service.observe([_alert(job_id="http-drift")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "http-drift")
+    _fetch_returning(monkeypatch, ok=True, exists=True, status="resolved")
+    refreshed = client.post(f"/operator/incidents/{inc['id']}/sync/refresh", headers=OP).json()
+    assert refreshed["summary"]["link_status"] == "drifted"
+    drift = client.get("/operator/incident-sync/drift", headers=OP).json()["links"]
+    assert any(link["incident_id"] == inc["id"] and link["link_status"] == "drifted" for link in drift)
+    # Gating.
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.post(f"/operator/incidents/{inc['id']}/sync/refresh", headers=auth).status_code in (401, 403)
+    assert client.get("/operator/incident-sync/drift", headers=auth).status_code in (401, 403)
+
+
+def test_stale_config_rejected():
+    from app.core.config import Settings
+    with pytest.raises(ValueError):
+        Settings(incident_link_stale_seconds=0)

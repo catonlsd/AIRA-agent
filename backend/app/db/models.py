@@ -452,6 +452,11 @@ class IncidentExternalLink(Base):
     last_action: Mapped[str | None] = mapped_column(String(24), nullable=True)
     last_record_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Bounded inbound reconciliation (G-7): what the last refresh/check observed
+    # externally. Outbound stays primary — these only *describe* external state.
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    external_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    external_exists: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
 

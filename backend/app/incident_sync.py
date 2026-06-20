@@ -65,6 +65,7 @@ class GenericIncidentAdapter:
     headers or a small JSON body (never invents a link the target didn't return)."""
 
     kind = "generic"
+    supports_refresh = True  # bounded inbound GET of {exists,status,url}
 
     def shape(self, payload: dict) -> dict:
         return payload
@@ -77,6 +78,19 @@ class GenericIncidentAdapter:
             url = url or body.get("url") or body.get("html_url") or body.get("link")
         return ((str(ref)[:120] if ref else None), (str(url)[:500] if url else None))
 
+    def parse_status(self, status_code: Optional[int], headers: dict, body: Optional[dict]) -> tuple[Optional[bool], Optional[str], Optional[str]]:
+        """Bounded inbound parse → (external_exists, normalized_status, external_url).
+        404 means the external incident is gone. Never raises."""
+        if status_code == 404:
+            return (False, EXT_MISSING, None)
+        if not body:
+            return (True, EXT_UNKNOWN, None)
+        exists = body.get("exists")
+        exists = True if exists is None else bool(exists)
+        url = body.get("url") or body.get("html_url") or body.get("link")
+        return (exists, _normalize_status(body.get("status") or body.get("state")),
+                (str(url)[:500] if url else None))
+
 
 class PagerDutyIncidentAdapter:
     """Adapter-specific pathway shaping the snapshot into a PagerDuty Events-v2-style
@@ -86,6 +100,7 @@ class PagerDutyIncidentAdapter:
     target of kind=pagerduty at any endpoint speaking this shape."""
 
     kind = "pagerduty"
+    supports_refresh = True
     _EVENT_ACTION = {
         "opened": "trigger", "reopened": "trigger", "recovered": "resolve",
         "acknowledged": "acknowledge",
@@ -121,16 +136,100 @@ class PagerDutyIncidentAdapter:
             ref = (headers.get("X-Incident-Ref") if headers else None)
         return ((str(ref)[:120] if ref else None), (str(url)[:500] if url else None))
 
+    def parse_status(self, status_code: Optional[int], headers: dict, body: Optional[dict]) -> tuple[Optional[bool], Optional[str], Optional[str]]:
+        """PagerDuty incidents expose status triggered/acknowledged/resolved."""
+        if status_code == 404:
+            return (False, EXT_MISSING, None)
+        if not body:
+            return (True, EXT_UNKNOWN, None)
+        url = body.get("url") or body.get("html_url")
+        return (True, _normalize_status(body.get("status")), (str(url)[:500] if url else None))
 
-_ADAPTERS = {a.kind: a for a in (GenericIncidentAdapter(), PagerDutyIncidentAdapter())}
+
+class OutboundOnlyAdapter(GenericIncidentAdapter):
+    """Reserved target kinds with no real inbound adapter yet: outbound shaping works
+    (via the generic envelope), but refresh is honestly unsupported — AIRA-X will not
+    claim to know external state for these until a real adapter lands."""
+
+    supports_refresh = False
+
+
+_ADAPTERS = {
+    "generic": GenericIncidentAdapter(),
+    "pagerduty": PagerDutyIncidentAdapter(),
+    "jira": OutboundOnlyAdapter(),
+    "opsgenie": OutboundOnlyAdapter(),
+}
 _GENERIC = _ADAPTERS["generic"]
-# Known target kinds: those with a dedicated adapter plus reserved labels that fall
-# back to generic shaping today (honest — no fake vendor support claimed).
-_KINDS = set(_ADAPTERS) | {"jira", "opsgenie"}
+_KINDS = set(_ADAPTERS)
 
 
 def adapter_for(kind: Optional[str]):
     return _ADAPTERS.get(kind or "generic", _GENERIC)
+
+
+# ── external status normalization + link-status classification (pure) ─────────
+
+EXT_OPEN = "open"
+EXT_ACKNOWLEDGED = "acknowledged"
+EXT_RESOLVED = "resolved"
+EXT_MISSING = "missing"
+EXT_UNKNOWN = "unknown"
+
+LINK_LINKED = "linked"
+LINK_NEVER = "never_linked"
+LINK_STALE = "stale"
+LINK_MISSING = "missing_external"
+LINK_DRIFTED = "drifted"
+LINK_REFRESHED = "refreshed"
+
+_LOCAL_OPEN = {"open", "acknowledged", "silenced"}
+_EXT_CLOSED = {EXT_RESOLVED, "closed", "done"}
+_EXT_OPEN = {EXT_OPEN, "triggered", EXT_ACKNOWLEDGED}
+
+
+def _normalize_status(raw: Optional[str]) -> str:
+    if not raw:
+        return EXT_UNKNOWN
+    value = str(raw).strip().lower()
+    if value in _EXT_CLOSED:
+        return EXT_RESOLVED
+    if value in ("triggered", "open", "firing"):
+        return EXT_OPEN
+    if value in ("acknowledged", "ack", "acked"):
+        return EXT_ACKNOWLEDGED
+    return value[:24]
+
+
+def classify_link_status(*, local_state: Optional[str], last_synced_at: Optional[datetime],
+                         last_checked_at: Optional[datetime], external_exists: Optional[bool],
+                         external_status: Optional[str], now: datetime,
+                         stale_seconds: int) -> tuple[str, str]:
+    """Pure, bounded reconciliation verdict for one link → (status, reason). Local
+    state stays primary; this only *describes* alignment, it never mutates anything."""
+    if last_synced_at is None:
+        return (LINK_NEVER, "never linked")
+    open_local = (local_state in _LOCAL_OPEN)
+    closed_local = (local_state == "recovered")
+    # Inbound facts (only meaningful once a refresh has happened).
+    if external_exists is False:
+        return (LINK_MISSING, "external incident not found")
+    if external_status in _EXT_CLOSED and open_local:
+        return (LINK_DRIFTED, "external resolved but incident still open")
+    if external_status in _EXT_OPEN and closed_local:
+        return (LINK_DRIFTED, "incident recovered but external still open")
+    # Age-based staleness (no successful sync within the bounded window).
+    age = (now - last_synced_at).total_seconds()
+    if age > max(1, stale_seconds):
+        return (LINK_STALE, "no successful sync recently")
+    if last_checked_at is not None:
+        return (LINK_REFRESHED, "checked and aligned")
+    return (LINK_LINKED, "linked")
+
+
+# Severity ordering for the incident-level rollup (worst link wins).
+_LINK_SEVERITY = {LINK_NEVER: 0, LINK_LINKED: 1, LINK_REFRESHED: 1,
+                  LINK_STALE: 2, LINK_DRIFTED: 3, LINK_MISSING: 4}
 
 
 class IncidentSyncService:
@@ -467,9 +566,16 @@ class IncidentSyncService:
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }
 
-    @staticmethod
-    def _clean_link(row: IncidentExternalLink, target_names: Optional[dict] = None) -> dict[str, Any]:
+    def _clean_link(self, row: IncidentExternalLink, target_names: Optional[dict] = None,
+                    *, local_state: Optional[str] = None, now: Optional[datetime] = None) -> dict[str, Any]:
         target = (target_names or {}).get(row.target_id, {})
+        now = now or _now()
+        stale_seconds = max(1, int(getattr(settings, "incident_link_stale_seconds", 86400)))
+        supports_refresh = bool(getattr(adapter_for(target.get("kind")), "supports_refresh", False))
+        status, reason = classify_link_status(
+            local_state=local_state, last_synced_at=row.last_synced_at,
+            last_checked_at=row.last_checked_at, external_exists=row.external_exists,
+            external_status=row.external_status, now=now, stale_seconds=stale_seconds)
         return {
             "target_id": row.target_id,
             "target_name": target.get("name"),
@@ -478,19 +584,30 @@ class IncidentSyncService:
             "external_url": row.external_url,
             "last_action": row.last_action,
             "last_synced_at": row.last_synced_at.isoformat() if row.last_synced_at else None,
+            "last_checked_at": row.last_checked_at.isoformat() if row.last_checked_at else None,
+            "external_status": row.external_status,
+            "external_exists": row.external_exists,
+            "refresh_supported": supports_refresh,
+            "link_status": status,
+            "reason": reason,
         }
 
     # ── per-incident sync status & linkage (operator-only; curated) ───────────
 
-    def incident_sync_status(self, incident_id: str) -> dict[str, Any]:
+    def incident_sync_status(self, incident_id: str, *, incident_state: Optional[str] = None) -> dict[str, Any]:
         """Curated sync-health + external linkage for one incident: durable links,
-        recent attempts, and an honest summary (linked? behind? recovered by redrive?).
-        Outbound-only — never claims to have read external state back."""
+        recent attempts, and an honest summary (linked? behind? drifted? stale?
+        missing? recovered by redrive?). Outbound stays primary — inbound facts are
+        only what the last bounded refresh observed, never silent overwrites."""
         empty = {"linked": False, "links": [], "records": [],
                  "summary": {"linked": False, "synced": False, "behind": False,
-                             "last_synced_at": None, "last_failed_at": None,
-                             "last_error": None, "recovered_after_redrive": False}}
+                             "last_synced_at": None, "last_failed_at": None, "last_error": None,
+                             "recovered_after_redrive": False, "link_status": LINK_NEVER,
+                             "reason": "never linked", "refresh_supported": False,
+                             "last_checked_at": None}}
         try:
+            local_state = incident_state if incident_state is not None else self._local_state(incident_id)
+            now = _now()
             with self._session_factory() as session:
                 names = self._target_names(session)
                 link_rows = (session.query(IncidentExternalLink)
@@ -499,24 +616,130 @@ class IncidentSyncService:
                 rec_rows = (session.query(IncidentSyncRecord)
                             .filter(IncidentSyncRecord.incident_id == incident_id)
                             .order_by(IncidentSyncRecord.created_at.desc()).limit(50).all())
-            links = [self._clean_link(r, names) for r in link_rows]
+            links = [self._clean_link(r, names, local_state=local_state, now=now) for r in link_rows]
             records = [self._clean_record(r, names) for r in rec_rows]
             synced = [r for r in records if r["status"] == STATUS_SYNCED]
             failed = [r for r in records if r["status"] == STATUS_FAILED]
             latest = records[0] if records else None
+            # Incident-level rollup: the worst (most actionable) link wins.
+            overall, reason = LINK_NEVER, "never linked"
+            if links:
+                worst = max(links, key=lambda link: _LINK_SEVERITY.get(link["link_status"], 0))
+                overall, reason = worst["link_status"], worst["reason"]
             summary = {
                 "linked": bool(links),
                 "synced": bool(synced),
-                # "behind" = the most recent transition has not landed externally yet.
                 "behind": bool(latest and latest["status"] != STATUS_SYNCED),
                 "last_synced_at": synced[0]["created_at"] if synced else None,
                 "last_failed_at": failed[0]["created_at"] if failed else None,
                 "last_error": failed[0]["last_error"] if failed else None,
                 "recovered_after_redrive": bool(latest and latest["status"] == STATUS_SYNCED and latest["is_redrive"]),
+                "link_status": overall,
+                "reason": reason,
+                "refresh_supported": any(link["refresh_supported"] for link in links),
+                "last_checked_at": max([link["last_checked_at"] for link in links if link["last_checked_at"]], default=None),
             }
             return {"linked": bool(links), "links": links, "records": records, "summary": summary}
         except Exception:
             return empty
+
+    @staticmethod
+    def _local_state(incident_id: str) -> Optional[str]:
+        """Read the current local incident state (guarded lazy import — sync must not
+        hard-depend on the incident service)."""
+        try:
+            from app.incidents import incident_service
+            inc = incident_service.get(incident_id)
+            return inc.get("state") if inc else None
+        except Exception:
+            return None
+
+    # ── bounded inbound reconciliation (refresh / drift) ──────────────────────
+
+    def refresh(self, incident_id: str, *, incident_state: Optional[str] = None) -> Optional[dict[str, Any]]:
+        """Bounded inbound recheck of each linked external incident (only for
+        adapters that support it). Updates the link's last-observed external
+        status/existence/url — it NEVER mutates the local incident. Returns the
+        refreshed sync status, or None if the incident has no links to check."""
+        local_state = incident_state if incident_state is not None else self._local_state(incident_id)
+        checked = 0
+        try:
+            with self._session_factory() as session:
+                links = (session.query(IncidentExternalLink)
+                         .filter(IncidentExternalLink.incident_id == incident_id).all())
+                if not links:
+                    return None
+                now = _now()
+                for link in links:
+                    target = session.get(ExternalIncidentTarget, link.target_id)
+                    if target is None:
+                        continue
+                    adapter = adapter_for(target.kind)
+                    if not getattr(adapter, "supports_refresh", False):
+                        continue  # outbound-only adapter — honestly skipped
+                    ok, exists, status, url, _err = self._fetch(target.url, link.external_ref, target.secret, adapter)
+                    link.last_checked_at = now
+                    if ok or exists is False:
+                        link.external_exists = exists
+                        if status:
+                            link.external_status = status
+                        if url:
+                            link.external_url = url
+                    checked += 1
+                session.commit()
+        except Exception:
+            return self.incident_sync_status(incident_id, incident_state=local_state)
+        return self.incident_sync_status(incident_id, incident_state=local_state)
+
+    def _fetch(self, target_url: str, ref: Optional[str], secret: Optional[str],
+               adapter=None) -> tuple[bool, Optional[bool], Optional[str], Optional[str], Optional[str]]:
+        """Bounded inbound GET of an external incident's current state. Returns
+        (ok, external_exists, normalized_status, external_url, error_class). The
+        adapter parses the response. Injectable/overridable in tests. Never raises."""
+        adapter = adapter or _GENERIC
+        try:
+            import requests
+
+            headers = {"Accept": "application/json", "User-Agent": "AIRA-X-IncidentSync/1"}
+            params = {"ref": ref} if ref else {}
+            resp = requests.get(target_url, params=params, headers=headers,
+                                timeout=getattr(settings, "webhook_timeout_seconds", 5.0))
+            ok = 200 <= resp.status_code < 300
+            resp_headers, resp_body = {}, None
+            try:
+                resp_headers = dict(resp.headers)
+            except Exception:
+                resp_headers = {}
+            try:
+                resp_body = resp.json()
+            except Exception:
+                resp_body = None
+            exists, status, url = adapter.parse_status(resp.status_code, resp_headers, resp_body)
+            return (ok, exists, status, url, None if ok else f"HTTP{resp.status_code}")
+        except Exception as error:
+            return (False, None, None, None, type(error).__name__)
+
+    def drifted(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        """Operator triage: links whose reconciliation verdict is actionable
+        (drifted / missing_external / stale). Curated, bounded, operator-only."""
+        actionable = {LINK_DRIFTED, LINK_MISSING, LINK_STALE}
+        out: list[dict[str, Any]] = []
+        try:
+            now = _now()
+            with self._session_factory() as session:
+                names = self._target_names(session)
+                rows = (session.query(IncidentExternalLink)
+                        .order_by(IncidentExternalLink.last_synced_at.desc())
+                        .limit(min(limit, 200)).all())
+                detached = [(r, self._local_state(r.incident_id)) for r in rows]
+            for row, local_state in detached:
+                clean = self._clean_link(row, names, local_state=local_state, now=now)
+                if clean["link_status"] in actionable:
+                    clean["incident_id"] = row.incident_id
+                    out.append(clean)
+        except Exception:
+            return []
+        return out
 
     def target_health(self, target_id: str) -> Optional[dict[str, Any]]:
         """Curated health for one target: recent attempt mix + last success/failure."""
