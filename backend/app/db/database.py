@@ -57,6 +57,10 @@ def ensure_runtime_columns() -> None:
                 ("consecutive_failures", "INTEGER DEFAULT 0"),
                 ("cooldown_until", "DATETIME"),
             ],
+            "operator_incidents": [
+                ("assignee", "VARCHAR(80)"),
+                ("assigned_at", "DATETIME"),
+            ],
         }
         for table, columns in additions.items():
             if table not in inspector.get_table_names():

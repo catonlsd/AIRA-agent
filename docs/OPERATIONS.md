@@ -1041,6 +1041,48 @@ pipeline. This is a support workflow, **not** a ticketing/pager product.
   recurrence, silence ≠ suppression, HTTP gating/actions, config bounds, no
   user-route leak) and `frontend/lib/operator.test.mts` (`incidentTone`).
 
+### Incident collaboration — assignment, notes & action trail (G-4)
+
+Incidents become **handoff-safe** so a relieving operator can pick up a shift
+without out-of-band Slack archaeology. Still a support workflow, **not** a
+ticketing product — one owner, one short note, one curated trail.
+
+- **Operator identity, honestly.** Service-key auth has no verified named
+  operators, so an operator optionally **self-declares a handle** at connect time
+  (stored in `sessionStorage`, sent as the `X-Operator-Name` header). It is
+  recorded as the `actor` on actions — never presented as a verified account.
+- **Single ownership.** `OperatorIncident` gains `assignee` / `assigned_at`
+  (additive `ensure_runtime_columns` ALTER). `assign(id, handle)` takes/transfers
+  ownership (re-assigning to a *different* handle records a `reassigned` event),
+  `unassign(id)` releases it. Ownership **survives reopen** — when a recovered
+  condition recurs, the owner still owns the fresh episode.
+- **Durable notes.** The existing `PATCH /operator/incidents/{id}` note (≤280)
+  now records a `note_updated` trail entry; the console edits it inline.
+- **Curated action trail.** New `OperatorIncidentEvent`
+  (`backend/app/db/models.py`, table `operator_incident_events`, monotonic int PK
+  for stable chronological order) appends **one row per meaningful transition**:
+  opened / acknowledged / silenced / unsilenced / recovered / reopened / assigned
+  / unassigned / reassigned / note_updated. `observe()` logs `opened`/`reopened`,
+  `recover_stale()` logs `recovered` (occurrence bumps do **not** flood the trail).
+  Each entry carries only `{action, actor, detail, state, at}` — never payloads,
+  traces, secrets, or raw owners.
+- **Operator-only APIs** (`backend/app/routes/operator.py`): `POST
+  .../{id}/assign` (`assignee` validated non-empty ≤80 → 422 otherwise), `POST
+  .../{id}/unassign`, `GET .../{id}/history`. Assignee/note actions thread the
+  declared operator name as actor.
+- **Console** (`app/operator/page.tsx`): each incident row shows the **owner**, a
+  **Claim** (assign-to-me, gated on a declared handle) / **Release** control, an
+  inline **note** editor, and an expandable **action trail** (lazy-loaded), with
+  ack/silence/unsilence unchanged. The connect screen adds an optional operator
+  name; the header shows "acting as …". Still strictly operator-gated — no
+  assignee/note/history field leaks into `GET /jobs/{id}` and there is no
+  user-facing route.
+- Pinned by `backend/tests/test_operator_incidents.py` (assign/reassign/unassign
+  durable + trail order, ownership survives reopen, curated ordered history with
+  actor/detail, HTTP collab actions with `X-Operator-Name`, empty-assignee 422,
+  collab gating + 404, no `assignee` leak into `/jobs/{id}`) and
+  `frontend/lib/operator.test.mts` (`incidentEventLabel`).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

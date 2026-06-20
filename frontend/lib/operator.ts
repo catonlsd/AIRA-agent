@@ -140,6 +140,8 @@ export type Incident = {
   severity: string | null;
   occurrences: number;
   note: string | null;
+  assignee: string | null;
+  assigned_at: string | null;
   acknowledged: boolean;
   acknowledged_at: string | null;
   silenced_until: string | null;
@@ -147,6 +149,31 @@ export type Incident = {
   first_seen: string | null;
   last_seen: string | null;
 };
+
+export type IncidentEvent = {
+  action: string;
+  actor: string | null;
+  detail: string | null;
+  state: string | null;
+  at: string | null;
+};
+
+/** Human-friendly label for an action-trail entry (pure; unit-tested). */
+export function incidentEventLabel(action: string): string {
+  const labels: Record<string, string> = {
+    opened: "Opened",
+    acknowledged: "Acknowledged",
+    silenced: "Silenced",
+    unsilenced: "Unsilenced",
+    recovered: "Recovered",
+    reopened: "Reopened",
+    assigned: "Assigned",
+    reassigned: "Reassigned",
+    unassigned: "Unassigned",
+    note_updated: "Note updated",
+  };
+  return labels[action] ?? action;
+}
 
 export type Tone = "good" | "warn" | "bad" | "muted";
 
@@ -242,6 +269,31 @@ export function clearOperatorKey(): void {
   if (typeof window === "undefined") return;
   try {
     window.sessionStorage.removeItem(KEY_STORAGE);
+    window.sessionStorage.removeItem(NAME_STORAGE);
+  } catch {
+    /* best-effort */
+  }
+}
+
+// ── operator handle (self-declared; recorded as the actor on incident actions) ─
+
+const NAME_STORAGE = "aira_operator_name";
+
+export function getOperatorName(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage.getItem(NAME_STORAGE);
+  } catch {
+    return null;
+  }
+}
+
+export function setOperatorName(name: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const trimmed = name.trim().slice(0, 80);
+    if (trimmed) window.sessionStorage.setItem(NAME_STORAGE, trimmed);
+    else window.sessionStorage.removeItem(NAME_STORAGE);
   } catch {
     /* best-effort */
   }
@@ -253,6 +305,8 @@ function opHeaders(json = false): Record<string, string> {
   const headers: Record<string, string> = json ? { "Content-Type": "application/json" } : {};
   const key = getOperatorKey();
   if (key) headers["X-API-Key"] = key;
+  const name = getOperatorName();
+  if (name) headers["X-Operator-Name"] = name;
   return headers;
 }
 
@@ -384,4 +438,30 @@ export async function silenceIncident(id: string, seconds?: number): Promise<boo
 export async function unsilenceIncident(id: string): Promise<boolean> {
   const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(id)}/unsilence`, { method: "POST", cache: "no-store", headers: opHeaders() });
   return res.ok;
+}
+
+export async function noteIncident(id: string, note: string): Promise<boolean> {
+  const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(id)}`, {
+    method: "PATCH", cache: "no-store", headers: opHeaders(true), body: JSON.stringify({ note }),
+  });
+  return res.ok;
+}
+
+export async function assignIncident(id: string, assignee: string): Promise<boolean> {
+  const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(id)}/assign`, {
+    method: "POST", cache: "no-store", headers: opHeaders(true), body: JSON.stringify({ assignee }),
+  });
+  return res.ok;
+}
+
+export async function unassignIncident(id: string): Promise<boolean> {
+  const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(id)}/unassign`, { method: "POST", cache: "no-store", headers: opHeaders() });
+  return res.ok;
+}
+
+export async function fetchIncidentHistory(id: string): Promise<IncidentEvent[]> {
+  const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(id)}/history`, { cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return [];
+  const body = await res.json();
+  return Array.isArray(body?.history) ? body.history : [];
 }

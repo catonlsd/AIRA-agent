@@ -8,6 +8,7 @@ import {
   deadLetterTone,
   deliveryStatusTone,
   healthTone,
+  incidentEventLabel,
   incidentTone,
   redriveBlockedReason,
 } from "./operator.ts";
@@ -53,4 +54,13 @@ test("incidentTone maps each workflow state to a tone", () => {
   assert.equal(incidentTone("acknowledged"), "warn");
   assert.equal(incidentTone("silenced"), "muted");
   assert.equal(incidentTone("recovered"), "good");
+});
+
+test("incidentEventLabel humanizes each trail action; unknown passes through", () => {
+  assert.equal(incidentEventLabel("opened"), "Opened");
+  assert.equal(incidentEventLabel("acknowledged"), "Acknowledged");
+  assert.equal(incidentEventLabel("reassigned"), "Reassigned");
+  assert.equal(incidentEventLabel("note_updated"), "Note updated");
+  assert.equal(incidentEventLabel("recovered"), "Recovered");
+  assert.equal(incidentEventLabel("mystery"), "mystery");
 });

@@ -432,6 +432,28 @@ class SilenceBody(BaseModel):
     seconds: int | None = None
 
 
+class AssignBody(BaseModel):
+    # The operator-declared handle taking ownership. Service-key auth has no verified
+    # identity, so this is an honest self-declared label, bounded and operator-only.
+    assignee: str = Field(..., min_length=1, max_length=80)
+
+
+# A relieving operator may declare who they are via this header; it is recorded as
+# the actor on the action trail. Optional — never a verified identity.
+_OPERATOR_NAME_HEADER = "X-Operator-Name"
+
+
+def _operator_name(request: Request) -> str | None:
+    try:
+        raw = request.headers.get(_OPERATOR_NAME_HEADER)
+    except Exception:
+        raw = None
+    if not raw:
+        return None
+    name = raw.strip()[:80]
+    return name or None
+
+
 def _refresh_incidents() -> None:
     """Make the incident list a live view: open/bump current conditions and recover
     cleared ones from the current policy alert set. Best-effort."""
@@ -473,7 +495,7 @@ def operator_ack_incident(incident_id: str, request: Request) -> dict:
     _require_operator(request)
     from app.incidents import incident_service
 
-    incident = incident_service.acknowledge(incident_id)
+    incident = incident_service.acknowledge(incident_id, actor=_operator_name(request))
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found.")
     return {"incident": incident}
@@ -487,7 +509,7 @@ def operator_silence_incident(incident_id: str, body: SilenceBody, request: Requ
     _require_operator(request)
     from app.incidents import incident_service
 
-    incident = incident_service.silence(incident_id, seconds=body.seconds)
+    incident = incident_service.silence(incident_id, seconds=body.seconds, actor=_operator_name(request))
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found.")
     return {"incident": incident}
@@ -498,10 +520,46 @@ def operator_unsilence_incident(incident_id: str, request: Request) -> dict:
     _require_operator(request)
     from app.incidents import incident_service
 
-    incident = incident_service.unsilence(incident_id)
+    incident = incident_service.unsilence(incident_id, actor=_operator_name(request))
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found.")
     return {"incident": incident}
+
+
+@router.post("/incidents/{incident_id}/assign")
+def operator_assign_incident(incident_id: str, body: AssignBody, request: Request) -> dict:
+    """Take/transfer ownership of an incident. The assignee is an operator-declared
+    handle (bounded); re-assigning to a different handle records a `reassigned`
+    event. Operator-only; recorded on the action trail."""
+    _require_operator(request)
+    from app.incidents import incident_service
+
+    incident = incident_service.assign(incident_id, body.assignee, actor=_operator_name(request))
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    return {"incident": incident}
+
+
+@router.post("/incidents/{incident_id}/unassign")
+def operator_unassign_incident(incident_id: str, request: Request) -> dict:
+    _require_operator(request)
+    from app.incidents import incident_service
+
+    incident = incident_service.unassign(incident_id, actor=_operator_name(request))
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    return {"incident": incident}
+
+
+@router.get("/incidents/{incident_id}/history")
+def operator_incident_history(incident_id: str, request: Request, limit: int = 50) -> dict:
+    """The curated, ordered action trail for one incident (handoff context)."""
+    _require_operator(request)
+    from app.incidents import incident_service
+
+    if incident_service.get(incident_id) is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    return {"history": incident_service.history(incident_id, limit=limit)}
 
 
 @router.patch("/incidents/{incident_id}")
@@ -509,7 +567,7 @@ def operator_note_incident(incident_id: str, body: IncidentNote, request: Reques
     _require_operator(request)
     from app.incidents import incident_service
 
-    incident = incident_service.set_note(incident_id, body.note)
+    incident = incident_service.set_note(incident_id, body.note, actor=_operator_name(request))
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found.")
     return {"incident": incident}

@@ -335,8 +335,37 @@ class OperatorIncident(Base):
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     silenced_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     recovered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Collaboration (G-4): a single current owner + when they took it. The assignee
+    # is an operator-declared handle (service-key auth has no real named identity),
+    # bounded and operator-only — never a verified account.
+    assignee: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    assigned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+
+
+class OperatorIncidentEvent(Base):
+    """A curated, append-only action-trail entry for an operator incident (G-4).
+
+    One row per meaningful workflow transition — opened / acknowledged / silenced /
+    unsilenced / recovered / reopened / assigned / unassigned / reassigned /
+    note_updated — so a relieving operator can read what already happened on a
+    shift handoff instead of relying on out-of-band memory. The integer primary key
+    is monotonic, giving a stable chronological order even within one timestamp.
+    Operator-only and deliberately small: a brief `detail` (note text / new
+    assignee / silence-until), the resulting `state`, and the operator-declared
+    `actor` if one was supplied — never payloads, traces, secrets, or raw owners.
+    """
+
+    __tablename__ = "operator_incident_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    incident_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    action: Mapped[str] = mapped_column(String(24), nullable=False)
+    actor: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    detail: Mapped[str | None] = mapped_column(String(280), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
 
 
 class ContextBundle(Base):

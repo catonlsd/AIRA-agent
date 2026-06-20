@@ -15,21 +15,27 @@ import {
   BellRing,
   Check,
   CheckCircle2,
+  ChevronDown,
   Flame,
   GitBranch,
   History,
   LayoutGrid,
   LockKeyhole,
+  MessageSquarePlus,
   RefreshCw,
   Send,
   ShieldCheck,
   SlidersHorizontal,
   Snowflake,
+  User,
+  UserMinus,
+  UserPlus,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   ackIncident,
+  assignIncident,
   canRedrive,
   clearCooldown,
   clearOperatorKey,
@@ -40,18 +46,24 @@ import {
   fetchDeadLetters,
   fetchDeliveries,
   fetchDestinationHealth,
+  fetchIncidentHistory,
   fetchIncidents,
   fetchLineage,
   fetchRoutingPreview,
   getOperatorKey,
+  getOperatorName,
   healthTone,
+  incidentEventLabel,
   incidentTone,
+  noteIncident,
   patchDestination,
   redriveBlockedReason,
   redriveDelivery,
   runSweep,
   setOperatorKey,
+  setOperatorName,
   silenceIncident,
+  unassignIncident,
   unsilenceIncident,
   verifyOperator,
   type DeadLetter,
@@ -61,6 +73,7 @@ import {
   type DestinationHealth,
   type DestinationTuning,
   type Incident,
+  type IncidentEvent,
   type RoutingPreview,
   type Tone,
 } from "@/lib/operator";
@@ -119,12 +132,37 @@ function relTimeUntil(iso: string | null): string {
   return `${Math.round(s / 3600)}h`;
 }
 
-// ── incident row (Incidents tab) ─────────────────────────────────────────────
-function IncidentRow({ inc, busy, onAck, onSilence, onUnsilence }: {
-  inc: Incident; busy: boolean;
-  onAck: () => void; onSilence: () => void; onUnsilence: () => void;
+// ── incident row (Incidents tab) — state + assignment + notes + action trail ──
+const INC_BTN = "inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-strong)] transition hover:border-[var(--border-strong)] disabled:opacity-50";
+
+function IncidentRow({ inc, operatorName, onChanged }: {
+  inc: Incident; operatorName: string | null; onChanged: () => void;
 }) {
+  const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [history, setHistory] = useState<IncidentEvent[] | null>(null);
+  const [editingNote, setEditingNote] = useState(false);
+  const [noteDraft, setNoteDraft] = useState(inc.note ?? "");
   const silenceLeft = inc.state === "silenced" ? relTimeUntil(inc.silenced_until) : "";
+  const ownedByMe = Boolean(operatorName) && inc.assignee === operatorName;
+
+  const act = useCallback(async (fn: () => Promise<boolean>) => {
+    setBusy(true);
+    try { await fn(); onChanged(); } finally { setBusy(false); }
+  }, [onChanged]);
+
+  const toggleHistory = useCallback(async () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next) setHistory(await fetchIncidentHistory(inc.id));
+  }, [expanded, inc.id]);
+
+  const saveNote = useCallback(async () => {
+    setBusy(true);
+    try { if (await noteIncident(inc.id, noteDraft.slice(0, 280))) { setEditingNote(false); onChanged(); } }
+    finally { setBusy(false); }
+  }, [inc.id, noteDraft, onChanged]);
+
   return (
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3.5">
       <div className="flex flex-wrap items-center gap-2">
@@ -134,31 +172,91 @@ function IncidentRow({ inc, busy, onAck, onSilence, onUnsilence }: {
         {inc.severity ? <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-subtle)]">{inc.severity}</span> : null}
         <span className="ml-auto text-[11px] text-[var(--text-subtle)]">×{inc.occurrences} · last {relTime(inc.last_seen)}</span>
       </div>
+
       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--text-muted)]">
-        <span>source: {inc.source}</span>
+        <span className="inline-flex items-center gap-1 font-semibold text-[var(--text-strong)]">
+          <User className="h-3 w-3" />
+          {inc.assignee ? `Owned by ${inc.assignee}${ownedByMe ? " (you)" : ""}` : "Unassigned"}
+        </span>
         {inc.acknowledged_at ? <span>acknowledged {relTime(inc.acknowledged_at)}</span> : null}
         {inc.state === "silenced" && silenceLeft ? <span className="font-semibold text-[var(--text-strong)]">silenced · {silenceLeft} left</span> : null}
         {inc.state === "recovered" && inc.recovered_at ? <span className="font-semibold text-[var(--success)]">recovered {relTime(inc.recovered_at)}</span> : null}
       </div>
-      {inc.note ? <p className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1.5 text-[11px] text-[var(--text-muted)]">📝 {inc.note}</p> : null}
-      {inc.state !== "recovered" ? (
-        <div className="mt-2.5 flex flex-wrap gap-1.5">
-          {!inc.acknowledged ? (
-            <button type="button" disabled={busy} onClick={onAck}
-              className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-strong)] transition hover:border-[var(--border-strong)] disabled:opacity-50">
-              <Check className="h-3 w-3" /> Acknowledge
+
+      {inc.note && !editingNote ? (
+        <p className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1.5 text-[11px] text-[var(--text-muted)]">📝 {inc.note}</p>
+      ) : null}
+
+      {editingNote ? (
+        <div className="mt-2 flex flex-col gap-1.5">
+          <textarea value={noteDraft} maxLength={280} onChange={(e) => setNoteDraft(e.target.value)}
+            placeholder="Short note for the next operator…" rows={2}
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1.5 text-[11px] text-[var(--text-strong)] outline-none focus:border-[var(--border-strong)]" />
+          <div className="flex gap-1.5">
+            <button type="button" disabled={busy} onClick={() => void saveNote()} className={INC_BTN}>Save note</button>
+            <button type="button" onClick={() => { setEditingNote(false); setNoteDraft(inc.note ?? ""); }} className={INC_BTN}>Cancel</button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-2.5 flex flex-wrap gap-1.5">
+        {inc.state !== "recovered" ? (
+          <>
+            {!inc.acknowledged ? (
+              <button type="button" disabled={busy} onClick={() => void act(() => ackIncident(inc.id))} className={INC_BTN}>
+                <Check className="h-3 w-3" /> Acknowledge
+              </button>
+            ) : null}
+            {inc.state === "silenced" ? (
+              <button type="button" disabled={busy} onClick={() => void act(() => unsilenceIncident(inc.id))} className={INC_BTN}>
+                <BellRing className="h-3 w-3" /> Unsilence
+              </button>
+            ) : (
+              <button type="button" disabled={busy} onClick={() => void act(() => silenceIncident(inc.id))} className={INC_BTN}>
+                <BellOff className="h-3 w-3" /> Silence
+              </button>
+            )}
+            {!ownedByMe ? (
+              <button type="button" disabled={busy || !operatorName} title={operatorName ? "" : "Set your operator name when connecting to claim"}
+                onClick={() => operatorName && void act(() => assignIncident(inc.id, operatorName))} className={INC_BTN}>
+                <UserPlus className="h-3 w-3" /> Claim
+              </button>
+            ) : null}
+            {inc.assignee ? (
+              <button type="button" disabled={busy} onClick={() => void act(() => unassignIncident(inc.id))} className={INC_BTN}>
+                <UserMinus className="h-3 w-3" /> Release
+              </button>
+            ) : null}
+            <button type="button" disabled={busy} onClick={() => { setEditingNote(true); setNoteDraft(inc.note ?? ""); }} className={INC_BTN}>
+              <MessageSquarePlus className="h-3 w-3" /> Note
             </button>
-          ) : null}
-          {inc.state === "silenced" ? (
-            <button type="button" disabled={busy} onClick={onUnsilence}
-              className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-strong)] transition hover:border-[var(--border-strong)] disabled:opacity-50">
-              <BellRing className="h-3 w-3" /> Unsilence
-            </button>
+          </>
+        ) : null}
+        <button type="button" onClick={() => void toggleHistory()} className={INC_BTN}>
+          <ChevronDown className={cn("h-3 w-3 transition", expanded ? "rotate-180" : "")} /> History
+        </button>
+      </div>
+
+      {expanded ? (
+        <div className="mt-2 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+          <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
+            <History className="h-3 w-3" /> Action trail
+          </p>
+          {history === null ? (
+            <p className="text-[11px] text-[var(--text-muted)]">Loading…</p>
+          ) : history.length === 0 ? (
+            <p className="text-[11px] text-[var(--text-muted)]">No recorded actions yet.</p>
           ) : (
-            <button type="button" disabled={busy} onClick={onSilence}
-              className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-strong)] transition hover:border-[var(--border-strong)] disabled:opacity-50">
-              <BellOff className="h-3 w-3" /> Silence
-            </button>
+            <ol className="grid gap-1">
+              {history.map((e, i) => (
+                <li key={i} className="flex flex-wrap items-baseline gap-x-2 text-[11px] text-[var(--text-muted)]">
+                  <span className="font-black text-[var(--text-strong)]">{incidentEventLabel(e.action)}</span>
+                  {e.actor ? <span>by {e.actor}</span> : null}
+                  {e.detail ? <span className="text-[var(--text-subtle)]">· {e.detail}</span> : null}
+                  <span className="ml-auto text-[var(--text-subtle)]">{relTime(e.at)}</span>
+                </li>
+              ))}
+            </ol>
           )}
         </div>
       ) : null}
@@ -192,8 +290,10 @@ function LineageChain({ lineage }: { lineage: DeliveryLineage }) {
 export default function OperatorConsole() {
   const [status, setStatus] = useState<"checking" | "needs_key" | "ready">("checking");
   const [keyInput, setKeyInput] = useState("");
+  const [nameInput, setNameInput] = useState("");
   const [keyError, setKeyError] = useState("");
   const [tab, setTab] = useState<Tab>("overview");
+  const [operatorName, setOperatorNameState] = useState<string | null>(null);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [analytics, setAnalytics] = useState<DeliveryAnalytics | null>(null);
   const [destinations, setDestinations] = useState<DestinationHealth[]>([]);
@@ -221,6 +321,7 @@ export default function OperatorConsole() {
   const loadIncidents = useCallback(async () => { setIncidents(await fetchIncidents()); }, []);
 
   useEffect(() => {
+    setOperatorNameState(getOperatorName());
     if (!getOperatorKey()) { setStatus("needs_key"); return; }
     verifyOperator().then((ok) => {
       if (ok) { setStatus("ready"); void load(); void loadIncidents(); } else { setStatus("needs_key"); }
@@ -235,14 +336,17 @@ export default function OperatorConsole() {
   const connect = useCallback(async () => {
     setKeyError("");
     setOperatorKey(keyInput);
-    if (await verifyOperator()) { setStatus("ready"); void load(); }
+    setOperatorName(nameInput);            // self-declared handle (optional)
+    setOperatorNameState(getOperatorName());
+    if (await verifyOperator()) { setStatus("ready"); void load(); void loadIncidents(); }
     else { clearOperatorKey(); setKeyError("That service key was not accepted."); }
-  }, [keyInput, load]);
+  }, [keyInput, nameInput, load, loadIncidents]);
 
   const disconnect = useCallback(() => {
     clearOperatorKey();
+    setOperatorNameState(null);
     setStatus("needs_key");
-    setAnalytics(null); setDestinations([]); setDeadLetters([]); setDeliveries([]);
+    setAnalytics(null); setDestinations([]); setDeadLetters([]); setDeliveries([]); setIncidents([]);
   }, []);
 
   const flashMsg = (msg: string) => { setFlash(msg); window.setTimeout(() => setFlash(""), 3000); };
@@ -278,24 +382,6 @@ export default function OperatorConsole() {
     setEditing(d.destination_id);
     setTuneForm({}); // tuning fields default to "unchanged" — only edited fields are sent
   }, []);
-
-  const onAck = useCallback(async (id: string) => {
-    setBusy(id);
-    try { if (await ackIncident(id)) flashMsg("Acknowledged."); await loadIncidents(); }
-    finally { setBusy(null); }
-  }, [loadIncidents]);
-
-  const onSilence = useCallback(async (id: string) => {
-    setBusy(id);
-    try { if (await silenceIncident(id)) flashMsg("Silenced (bounded)."); await loadIncidents(); }
-    finally { setBusy(null); }
-  }, [loadIncidents]);
-
-  const onUnsilence = useCallback(async (id: string) => {
-    setBusy(id);
-    try { if (await unsilenceIncident(id)) flashMsg("Unsilenced."); await loadIncidents(); }
-    finally { setBusy(null); }
-  }, [loadIncidents]);
 
   const onSaveTuning = useCallback(async (destId: string) => {
     setBusy(destId);
@@ -334,6 +420,12 @@ export default function OperatorConsole() {
             placeholder="Service key"
             className="mt-5 w-full rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-sm text-[var(--text-strong)] outline-none transition focus:border-[var(--border-strong)]"
           />
+          <input
+            type="text" value={nameInput} maxLength={80} onChange={(e) => setNameInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && keyInput.trim()) void connect(); }}
+            placeholder="Your operator name (optional — for handoff)"
+            className="mt-2.5 w-full rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-sm text-[var(--text-strong)] outline-none transition focus:border-[var(--border-strong)]"
+          />
           {keyError ? <p className="mt-2 text-xs font-semibold text-[var(--danger)]">{keyError}</p> : null}
           <button type="button" onClick={() => void connect()} disabled={!keyInput.trim() || status === "checking"}
             className="mt-4 w-full rounded-full border border-transparent bg-[var(--accent)] px-4 py-2.5 text-sm font-black text-[var(--accent-contrast,#fff)] transition hover:opacity-90 disabled:opacity-60">
@@ -362,7 +454,10 @@ export default function OperatorConsole() {
           </div>
           <div>
             <h1 className="text-lg font-black tracking-tight text-[var(--text-strong)]">Delivery console</h1>
-            <p className="text-xs text-[var(--text-muted)]">Operator-only · health, history, tuning, and recovery</p>
+            <p className="text-xs text-[var(--text-muted)]">
+              Operator-only · health, history, tuning, and recovery
+              {operatorName ? <span className="ml-1 font-semibold text-[var(--text-strong)]">· acting as {operatorName}</span> : null}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -559,8 +654,7 @@ export default function OperatorConsole() {
                     </div>
                     <div className="grid gap-2">
                       {rows.map((inc) => (
-                        <IncidentRow key={inc.id} inc={inc} busy={busy === inc.id}
-                          onAck={() => void onAck(inc.id)} onSilence={() => void onSilence(inc.id)} onUnsilence={() => void onUnsilence(inc.id)} />
+                        <IncidentRow key={inc.id} inc={inc} operatorName={operatorName} onChanged={() => void loadIncidents()} />
                       ))}
                     </div>
                   </section>

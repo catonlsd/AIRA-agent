@@ -186,7 +186,81 @@ def test_no_incident_fields_leak_into_user_routes():
     job = execution_queue.enqueue(f"account:{owner['id']}", "noop", {}, title="T")
     auth = {"Authorization": f"Bearer {make_account_token(owner['id'])}"}
     user_job = client.get(f"/jobs/{job['id']}", headers=auth).json()["job"]
-    for operator_only in ("state", "silenced_until", "acknowledged", "signal", "occurrences"):
+    for operator_only in ("state", "silenced_until", "acknowledged", "signal", "occurrences", "assignee"):
         assert operator_only not in user_job
     # And no user-facing incidents route exists.
     assert client.get("/incidents").status_code == 404
+
+
+# ── Collaboration (G-4): assignment, notes & action trail ────────────────────
+
+
+def test_assign_unassign_and_reassign_are_durable():
+    incident_service.observe([_alert(job_id="asg-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "asg-1")
+    assert inc["assignee"] is None
+    owned = incident_service.assign(inc["id"], "  alice  ", actor="alice")
+    assert owned["assignee"] == "alice" and owned["assigned_at"]
+    re = incident_service.assign(inc["id"], "bob", actor="bob")
+    assert re["assignee"] == "bob"
+    free = incident_service.unassign(inc["id"], actor="bob")
+    assert free["assignee"] is None and free["assigned_at"] is None
+    # The trail records the ownership lifecycle distinctly.
+    actions = [e["action"] for e in incident_service.history(inc["id"])]
+    assert actions == ["opened", "assigned", "reassigned", "unassigned"]
+
+
+def test_assignment_survives_reopen_after_recovery():
+    alert = _alert(job_id="asg-keep")
+    incident_service.observe([alert])
+    inc = next(i for i in incident_service.list() if i["subject"] == "asg-keep")
+    incident_service.assign(inc["id"], "carol")
+    incident_service.recover_stale([])          # recovers
+    incident_service.observe([alert])           # recurs -> reopened
+    again = incident_service.get(inc["id"])
+    assert again["state"] == "open" and again["assignee"] == "carol"  # owner still owns it
+
+
+def test_history_trail_is_curated_and_ordered():
+    incident_service.observe([_alert(job_id="hist-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "hist-1")
+    incident_service.acknowledge(inc["id"], actor="alice")
+    incident_service.assign(inc["id"], "alice", actor="alice")
+    incident_service.set_note(inc["id"], "rebooting worker", actor="alice")
+    incident_service.silence(inc["id"], seconds=60, actor="alice")
+    incident_service.unsilence(inc["id"], actor="bob")
+    trail = incident_service.history(inc["id"])
+    assert [e["action"] for e in trail] == [
+        "opened", "acknowledged", "assigned", "note_updated", "silenced", "unsilenced",
+    ]
+    note_evt = next(e for e in trail if e["action"] == "note_updated")
+    assert note_evt["actor"] == "alice" and note_evt["detail"] == "rebooting worker"
+    # Curated: no raw internals, bounded fields only.
+    assert all(set(e) == {"action", "actor", "detail", "state", "at"} for e in trail)
+
+
+def test_collab_actions_over_http(op):
+    incident_service.observe([_alert(job_id="collab-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "collab-1")
+    hdr = {**OP, "X-Operator-Name": "oncall-jordan"}
+    owned = client.post(f"/operator/incidents/{inc['id']}/assign", headers=hdr, json={"assignee": "jordan"}).json()["incident"]
+    assert owned["assignee"] == "jordan"
+    history = client.get(f"/operator/incidents/{inc['id']}/history", headers=OP).json()["history"]
+    assign_evt = next(e for e in history if e["action"] == "assigned")
+    assert assign_evt["actor"] == "oncall-jordan"  # declared operator recorded as actor
+    freed = client.post(f"/operator/incidents/{inc['id']}/unassign", headers=OP).json()["incident"]
+    assert freed["assignee"] is None
+    # Empty assignee is rejected by validation (422), not a silent no-op.
+    assert client.post(f"/operator/incidents/{inc['id']}/assign", headers=OP, json={"assignee": ""}).status_code == 422
+
+
+def test_collab_endpoints_require_operator(op):
+    incident_service.observe([_alert(job_id="collab-gate")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "collab-gate")
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.post(f"/operator/incidents/{inc['id']}/assign", headers=auth, json={"assignee": "x"}).status_code in (401, 403)
+    assert client.post(f"/operator/incidents/{inc['id']}/unassign", headers=auth).status_code in (401, 403)
+    assert client.get(f"/operator/incidents/{inc['id']}/history", headers=auth).status_code in (401, 403)
+    # Missing incident -> 404 for operator.
+    assert client.get("/operator/incidents/nope/history", headers=OP).status_code == 404

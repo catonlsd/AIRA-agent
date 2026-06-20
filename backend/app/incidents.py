@@ -20,6 +20,14 @@ Honesty rules: a silence is always time-bounded (never a black hole); a silenced
 incident still EXISTS in operator state; a condition that clears becomes
 `recovered`; and a recovered or silence-expired condition that recurs reopens as a
 fresh episode. The whole thing is operator-gated at the route layer.
+
+Collaboration (G-4): an incident can be owned by a single operator (`assignee` — an
+operator-declared handle, since service-key auth carries no verified identity), and
+every meaningful transition is appended to a curated, ordered action trail
+(`OperatorIncidentEvent`) so a relieving operator can read what already happened
+instead of relying on out-of-band coordination. Notes stay short and bounded; the
+trail carries no payloads/traces/secrets — just action, actor, brief detail, and
+the resulting state.
 """
 
 from __future__ import annotations
@@ -29,8 +37,8 @@ from typing import Any, Callable, Optional
 from uuid import uuid4
 
 from app.core.config import settings
-from app.db.database import Base, SessionLocal, engine
-from app.db.models import OperatorIncident
+from app.db.database import Base, SessionLocal, engine, ensure_runtime_columns
+from app.db.models import OperatorIncident, OperatorIncidentEvent
 
 STATE_OPEN = "open"
 STATE_ACKNOWLEDGED = "acknowledged"
@@ -55,8 +63,10 @@ class IncidentWorkflowService:
     def _ensure_table(self) -> None:
         try:
             OperatorIncident.__table__.create(bind=engine, checkfirst=True)
+            OperatorIncidentEvent.__table__.create(bind=engine, checkfirst=True)
         except Exception:
             Base.metadata.create_all(bind=engine)
+        ensure_runtime_columns()  # additive: assignee/assigned_at on pre-G-4 DBs
 
     # ── observe / recover (driven by the current alert set) ───────────────────
 
@@ -74,12 +84,15 @@ class IncidentWorkflowService:
                     row = session.query(OperatorIncident).filter(OperatorIncident.signal == sig).first()
                     sev = alert.get("severity")
                     if row is None:
+                        new_id = uuid4().hex
                         session.add(OperatorIncident(
-                            id=uuid4().hex, signal=sig,
+                            id=new_id, signal=sig,
                             classification=alert.get("classification"),
                             subject=str(alert.get("job_id") or alert.get("exec_class") or "")[:120],
                             source="alert", state=STATE_OPEN, severity=sev, occurrences=1,
                             first_seen=now, last_seen=now))
+                        self._log(session, new_id, "opened", actor=None,
+                                  detail=alert.get("classification"), state=STATE_OPEN)
                         continue
                     silence_expired = (row.state == STATE_SILENCED
                                        and (row.silenced_until is None or row.silenced_until <= now))
@@ -91,6 +104,9 @@ class IncidentWorkflowService:
                         row.acknowledged_at = None
                         row.note = None
                         row.first_seen = now
+                        # Assignment carries over (the owner still owns the recurrence).
+                        self._log(session, row.id, "reopened", actor=None,
+                                  detail="recurred", state=STATE_OPEN)
                     row.occurrences = (row.occurrences or 0) + 1
                     row.severity = sev
                     row.last_seen = now
@@ -117,6 +133,8 @@ class IncidentWorkflowService:
                         row.state = STATE_RECOVERED
                         row.recovered_at = now
                         row.silenced_until = None
+                        self._log(session, row.id, "recovered", actor=None,
+                                  detail="condition cleared", state=STATE_RECOVERED)
                         recovered += 1
                 session.commit()
                 return recovered
@@ -142,49 +160,86 @@ class IncidentWorkflowService:
         except Exception:
             return set()
 
-    # ── operator actions ──────────────────────────────────────────────────────
+    # ── operator actions (each appends one curated trail entry) ────────────────
 
-    def acknowledge(self, incident_id: str, *, note: Optional[str] = None) -> Optional[dict[str, Any]]:
-        return self._mutate(incident_id, lambda row: self._do_ack(row, note))
+    def acknowledge(self, incident_id: str, *, note: Optional[str] = None,
+                    actor: Optional[str] = None) -> Optional[dict[str, Any]]:
+        def fn(row):
+            row.acknowledged_at = _now()
+            if row.state == STATE_OPEN:
+                row.state = STATE_ACKNOWLEDGED
+            if note is not None:
+                row.note = note[:280]
+            return ("acknowledged", note[:280] if note else None)
+        return self._apply(incident_id, fn, actor)
 
-    def silence(self, incident_id: str, *, seconds: Optional[int] = None) -> Optional[dict[str, Any]]:
+    def silence(self, incident_id: str, *, seconds: Optional[int] = None,
+                actor: Optional[str] = None) -> Optional[dict[str, Any]]:
         max_s = max(1, int(getattr(settings, "incident_max_silence_seconds", 86400)))
         default_s = int(getattr(settings, "incident_default_silence_seconds", 3600))
         secs = min(max_s, max(1, int(seconds if seconds is not None else default_s)))
-        return self._mutate(incident_id, lambda row: self._do_silence(row, secs))
 
-    def unsilence(self, incident_id: str) -> Optional[dict[str, Any]]:
-        return self._mutate(incident_id, self._do_unsilence)
+        def fn(row):
+            row.state = STATE_SILENCED
+            row.silenced_until = _now() + timedelta(seconds=secs)
+            return ("silenced", f"until {row.silenced_until.isoformat()}")
+        return self._apply(incident_id, fn, actor)
 
-    def set_note(self, incident_id: str, note: str) -> Optional[dict[str, Any]]:
-        return self._mutate(incident_id, lambda row: setattr(row, "note", (note or "")[:280]))
+    def unsilence(self, incident_id: str, *, actor: Optional[str] = None) -> Optional[dict[str, Any]]:
+        def fn(row):
+            row.silenced_until = None
+            row.state = STATE_ACKNOWLEDGED if row.acknowledged_at else STATE_OPEN
+            return ("unsilenced", None)
+        return self._apply(incident_id, fn, actor)
 
-    @staticmethod
-    def _do_ack(row, note: Optional[str]) -> None:
-        row.acknowledged_at = _now()
-        if row.state in (STATE_OPEN,):
-            row.state = STATE_ACKNOWLEDGED
-        if note is not None:
-            row.note = note[:280]
+    def set_note(self, incident_id: str, note: str, *, actor: Optional[str] = None) -> Optional[dict[str, Any]]:
+        def fn(row):
+            row.note = (note or "")[:280]
+            return ("note_updated", row.note or None)
+        return self._apply(incident_id, fn, actor)
 
-    @staticmethod
-    def _do_silence(row, seconds: int) -> None:
-        row.state = STATE_SILENCED
-        row.silenced_until = _now() + timedelta(seconds=seconds)
+    def assign(self, incident_id: str, assignee: str, *, actor: Optional[str] = None) -> Optional[dict[str, Any]]:
+        """Set the current owner (bounded operator-declared handle). Re-assigning to a
+        different handle is recorded as `reassigned`; the caller validates non-empty."""
+        handle = (assignee or "").strip()[:80]
+        if not handle:
+            return None
 
-    @staticmethod
-    def _do_unsilence(row) -> None:
-        row.silenced_until = None
-        row.state = STATE_ACKNOWLEDGED if row.acknowledged_at else STATE_OPEN
+        def fn(row):
+            prev = row.assignee
+            row.assignee = handle
+            row.assigned_at = _now()
+            action = "reassigned" if (prev and prev != handle) else "assigned"
+            return (action, f"→ {handle}")
+        return self._apply(incident_id, fn, actor)
 
-    def _mutate(self, incident_id: str, fn) -> Optional[dict[str, Any]]:
+    def unassign(self, incident_id: str, *, actor: Optional[str] = None) -> Optional[dict[str, Any]]:
+        def fn(row):
+            prev = row.assignee
+            row.assignee = None
+            row.assigned_at = None
+            return ("unassigned", f"was {prev}" if prev else None)
+        return self._apply(incident_id, fn, actor)
+
+    def _apply(self, incident_id: str, fn, actor: Optional[str]) -> Optional[dict[str, Any]]:
         with self._session_factory() as session:
             row = session.get(OperatorIncident, incident_id)
             if row is None:
                 return None
-            fn(row)
+            result = fn(row)
+            if result is not None:
+                action, detail = result
+                self._log(session, row.id, action, actor=actor, detail=detail, state=row.state)
             session.commit()
             return self._clean(row)
+
+    @staticmethod
+    def _log(session, incident_id: str, action: str, *, actor: Optional[str],
+             detail: Optional[str], state: Optional[str]) -> None:
+        actor = (actor or "").strip()[:80] or None
+        session.add(OperatorIncidentEvent(
+            incident_id=incident_id, action=action, actor=actor,
+            detail=(detail[:280] if detail else None), state=state, created_at=_now()))
 
     # ── reads ─────────────────────────────────────────────────────────────────
 
@@ -221,6 +276,8 @@ class IncidentWorkflowService:
             "severity": row.severity,
             "occurrences": row.occurrences or 0,
             "note": row.note,
+            "assignee": row.assignee,
+            "assigned_at": row.assigned_at.isoformat() if row.assigned_at else None,
             "acknowledged": row.acknowledged_at is not None,
             "acknowledged_at": row.acknowledged_at.isoformat() if row.acknowledged_at else None,
             "silenced_until": row.silenced_until.isoformat() if (row.silenced_until and row.silenced_until > now) else None,
@@ -229,9 +286,31 @@ class IncidentWorkflowService:
             "last_seen": row.last_seen.isoformat() if row.last_seen else None,
         }
 
+    def history(self, incident_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
+        """The curated, chronological action trail for one incident (oldest first)."""
+        try:
+            with self._session_factory() as session:
+                rows = (
+                    session.query(OperatorIncidentEvent)
+                    .filter(OperatorIncidentEvent.incident_id == incident_id)
+                    .order_by(OperatorIncidentEvent.id.asc())
+                    .limit(min(limit, 200))
+                    .all()
+                )
+                return [{
+                    "action": r.action,
+                    "actor": r.actor,
+                    "detail": r.detail,
+                    "state": r.state,
+                    "at": r.created_at.isoformat() if r.created_at else None,
+                } for r in rows]
+        except Exception:
+            return []
+
     def clear_all(self) -> None:
         try:
             with self._session_factory() as session:
+                session.query(OperatorIncidentEvent).delete()
                 session.query(OperatorIncident).delete()
                 session.commit()
         except Exception:
