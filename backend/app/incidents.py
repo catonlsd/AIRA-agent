@@ -228,6 +228,21 @@ class IncidentWorkflowService:
             return ("unassigned", f"was {prev}" if prev else None)
         return self._apply(incident_id, fn, actor)
 
+    def mark_recovered(self, incident_id: str, *, actor: Optional[str] = None,
+                       reason: str = "operator-recovered") -> Optional[dict[str, Any]]:
+        """Explicitly recover an incident by id (operator-driven). Unlike
+        `recover_stale` (signal-absence sweep), this is a deliberate single-incident
+        action — used by apply-from-external when an operator chooses to accept an
+        external `resolved`. Already-recovered is a no-op. Recorded on the trail."""
+        def fn(row):
+            if row.state == STATE_RECOVERED:
+                return None
+            row.state = STATE_RECOVERED
+            row.recovered_at = _now()
+            row.silenced_until = None
+            return ("recovered", reason[:280])
+        return self._apply(incident_id, fn, actor)
+
     def _apply(self, incident_id: str, fn, actor: Optional[str]) -> Optional[dict[str, Any]]:
         emitted_action: Optional[str] = None
         with self._session_factory() as session:

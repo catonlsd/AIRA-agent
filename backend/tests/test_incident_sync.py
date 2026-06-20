@@ -567,3 +567,125 @@ def test_no_reconciliation_fields_leak_into_user_routes(capture_send):
     user_job = client.get(f"/jobs/{job['id']}", headers=auth).json()["job"]
     for operator_only in ("detached", "detached_at", "link_status", "reconciliation", "external_status"):
         assert operator_only not in user_job
+
+
+# ── G-9: explicit local-vs-external resolution (apply / push / capabilities) ──
+
+
+def test_adapter_capabilities_are_explicit_and_honest():
+    from app.incident_sync import adapter_capabilities
+    assert adapter_capabilities("generic") == {"refresh": True, "push_outward": True, "relink_validation": True}
+    assert adapter_capabilities("pagerduty")["push_outward"] is True
+    # Outbound-only: can push, cannot refresh / validate a relink.
+    assert adapter_capabilities("jira") == {"refresh": False, "push_outward": True, "relink_validation": False}
+
+
+def test_external_resolved_is_actionable_without_silently_mutating_local(capture_send, monkeypatch):
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="apply-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "apply-1")
+    _fetch_returning(monkeypatch, ok=True, exists=True, status="resolved")
+    status = incident_sync_service.refresh(inc["id"])  # observe only — must NOT change local
+    assert status["summary"]["link_status"] == "drifted"
+    assert status["summary"]["actions"]["can_apply"] is True
+    assert status["summary"]["actions"]["apply_action"] == "accept_resolved"
+    assert incident_service.get(inc["id"])["state"] == "open"  # refresh never mutates local
+
+
+def test_apply_accept_resolved_recovers_local_only_when_invoked(capture_send, monkeypatch):
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="apply-2")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "apply-2")
+    _fetch_returning(monkeypatch, ok=True, exists=True, status="resolved")
+    incident_sync_service.refresh(inc["id"])
+    result = incident_sync_service.apply_from_external(inc["id"], "accept_resolved", actor="alice")
+    assert result["ok"] and result["changed_local"] is True
+    # Local incident is now explicitly recovered, and the trail records WHY.
+    assert incident_service.get(inc["id"])["state"] == "recovered"
+    trail = incident_service.history(inc["id"])
+    assert any(e["action"] == "recovered" and "external" in (e["detail"] or "") for e in trail)
+    # The reconciliation log captures the apply action + that it changed local state.
+    recon = incident_sync_service.incident_sync_status(inc["id"])["reconciliation"]
+    assert any(e["action"] == "apply:accept_resolved" and e["outcome"] == "ok" for e in recon)
+
+
+def test_apply_refused_when_not_applicable(capture_send, monkeypatch):
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="apply-3")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "apply-3")
+    _fetch_returning(monkeypatch, ok=True, exists=True, status="open")  # aligned, no drift
+    incident_sync_service.refresh(inc["id"])
+    refused = incident_sync_service.apply_from_external(inc["id"], "accept_resolved", actor="alice")
+    assert refused["ok"] is False
+    assert incident_service.get(inc["id"])["state"] == "open"  # untouched
+
+
+def test_apply_accept_missing_detaches_link_only(capture_send, monkeypatch):
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="apply-4")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "apply-4")
+    _fetch_returning(monkeypatch, ok=True, exists=False, status="missing")
+    incident_sync_service.refresh(inc["id"])
+    assert incident_sync_service.incident_sync_status(inc["id"])["summary"]["actions"]["apply_action"] == "accept_missing"
+    result = incident_sync_service.apply_from_external(inc["id"], "accept_missing", actor="bob")
+    assert result["ok"] and result["changed_local"] is False  # linkage only
+    assert incident_sync_service.incident_sync_status(inc["id"])["links"][0]["detached"] is True
+    assert incident_service.get(inc["id"])["state"] == "open"  # local untouched
+
+
+def test_push_outward_uses_adapter_and_records(monkeypatch):
+    sent = []
+    def _capture(self, url, body_json, secret, adapter=None):
+        sent.append(getattr(adapter, "kind", None))
+        return (True, 200, None, "ext-push", None)
+    monkeypatch.setattr(type(incident_sync_service), "_send", _capture)
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="push-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "push-1")
+    incident_service.mark_recovered(inc["id"], actor="alice")  # local recovered
+    sent.clear()
+    result = incident_sync_service.push_outward(inc["id"], actor="alice")
+    assert result["ok"] and result["changed_local"] is False
+    assert sent and sent[-1] == "generic"  # explicitly re-sent outward
+    pushed = next(r for r in incident_sync_service.list_records(incident_id=inc["id"]) if r["action"] == "recovered")
+    assert pushed["status"] == "synced"
+
+
+def test_push_outward_unsupported_adapter_is_skipped_honestly(monkeypatch):
+    called = {"n": 0}
+    def _capture(self, url, body_json, secret, adapter=None):
+        called["n"] += 1
+        return (True, 200, None, None, None)
+    monkeypatch.setattr(type(incident_sync_service), "_send", _capture)
+    # An outbound-only adapter CAN push (it is outbound), so assert push works there too.
+    incident_sync_service.create_target(name="j", url="https://h.example.com/j", kind="jira")
+    incident_service.observe([_alert(job_id="push-jira")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "push-jira")
+    called["n"] = 0
+    result = incident_sync_service.push_outward(inc["id"], actor="alice")
+    assert result["ok"] and called["n"] >= 1  # jira is outbound-capable → pushed
+
+
+def test_apply_and_push_over_http_with_gating(op, capture_send, monkeypatch):
+    client.post("/operator/incident-targets", headers=OP, json={"name": "t", "url": "https://h.example.com/i"})
+    incident_service.observe([_alert(job_id="http-apply")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "http-apply")
+    _fetch_returning(monkeypatch, ok=True, exists=True, status="resolved")
+    client.post(f"/operator/incidents/{inc['id']}/sync/refresh", headers=OP)
+    # can_apply / can_push are surfaced honestly in the status.
+    summary = client.get(f"/operator/incidents/{inc['id']}/sync", headers=OP).json()["summary"]
+    assert summary["actions"]["can_apply"] is True and summary["actions"]["can_push"] is True
+    # Apply over HTTP → local recovered.
+    applied = client.post(f"/operator/incidents/{inc['id']}/sync/apply", headers=OP, json={"action": "accept_resolved"})
+    assert applied.status_code == 200 and applied.json()["changed_local"] is True
+    assert incident_service.get(inc["id"])["state"] == "recovered"
+    # Push over HTTP.
+    pushed = client.post(f"/operator/incidents/{inc['id']}/sync/push", headers=OP, json={})
+    assert pushed.status_code == 200 and pushed.json()["ok"] is True
+    # Applying again is now refused (no longer applicable) → 409.
+    assert client.post(f"/operator/incidents/{inc['id']}/sync/apply", headers=OP, json={"action": "accept_resolved"}).status_code == 409
+    # Gating: normal account token denied.
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.post(f"/operator/incidents/{inc['id']}/sync/apply", headers=auth, json={"action": "accept_resolved"}).status_code in (401, 403)
+    assert client.post(f"/operator/incidents/{inc['id']}/sync/push", headers=auth, json={}).status_code in (401, 403)

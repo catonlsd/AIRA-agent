@@ -199,6 +199,8 @@ export type IncidentSyncRecord = {
 
 export type LinkStatus = "linked" | "never_linked" | "stale" | "missing_external" | "drifted" | "refreshed" | "detached";
 
+export type AdapterCapabilities = { refresh: boolean; push_outward: boolean; relink_validation: boolean };
+
 export type IncidentExternalLink = {
   target_id: string;
   target_name: string | null;
@@ -212,6 +214,7 @@ export type IncidentExternalLink = {
   external_exists: boolean | null;
   detached: boolean;
   detached_at: string | null;
+  capabilities: AdapterCapabilities;
   refresh_supported: boolean;
   link_status: LinkStatus;
   reason: string;
@@ -243,7 +246,10 @@ export type IncidentSyncStatus = {
     reason: string;
     refresh_supported: boolean;
     last_checked_at: string | null;
-    actions: { can_refresh: boolean; can_redrive: boolean; can_detach: boolean; can_relink: boolean };
+    actions: {
+      can_refresh: boolean; can_redrive: boolean; can_detach: boolean; can_relink: boolean;
+      can_apply: boolean; apply_action: "accept_resolved" | "accept_missing" | null; can_push: boolean;
+    };
   };
 };
 
@@ -253,6 +259,14 @@ export function syncStatusTone(status: string): Tone {
   if (status === "pending") return "warn";
   if (status === "failed") return "bad";
   return "muted";
+}
+
+/** Human label for an apply-from-external action (pure; unit-tested). Honest about
+ * whether it changes local state vs only linkage. */
+export function applyActionLabel(action: "accept_resolved" | "accept_missing" | null): string {
+  if (action === "accept_resolved") return "Apply external resolution (recover locally)";
+  if (action === "accept_missing") return "Detach (external missing)";
+  return "";
 }
 
 /** Tone for a reconciliation link status (pure; unit-tested). */
@@ -657,4 +671,20 @@ export async function reconcileIncidentSync(): Promise<Record<string, number> | 
   if (!res.ok) return null;
   const body = await res.json();
   return body?.reconciled ?? null;
+}
+
+export async function applyExternalState(incidentId: string, action: "accept_resolved" | "accept_missing"): Promise<{ ok: boolean; message?: string; changed_local?: boolean }> {
+  const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(incidentId)}/sync/apply`, {
+    method: "POST", cache: "no-store", headers: opHeaders(true), body: JSON.stringify({ action }),
+  });
+  const body = await res.json().catch(() => null);
+  return res.ok ? { ok: true, changed_local: body?.changed_local, message: body?.message } : { ok: false, message: body?.detail };
+}
+
+export async function pushIncidentOutward(incidentId: string, targetId?: string): Promise<{ ok: boolean; message?: string }> {
+  const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(incidentId)}/sync/push`, {
+    method: "POST", cache: "no-store", headers: opHeaders(true), body: JSON.stringify({ target_id: targetId }),
+  });
+  const body = await res.json().catch(() => null);
+  return res.ok ? { ok: true, message: body?.message } : { ok: false, message: body?.detail };
 }

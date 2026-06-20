@@ -14,6 +14,7 @@ import {
   BellOff,
   BellRing,
   Check,
+  CheckCheck,
   CheckCircle2,
   ChevronDown,
   ExternalLink,
@@ -31,6 +32,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Snowflake,
+  Upload,
   User,
   UserMinus,
   UserPlus,
@@ -60,11 +62,14 @@ import {
   getOperatorKey,
   getOperatorName,
   healthTone,
+  applyActionLabel,
+  applyExternalState,
   detachIncidentLink,
   incidentEventLabel,
   incidentSyncSummary,
   incidentTone,
   noteIncident,
+  pushIncidentOutward,
   redriveIncidentSyncContext,
   refreshIncidentSync,
   relinkIncident,
@@ -273,6 +278,23 @@ function IncidentRow({ inc, operatorName, onChanged }: {
     void onSyncRepair(() => redriveIncidentSyncContext(inc.id));
   }, [inc.id, onSyncRepair]);
 
+  const onApply = useCallback(() => {
+    const action = sync?.summary.actions.apply_action;
+    if (!action) return;
+    setBusy(true);
+    void (async () => {
+      try {
+        const res = await applyExternalState(inc.id, action);
+        setSync(await fetchIncidentSyncStatus(inc.id));
+        if (res.ok && res.changed_local) onChanged(); // local incident state changed
+      } finally { setBusy(false); }
+    })();
+  }, [inc.id, sync, onChanged]);
+
+  const onPush = useCallback(() => {
+    void onSyncRepair(() => pushIncidentOutward(inc.id));
+  }, [inc.id, onSyncRepair]);
+
   const saveNote = useCallback(async () => {
     setBusy(true);
     try { if (await noteIncident(inc.id, noteDraft.slice(0, 280))) { setEditingNote(false); onChanged(); } }
@@ -410,7 +432,21 @@ function IncidentRow({ inc, operatorName, onChanged }: {
                     <Link2 className="h-3 w-3" /> Relink
                   </button>
                 ) : null}
+                {actions?.can_apply && actions.apply_action ? (
+                  <button type="button" disabled={busy} onClick={onApply} title={applyActionLabel(actions.apply_action)}
+                    className={cn(INC_BTN, "border-[var(--accent)] text-[var(--accent)]")}>
+                    <CheckCheck className="h-3 w-3" /> {actions.apply_action === "accept_resolved" ? "Apply resolution" : "Accept missing"}
+                  </button>
+                ) : null}
+                {actions?.can_push ? (
+                  <button type="button" disabled={busy} onClick={onPush} className={INC_BTN}>
+                    <Upload className="h-3 w-3" /> Push outward
+                  </button>
+                ) : null}
               </div>
+              {actions?.can_apply && actions.apply_action ? (
+                <p className="mt-1 text-[10px] text-[var(--text-subtle)]">{applyActionLabel(actions.apply_action)}</p>
+              ) : null}
 
               {relinking ? (
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">

@@ -610,6 +610,15 @@ class SyncRelinkBody(BaseModel):
     external_url: str | None = Field(default=None, max_length=500)
 
 
+class SyncApplyBody(BaseModel):
+    # Explicit local-vs-external resolution chosen by the operator.
+    action: str = Field(..., pattern="^(accept_resolved|accept_missing)$")
+
+
+class SyncPushBody(BaseModel):
+    target_id: str | None = Field(default=None, max_length=36)
+
+
 @router.get("/incident-targets")
 def operator_list_incident_targets(request: Request) -> dict:
     """Configured outbound incident-sync targets (curated; secrets never returned)."""
@@ -784,6 +793,43 @@ def operator_incident_sync_relink(incident_id: str, body: SyncRelinkBody, reques
                                           incident_state=incident.get("state"))
     if not result.get("ok"):
         raise HTTPException(status_code=409, detail=result.get("message", "Relink refused."))
+    return result
+
+
+@router.post("/incidents/{incident_id}/sync/apply")
+def operator_incident_sync_apply(incident_id: str, body: SyncApplyBody, request: Request) -> dict:
+    """EXPLICITLY apply observed external state to the local side — the only path that
+    may change local incident state from an external observation. Bounded to the cases
+    the disagreement supports (accept_resolved → local recovery; accept_missing →
+    detach). Refused (409) when not currently applicable."""
+    _require_operator(request)
+    from app.incidents import incident_service
+    from app.incident_sync import incident_sync_service
+
+    if incident_service.get(incident_id) is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    result = incident_sync_service.apply_from_external(incident_id, body.action, actor=_operator_name(request))
+    if not result.get("ok"):
+        raise HTTPException(status_code=409, detail=result.get("message", "Cannot apply."))
+    return result
+
+
+@router.post("/incidents/{incident_id}/sync/push")
+def operator_incident_sync_push(incident_id: str, body: SyncPushBody, request: Request) -> dict:
+    """EXPLICITLY re-send the current local incident state outward to push-capable
+    targets (e.g. push a local recovery so the external incident resolves). Targets
+    whose adapter can't push are skipped; never changes local state."""
+    _require_operator(request)
+    from app.incidents import incident_service
+    from app.incident_sync import incident_sync_service
+
+    incident = incident_service.get(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    result = incident_sync_service.push_outward(incident_id, target_id=body.target_id,
+                                                actor=_operator_name(request), incident=incident)
+    if not result.get("ok"):
+        raise HTTPException(status_code=409, detail=result.get("message", "Cannot push."))
     return result
 
 

@@ -70,7 +70,8 @@ class GenericIncidentAdapter:
     headers or a small JSON body (never invents a link the target didn't return)."""
 
     kind = "generic"
-    supports_refresh = True  # bounded inbound GET of {exists,status,url}
+    supports_refresh = True       # bounded inbound GET of {exists,status,url}
+    supports_push_outward = True  # operator can explicitly re-send local state outward
 
     def shape(self, payload: dict) -> dict:
         return payload
@@ -106,6 +107,7 @@ class PagerDutyIncidentAdapter:
 
     kind = "pagerduty"
     supports_refresh = True
+    supports_push_outward = True  # event_action maps recovered→resolve, reopen→trigger
     _EVENT_ACTION = {
         "opened": "trigger", "reopened": "trigger", "recovered": "resolve",
         "acknowledged": "acknowledge",
@@ -152,11 +154,13 @@ class PagerDutyIncidentAdapter:
 
 
 class OutboundOnlyAdapter(GenericIncidentAdapter):
-    """Reserved target kinds with no real inbound adapter yet: outbound shaping works
-    (via the generic envelope), but refresh is honestly unsupported — AIRA-X will not
-    claim to know external state for these until a real adapter lands."""
+    """Reserved target kinds with no real inbound adapter yet: outbound shaping +
+    push-outward work (via the generic envelope), but refresh / relink-validation are
+    honestly unsupported — AIRA-X will not claim to KNOW external state for these
+    until a real adapter lands. (Outbound-only = it can send, it can't read back.)"""
 
     supports_refresh = False
+    # supports_push_outward stays True (inherited): outbound is exactly what it does.
 
 
 _ADAPTERS = {
@@ -171,6 +175,18 @@ _KINDS = set(_ADAPTERS)
 
 def adapter_for(kind: Optional[str]):
     return _ADAPTERS.get(kind or "generic", _GENERIC)
+
+
+def adapter_capabilities(kind: Optional[str]) -> dict[str, bool]:
+    """The honest, explicit capability set for a target kind. `relink_validation`
+    needs a bounded inbound check, so it tracks `supports_refresh`."""
+    adapter = adapter_for(kind)
+    refresh = bool(getattr(adapter, "supports_refresh", False))
+    return {
+        "refresh": refresh,
+        "push_outward": bool(getattr(adapter, "supports_push_outward", False)),
+        "relink_validation": refresh,
+    }
 
 
 # ── external status normalization + link-status classification (pure) ─────────
@@ -582,7 +598,8 @@ class IncidentSyncService:
         target = (target_names or {}).get(row.target_id, {})
         now = now or _now()
         stale_seconds = max(1, int(getattr(settings, "incident_link_stale_seconds", 86400)))
-        supports_refresh = bool(getattr(adapter_for(target.get("kind")), "supports_refresh", False))
+        caps = adapter_capabilities(target.get("kind"))
+        supports_refresh = caps["refresh"]
         detached = row.detached_at is not None
         status, reason = classify_link_status(
             local_state=local_state, last_synced_at=row.last_synced_at,
@@ -602,6 +619,7 @@ class IncidentSyncService:
             "external_exists": row.external_exists,
             "detached": detached,
             "detached_at": row.detached_at.isoformat() if row.detached_at else None,
+            "capabilities": caps,
             "refresh_supported": supports_refresh,
             "link_status": status,
             "reason": reason,
@@ -621,7 +639,9 @@ class IncidentSyncService:
                              "reason": "never linked", "refresh_supported": False,
                              "last_checked_at": None,
                              "actions": {"can_refresh": False, "can_redrive": False,
-                                         "can_detach": False, "can_relink": False}}}
+                                         "can_detach": False, "can_relink": False,
+                                         "can_apply": False, "apply_action": None,
+                                         "can_push": False}}}
         try:
             local_state = incident_state if incident_state is not None else self._local_state(incident_id)
             now = _now()
@@ -650,12 +670,24 @@ class IncidentSyncService:
                 overall, reason = worst["link_status"], worst["reason"]
             elif links:
                 overall, reason = LINK_DETACHED, "intentionally detached"
+            # What apply-from-external (if any) the observed disagreement supports.
+            # Bounded + honest: only when external state was actually observed.
+            apply_action = None
+            if overall == LINK_MISSING:
+                apply_action = "accept_missing"      # → detach the dead link
+            elif overall == LINK_DRIFTED:
+                worst_link = next((link for link in active_links if link["link_status"] == LINK_DRIFTED), None)
+                if worst_link and worst_link["external_status"] in _EXT_CLOSED and local_state in _LOCAL_OPEN:
+                    apply_action = "accept_resolved"  # → recover the local incident
             # Bounded, honest action availability (what the operator can actually do).
             actions = {
                 "can_refresh": any(link["refresh_supported"] and not link["detached"] for link in links),
                 "can_redrive": bool(failed and (latest is None or latest["status"] != STATUS_SYNCED)),
                 "can_detach": any(not link["detached"] for link in links),
                 "can_relink": any(link["refresh_supported"] for link in links),
+                "can_apply": apply_action is not None,
+                "apply_action": apply_action,
+                "can_push": any(link["capabilities"]["push_outward"] and not link["detached"] for link in links),
             }
             summary = {
                 "linked": bool(active_links),
@@ -894,6 +926,123 @@ class IncidentSyncService:
             return result
         except Exception:
             return {"ok": False, "message": "Redrive failed."}
+
+    # ── explicit local-vs-external resolution (operator-driven only) ──────────
+
+    def apply_from_external(self, incident_id: str, apply_action: str, *,
+                            actor: Optional[str] = None) -> dict[str, Any]:
+        """EXPLICIT, operator-chosen application of observed external state to the
+        LOCAL side. This is the only path that may change local incident state from
+        an external observation — refresh/reconcile never do. Bounded to the cases the
+        observed disagreement actually supports; refused otherwise.
+
+        - `accept_resolved`: external reports resolved/closed while local is open →
+          recover the local incident (an explicit operator recovery, on the trail).
+        - `accept_missing`: external is gone → detach the dead link.
+        """
+        if apply_action not in ("accept_resolved", "accept_missing"):
+            return {"ok": False, "message": "Unknown apply action."}
+        status = self.incident_sync_status(incident_id)
+        if not status["links"]:
+            return {"ok": False, "message": "Incident has no external link."}
+        offered = status["summary"]["actions"].get("apply_action")
+        if offered != apply_action:
+            return {"ok": False, "message": "That external state is not currently applicable."}
+        active = [link for link in status["links"] if not link["detached"]]
+        if apply_action == "accept_missing":
+            link = next((l for l in active if l["link_status"] == LINK_MISSING), active[0] if active else None)
+            if link is None:
+                return {"ok": False, "message": "No external link to detach."}
+            self.detach(incident_id, link["target_id"], actor=actor)
+            self._record_apply(incident_id, link["target_id"], "accept_missing", "ok",
+                               actor=actor, detail="detached missing external link (linkage only)")
+            return {"ok": True, "changed_local": False,
+                    "status": self.incident_sync_status(incident_id),
+                    "message": "Detached the missing external link."}
+        # accept_resolved → explicit LOCAL recovery.
+        link = next((l for l in active if l["link_status"] == LINK_DRIFTED), None)
+        target_id = link["target_id"] if link else None
+        applied = None
+        try:
+            from app.incidents import incident_service
+            applied = incident_service.mark_recovered(
+                incident_id, actor=actor, reason="applied external resolution")
+        except Exception:
+            applied = None
+        outcome = "ok" if applied else "failed"
+        self._record_apply(incident_id, target_id, "accept_resolved", outcome, actor=actor,
+                           detail="local incident recovered from external resolved")
+        if not applied:
+            return {"ok": False, "message": "Could not apply external resolution."}
+        return {"ok": True, "changed_local": True,
+                "status": self.incident_sync_status(incident_id),
+                "message": "Applied external resolution — local incident recovered."}
+
+    def push_outward(self, incident_id: str, *, target_id: Optional[str] = None,
+                     actor: Optional[str] = None, incident: Optional[dict] = None) -> dict[str, Any]:
+        """EXPLICITLY re-send the CURRENT local incident state outward to push-capable
+        targets (e.g. push a local `recovered` so the external incident resolves). The
+        action mirrors the local state honestly; targets whose adapter can't push are
+        skipped. Never changes local state."""
+        snapshot = incident
+        if snapshot is None:
+            try:
+                from app.incidents import incident_service
+                snapshot = incident_service.get(incident_id)
+            except Exception:
+                snapshot = None
+        if not snapshot:
+            return {"ok": False, "message": "Incident not found."}
+        action = "recovered" if snapshot.get("state") == "recovered" else "opened"
+        created: list[str] = []
+        pushed_targets = 0
+        try:
+            with self._session_factory() as session:
+                query = session.query(ExternalIncidentTarget).filter(ExternalIncidentTarget.enabled.is_(True))
+                if target_id:
+                    query = query.filter(ExternalIncidentTarget.id == target_id)
+                targets = query.all()
+                if not targets:
+                    return {"ok": False, "message": "No matching enabled target."}
+                for target in targets:
+                    if not getattr(adapter_for(target.kind), "supports_push_outward", False):
+                        self._log_reconcile(session, incident_id, target.id, "push", "unsupported",
+                                            actor=actor, detail="adapter cannot push outward")
+                        continue
+                    record = IncidentSyncRecord(
+                        id=uuid4().hex, target_id=target.id, incident_id=incident_id,
+                        signal=snapshot.get("signal"), action=action, actor=actor,
+                        state=snapshot.get("state"), severity=snapshot.get("severity"),
+                        classification=snapshot.get("classification"), subject=snapshot.get("subject"),
+                        assignee=snapshot.get("assignee"), note=(snapshot.get("note") or None),
+                        status=STATUS_PENDING, attempts=0)
+                    session.add(record)
+                    created.append(record.id)
+                    pushed_targets += 1
+                session.commit()
+            for record_id in created:
+                self._attempt(record_id)
+            with self._session_factory() as session:
+                self._log_reconcile(session, incident_id, target_id, "push",
+                                    "ok" if pushed_targets else "unsupported", actor=actor,
+                                    detail=f"pushed local '{action}' to {pushed_targets} target(s)")
+                session.commit()
+        except Exception:
+            return {"ok": False, "message": "Push failed."}
+        if not pushed_targets:
+            return {"ok": False, "message": "No push-capable target for this incident."}
+        return {"ok": True, "changed_local": False,
+                "status": self.incident_sync_status(incident_id), "message": "Pushed local state outward."}
+
+    def _record_apply(self, incident_id: str, target_id: Optional[str], action: str, outcome: str,
+                      *, actor: Optional[str], detail: Optional[str]) -> None:
+        try:
+            with self._session_factory() as session:
+                self._log_reconcile(session, incident_id, target_id, f"apply:{action}", outcome,
+                                    actor=actor, detail=detail)
+                session.commit()
+        except Exception:
+            pass
 
     def reconcile(self, *, max_incidents: Optional[int] = None, actor: Optional[str] = None) -> dict[str, int]:
         """Bounded scheduled reconciliation: recheck the active, refresh-capable links

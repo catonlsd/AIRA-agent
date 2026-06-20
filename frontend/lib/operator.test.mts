@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  applyActionLabel,
   canRedrive,
   deadLetterLabel,
   deadLetterTone,
@@ -97,4 +98,10 @@ test("linkStatusTone maps each reconciliation status to a tone", () => {
   assert.equal(linkStatusTone("refreshed"), "good");
   assert.equal(linkStatusTone("never_linked"), "muted");
   assert.equal(linkStatusTone("detached"), "muted");
+});
+
+test("applyActionLabel is explicit about local-vs-linkage effect", () => {
+  assert.match(applyActionLabel("accept_resolved"), /recover locally/);
+  assert.match(applyActionLabel("accept_missing"), /Detach/);
+  assert.equal(applyActionLabel(null), "");
 });

@@ -1273,6 +1273,51 @@ fresh — still **outbound-primary** (these actions never mutate local incident 
   `frontend/lib/operator.test.mts` (`detached` in `incidentSyncSummary` /
   `linkStatusTone`).
 
+### Explicit local-vs-external resolution (apply / push / capabilities) (G-9)
+
+Detected disagreement becomes **explicitly resolvable from either side** — local or
+external — without AIRA-X ever becoming a silent bidirectional system. The
+guardrail is absolute: **only an explicit operator action may change local incident
+state from an external observation**; refresh/reconcile still never do.
+
+- **Explicit adapter capabilities** (`adapter_capabilities(kind)` in
+  `app/incident_sync.py`): `{refresh, push_outward, relink_validation}`. Generic and
+  PagerDuty are fully capable; the outbound-only kinds (`jira`/`opsgenie`) report
+  `push_outward: true` (they *can* send) but `refresh`/`relink_validation: false`
+  (they can't read back) — honest, no faked vendor support. Surfaced per-link.
+- **Apply-from-external** (`apply_from_external(incident, action)` →
+  `POST /operator/incidents/{id}/sync/apply`): the **only** path that turns an
+  observed external state into a local change, and only when the disagreement
+  actually supports it. `accept_resolved` (external reports resolved while local is
+  open) calls the new explicit `incident_service.mark_recovered()` — a deliberate
+  single-incident recovery recorded on the incident trail with reason "applied
+  external resolution" (`changed_local: true`). `accept_missing` (external gone)
+  detaches the dead link (`changed_local: false` — linkage only). Refused with 409
+  when the offered `apply_action` doesn't match what's observed.
+- **Push-outward** (`push_outward(incident, target_id?)` →
+  `POST /operator/incidents/{id}/sync/push`): explicitly re-sends the **current**
+  local state to push-capable targets — e.g. push a local `recovered` so the
+  external incident resolves (PagerDuty maps `recovered → event_action: resolve`).
+  Targets whose adapter can't push are skipped honestly; local state is never
+  changed.
+- **Honest action availability.** The per-incident `actions` block gains
+  `can_apply` + `apply_action` (the bounded suggestion derived from the observed
+  drift) and `can_push`. Every apply/push is recorded in
+  `incident_reconciliation_events` (action `apply:accept_resolved` / `push` / …),
+  so "was a resolution attempted, did it work, and did it change local state or only
+  linkage?" is answerable.
+- **Console:** the External-sync line adds an accent **Apply resolution / Accept
+  missing** button (only when `can_apply`, with a one-line explanation of its local
+  effect) and a **Push outward** button (when `can_push`); apply that recovers
+  locally also refreshes the incident list. Still operator-only — no
+  `capabilities` / `apply_action` field leaks into `GET /jobs/{id}`.
+- Pinned by `backend/tests/test_incident_sync.py` (capabilities are explicit +
+  honest; external-resolved is actionable without silently mutating local; apply
+  recovers local **only when invoked** + records the trail/reconciliation; apply
+  refused when not applicable; accept_missing detaches linkage only; push uses the
+  adapter + records, and outbound-only kinds still push; apply/push over HTTP with
+  re-apply 409 + gating) and `frontend/lib/operator.test.mts` (`applyActionLabel`).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:
