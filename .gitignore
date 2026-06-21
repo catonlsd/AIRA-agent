@@ -13,6 +13,12 @@ backend/.env
 frontend/.env
 frontend/.env.local
 
+# Playwright E2E artifacts (browsers live in the user cache, not the repo)
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/.cache/
+
 # Backend local storage & runtime data
 backend/storage/*.db
 backend/storage/*.log
