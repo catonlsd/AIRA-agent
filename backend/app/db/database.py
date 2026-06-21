@@ -81,6 +81,11 @@ def ensure_runtime_columns() -> None:
                 ("allow_external_reopen", "BOOLEAN"),
                 ("allow_external_acknowledge", "BOOLEAN"),
                 ("allow_push_outward", "BOOLEAN"),
+                ("allow_external_assignee", "BOOLEAN"),
+                ("allow_external_severity", "BOOLEAN"),
+                ("allow_external_updated_at", "BOOLEAN"),
+                ("allow_external_comment_count", "BOOLEAN"),
+                ("allow_external_suggestions", "BOOLEAN"),
             ],
         }
         for table, columns in additions.items():

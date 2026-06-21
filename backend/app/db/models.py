@@ -399,6 +399,15 @@ class ExternalIncidentTarget(Base):
     allow_external_reopen: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     allow_external_acknowledge: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     allow_push_outward: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Per-target INBOUND-state overrides (G-13). Same tri-state: NULL = adapter
+    # default (visible if the adapter can normalize it), True = permitted, False =
+    # hidden for THIS target. Refresh stores only permitted fields; reads mask the
+    # rest. Never reveals beyond adapter capability.
+    allow_external_assignee: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    allow_external_severity: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    allow_external_updated_at: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    allow_external_comment_count: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    allow_external_suggestions: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
 

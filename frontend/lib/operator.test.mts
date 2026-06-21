@@ -12,6 +12,7 @@ import {
   healthTone,
   incidentEventLabel,
   incidentSyncSummary,
+  hiddenInboundFields,
   incidentTone,
   linkStatusTone,
   policyOverrideLabel,
@@ -127,4 +128,14 @@ test("policyOverrideLabel distinguishes default from explicit allow/deny", () =>
   assert.equal(policyOverrideLabel(null), "Default");
   assert.equal(policyOverrideLabel(true), "Allowed");
   assert.equal(policyOverrideLabel(false), "Denied");
+});
+
+test("hiddenInboundFields lists only capable-but-policy-hidden fields", () => {
+  const link = {
+    capabilities: { inbound_fields: { assignee: true, severity: true, updated_at: true, comment_count: false } },
+    inbound_visibility: { assignee: false, severity: true, updated_at: true, comment_count: false },
+  } as Parameters<typeof hiddenInboundFields>[0];
+  // assignee: capable + hidden → listed. severity/updated_at: visible → not listed.
+  // comment_count: not capable → not listed (nothing to hide).
+  assert.deepEqual(hiddenInboundFields(link), ["assignee"]);
 });

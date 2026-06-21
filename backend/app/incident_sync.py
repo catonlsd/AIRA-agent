@@ -73,6 +73,10 @@ class GenericIncidentAdapter:
     supports_refresh = True        # bounded inbound GET of {exists,status,url}
     supports_push_outward = True   # operator can explicitly re-send local state outward
     supports_status_sync = False   # only basic existence/status — NOT richer vendor fields
+    # Richer BOUNDED inbound fields this adapter can normalize (G-13). Generic knows
+    # none beyond the core exists/status/url. An adapter NEVER advertises a field it
+    # can't safely normalize — and per-target policy can still narrow this further.
+    inbound_fields = frozenset()
     # Per-action capabilities (G-11). Capability = what the adapter CAN do; the apply
     # policy (in `apply_policy`) checks this + state before allowing an action.
     supports_apply_resolved = True   # generic: if we observed resolved, operator may apply local recovery
@@ -125,6 +129,7 @@ class PagerDutyIncidentAdapter:
     supports_refresh = True
     supports_push_outward = True   # event_action maps recovered→resolve, reopen→trigger
     supports_status_sync = True    # richer bounded inbound: assignee / urgency / updated / count
+    inbound_fields = frozenset({"assignee", "severity", "updated_at", "comment_count"})
     # Vendor-specific outbound action mapping (G-11): a PagerDuty push of a local
     # `recovered` maps to a typed `resolve` event; a local `reopened` maps to a typed
     # `trigger` event. Generic targets can only re-send state, not a typed action.
@@ -251,6 +256,7 @@ def adapter_capabilities(kind: Optional[str]) -> dict[str, Any]:
     refresh = bool(getattr(adapter, "supports_refresh", False))
     status_sync = bool(getattr(adapter, "supports_status_sync", False))
     level = "rich" if status_sync else ("refresh" if refresh else "outbound_only")
+    fields = adapter_inbound_fields(kind)
     return {
         "refresh": refresh,
         "push_outward": bool(getattr(adapter, "supports_push_outward", False)),
@@ -261,8 +267,15 @@ def adapter_capabilities(kind: Optional[str]) -> dict[str, Any]:
         "external_resolve": bool(getattr(adapter, "supports_external_resolve", False)),
         "external_reopen": bool(getattr(adapter, "supports_external_reopen", False)),
         "external_acknowledge": bool(getattr(adapter, "supports_external_acknowledge", False)),
+        # Richer BOUNDED inbound fields this adapter can normalize (G-13).
+        "inbound_fields": {f: (f in fields) for f in _INBOUND_FIELDS},
         "support_level": level,
     }
+
+
+def adapter_inbound_fields(kind: Optional[str]) -> frozenset:
+    """The bounded set of richer inbound fields a target kind can normalize."""
+    return frozenset(getattr(adapter_for(kind), "inbound_fields", frozenset()))
 
 
 # ── Action policy (G-11 → G-12): capability + PER-TARGET override, audited refusals ──
@@ -295,6 +308,59 @@ _ACTION_POLICY = {
 }
 # The per-target override columns operators can tune (read + PATCH).
 TARGET_OVERRIDE_FIELDS = tuple(field for _cap, field in _ACTION_POLICY.values())
+
+# ── Inbound-state policy (G-13): per-target visibility of richer external fields ──
+#
+# Same three-layer model, applied to INBOUND data instead of outbound actions:
+#   1. adapter CAPABILITY  — which richer fields the adapter can normalize at all.
+#   2. target OVERRIDE     — per-target tri-state: NULL = adapter default (visible if
+#                            capable), True = explicitly permitted, False = hidden for
+#                            THIS target. Can only NARROW, never reveal beyond capability.
+#   3. read-time MASK      — refresh stores only permitted fields AND reads mask any
+#                            field a later policy change disabled.
+# Suggestions never become state — they are derived ONLY from permitted fields, and a
+# target can suppress them wholesale.
+
+# richer field → (capability key in adapter.inbound_fields, per-target override column)
+_INBOUND_FIELD_POLICY = {
+    "assignee": ("assignee", "allow_external_assignee"),
+    "severity": ("severity", "allow_external_severity"),
+    "updated_at": ("updated_at", "allow_external_updated_at"),
+    "comment_count": ("comment_count", "allow_external_comment_count"),
+}
+_INBOUND_FIELDS = tuple(_INBOUND_FIELD_POLICY)
+# Suggestions are a derived view (capability = any refresh-capable adapter), gated by
+# their own master override so a target can stay observable but silent on suggestions.
+TARGET_INBOUND_OVERRIDE_FIELDS = (
+    tuple(field for _cap, field in _INBOUND_FIELD_POLICY.values()) + ("allow_external_suggestions",))
+# Every per-target override an operator can tune (outbound actions + inbound fields).
+ALL_TARGET_OVERRIDE_FIELDS = TARGET_OVERRIDE_FIELDS + TARGET_INBOUND_OVERRIDE_FIELDS
+
+
+def inbound_field_policy(adapter_kind: Optional[str], overrides: Optional[dict],
+                         field: str) -> tuple[bool, str, str]:
+    """Resolve capability + per-target override for one inbound field (or the special
+    `suggestions` master) → (allowed, code, reason)."""
+    if field == "suggestions":
+        capable = adapter_capabilities(adapter_kind)["refresh"]
+        override_field = "allow_external_suggestions"
+        label = "external suggestions"
+    else:
+        mapping = _INBOUND_FIELD_POLICY.get(field)
+        if mapping is None:
+            return (False, POLICY_DENIED_UNKNOWN, f"unknown inbound field: {field!r}")
+        cap_name, override_field = mapping
+        capable = cap_name in adapter_inbound_fields(adapter_kind)
+        label = f"external {field}"
+    if not capable:
+        return (False, POLICY_DENIED_CAPABILITY, f"adapter cannot provide {label}")
+    if overrides is not None and overrides.get(override_field) is False:
+        return (False, POLICY_DENIED_TARGET, f"target policy hides {label}")
+    return (True, POLICY_ALLOWED, f"{label} is permitted for this target")
+
+
+def inbound_field_allowed(adapter_kind: Optional[str], overrides: Optional[dict], field: str) -> bool:
+    return inbound_field_policy(adapter_kind, overrides, field)[0]
 
 
 def target_action_policy(adapter_kind: Optional[str], overrides: Optional[dict],
@@ -338,7 +404,23 @@ def effective_target_policy(adapter_kind: Optional[str], overrides: Optional[dic
             "code": code,
             "reason": reason,
         }
-    return {"kind": adapter_kind, "capabilities": caps, "actions": actions}
+    inbound = {}
+    for field in (*_INBOUND_FIELDS, "suggestions"):
+        override_field = ("allow_external_suggestions" if field == "suggestions"
+                          else _INBOUND_FIELD_POLICY[field][1])
+        allowed, code, reason = inbound_field_policy(adapter_kind, overrides, field)
+        if field == "suggestions":
+            capable = caps["refresh"]
+        else:
+            capable = field in adapter_inbound_fields(adapter_kind)
+        inbound[field] = {
+            "capable": capable,
+            "override": (overrides or {}).get(override_field),
+            "effective": allowed,
+            "code": code,
+            "reason": reason,
+        }
+    return {"kind": adapter_kind, "capabilities": caps, "actions": actions, "inbound": inbound}
 
 
 # ── external status normalization + link-status classification (pure) ─────────
@@ -601,9 +683,9 @@ class IncidentSyncService:
 
     def update_target(self, target_id: str, **changes: Any) -> Optional[dict[str, Any]]:
         allowed = {"name", "url", "kind", "enabled", "sync_actions", "secret"}
-        # Per-target action overrides are tri-state — None means "leave unchanged"
-        # here (we never clear back to NULL via PATCH today; explicit True/False set).
-        override_fields = set(TARGET_OVERRIDE_FIELDS)
+        # Per-target overrides (outbound actions + inbound fields) are tri-state —
+        # None means "leave unchanged" here; explicit True/False set the override.
+        override_fields = set(ALL_TARGET_OVERRIDE_FIELDS)
         with self._session_factory() as session:
             row = session.get(ExternalIncidentTarget, target_id)
             if row is None:
@@ -862,8 +944,8 @@ class IncidentSyncService:
 
     @staticmethod
     def _target_overrides(row: ExternalIncidentTarget) -> dict[str, Any]:
-        """The tri-state per-target action overrides (None / True / False)."""
-        return {field: getattr(row, field, None) for field in TARGET_OVERRIDE_FIELDS}
+        """All tri-state per-target overrides (outbound actions + inbound fields)."""
+        return {field: getattr(row, field, None) for field in ALL_TARGET_OVERRIDE_FIELDS}
 
     @staticmethod
     def _target_names(session) -> dict[str, dict[str, Any]]:
@@ -921,7 +1003,9 @@ class IncidentSyncService:
         target = (target_names or {}).get(row.target_id, {})
         now = now or _now()
         stale_seconds = max(1, int(getattr(settings, "incident_link_stale_seconds", 86400)))
-        caps = adapter_capabilities(target.get("kind"))
+        kind = target.get("kind")
+        overrides = target.get("overrides") or {}
+        caps = adapter_capabilities(kind)
         supports_refresh = caps["refresh"]
         detached = row.detached_at is not None
         status, reason = classify_link_status(
@@ -929,10 +1013,16 @@ class IncidentSyncService:
             last_checked_at=row.last_checked_at, external_exists=row.external_exists,
             external_status=row.external_status, now=now, stale_seconds=stale_seconds,
             detached=detached)
+        # Read-time MASK (G-13): present a richer field only if THIS target's inbound
+        # policy currently permits it — so toggling a target's policy hides even
+        # previously-imported values immediately. `inbound_visibility` explains each.
+        def _field(name: str, value):
+            return value if inbound_field_allowed(kind, overrides, name) else None
+        inbound_visibility = {f: inbound_field_allowed(kind, overrides, f) for f in _INBOUND_FIELDS}
         return {
             "target_id": row.target_id,
             "target_name": target.get("name"),
-            "target_kind": target.get("kind"),
+            "target_kind": kind,
             "external_ref": row.external_ref,
             "external_url": row.external_url,
             "last_action": row.last_action,
@@ -940,15 +1030,17 @@ class IncidentSyncService:
             "last_checked_at": row.last_checked_at.isoformat() if row.last_checked_at else None,
             "external_status": row.external_status,
             "external_exists": row.external_exists,
-            # Richer bounded inbound snapshot (only populated by status-sync adapters).
-            "external_assignee": row.external_assignee,
-            "external_severity": row.external_severity,
-            "external_updated_at": row.external_updated_at,
-            "external_comment_count": row.external_comment_count,
+            # Richer bounded inbound snapshot — masked by per-target inbound policy.
+            "external_assignee": _field("assignee", row.external_assignee),
+            "external_severity": _field("severity", row.external_severity),
+            "external_updated_at": _field("updated_at", row.external_updated_at),
+            "external_comment_count": _field("comment_count", row.external_comment_count),
+            "inbound_visibility": inbound_visibility,
+            "suggestions_allowed": inbound_field_allowed(kind, overrides, "suggestions"),
             "detached": detached,
             "detached_at": row.detached_at.isoformat() if row.detached_at else None,
             "capabilities": caps,
-            "policy_overrides": target.get("overrides") or {},  # per-target tri-state
+            "policy_overrides": overrides,  # per-target tri-state (actions + inbound)
             "refresh_supported": supports_refresh,
             "link_status": status,
             "reason": reason,
@@ -1030,7 +1122,10 @@ class IncidentSyncService:
             available_actions = _available_actions(
                 links=links, active_links=active_links, failed=failed, latest=latest,
                 apply_action=apply_action, worst_link=primary)
-            suggestions = external_state_suggestions(local_incident, primary) if primary else []
+            # Suggestions derive ONLY from the masked link (hidden fields can't drive
+            # a suggestion) AND are suppressed wholesale if the target disables them.
+            suggestions = (external_state_suggestions(local_incident, primary)
+                           if (primary and primary.get("suggestions_allowed", True)) else [])
             support_level = primary["capabilities"]["support_level"] if primary else (
                 links[0]["capabilities"]["support_level"] if links else "none")
             summary = {
@@ -1114,12 +1209,20 @@ class IncidentSyncService:
                             link.external_status = snap["status"]
                         if snap.get("url"):
                             link.external_url = snap["url"]
-                        # Richer bounded fields ONLY for status-sync adapters.
+                        # Richer bounded fields ONLY for status-sync adapters, and
+                        # ONLY the ones THIS target's inbound policy permits (G-13).
+                        # Data minimization: a field the operator disabled is never
+                        # even imported (stored as None).
                         if getattr(adapter, "supports_status_sync", False):
-                            link.external_assignee = snap.get("assignee")
-                            link.external_severity = snap.get("severity")
-                            link.external_updated_at = snap.get("updated_at")
-                            link.external_comment_count = snap.get("comment_count")
+                            overrides = self._target_overrides(target)
+                            link.external_assignee = (snap.get("assignee")
+                                if inbound_field_allowed(target.kind, overrides, "assignee") else None)
+                            link.external_severity = (snap.get("severity")
+                                if inbound_field_allowed(target.kind, overrides, "severity") else None)
+                            link.external_updated_at = (snap.get("updated_at")
+                                if inbound_field_allowed(target.kind, overrides, "updated_at") else None)
+                            link.external_comment_count = (snap.get("comment_count")
+                                if inbound_field_allowed(target.kind, overrides, "comment_count") else None)
                         outcome = "missing" if exists is False else "ok"
                         self._log_reconcile(session, incident_id, link.target_id, "refresh", outcome,
                                             actor=actor, detail=(snap.get("status") or ("not found" if exists is False else None)))

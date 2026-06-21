@@ -160,8 +160,9 @@ export type IncidentEvent = {
 
 export type SyncStatus = "pending" | "synced" | "failed";
 
-/** Per-target action override (tri-state): null = adapter default, true = permitted
- * (still bounded by capability), false = explicitly denied for this target. */
+/** Per-target override (tri-state): null = adapter default, true = permitted (still
+ * bounded by capability), false = explicitly denied/hidden for this target. Covers
+ * both outbound actions and inbound-field visibility (G-13). */
 export type TargetPolicyOverrides = {
   allow_apply_resolved: boolean | null;
   allow_apply_missing: boolean | null;
@@ -169,7 +170,14 @@ export type TargetPolicyOverrides = {
   allow_external_reopen: boolean | null;
   allow_external_acknowledge: boolean | null;
   allow_push_outward: boolean | null;
+  allow_external_assignee: boolean | null;
+  allow_external_severity: boolean | null;
+  allow_external_updated_at: boolean | null;
+  allow_external_comment_count: boolean | null;
+  allow_external_suggestions: boolean | null;
 };
+
+export type InboundFieldName = "assignee" | "severity" | "updated_at" | "comment_count";
 
 export type IncidentTarget = {
   id: string;
@@ -199,6 +207,7 @@ export type TargetPolicyView = {
   kind: string;
   capabilities: AdapterCapabilities;
   actions: Record<string, TargetActionPolicy>;
+  inbound: Record<string, TargetActionPolicy>;
 };
 
 export type IncidentSyncRecord = {
@@ -235,6 +244,7 @@ export type AdapterCapabilities = {
   status_sync: boolean;
   apply_resolved: boolean; apply_missing: boolean;
   external_resolve: boolean; external_reopen: boolean; external_acknowledge: boolean;
+  inbound_fields: Record<InboundFieldName, boolean>;
   support_level: SupportLevel;
 };
 
@@ -273,9 +283,12 @@ export type IncidentExternalLink = {
   external_severity: string | null;
   external_updated_at: string | null;
   external_comment_count: number | null;
+  inbound_visibility: Record<InboundFieldName, boolean>;
+  suggestions_allowed: boolean;
   detached: boolean;
   detached_at: string | null;
   capabilities: AdapterCapabilities;
+  policy_overrides: TargetPolicyOverrides;
   refresh_supported: boolean;
   link_status: LinkStatus;
   reason: string;
@@ -339,6 +352,14 @@ export function policyOverrideLabel(override: boolean | null): string {
   if (override === true) return "Allowed";
   if (override === false) return "Denied";
   return "Default";
+}
+
+/** Richer inbound fields the adapter COULD provide but this target's policy hides
+ * (pure; unit-tested). Lets the console honestly say "severity hidden by policy"
+ * rather than silently omitting a field the operator might expect. */
+export function hiddenInboundFields(link: Pick<IncidentExternalLink, "capabilities" | "inbound_visibility">): InboundFieldName[] {
+  const fields: InboundFieldName[] = ["assignee", "severity", "updated_at", "comment_count"];
+  return fields.filter((f) => link.capabilities.inbound_fields[f] && !link.inbound_visibility[f]);
 }
 
 /** Honest, short label for what a sync/resolution action will mutate (pure;

@@ -607,6 +607,12 @@ class IncidentTargetUpdate(BaseModel):
     allow_external_reopen: bool | None = None
     allow_external_acknowledge: bool | None = None
     allow_push_outward: bool | None = None
+    # Per-target INBOUND-field visibility overrides (G-13).
+    allow_external_assignee: bool | None = None
+    allow_external_severity: bool | None = None
+    allow_external_updated_at: bool | None = None
+    allow_external_comment_count: bool | None = None
+    allow_external_suggestions: bool | None = None
 
 
 class SyncDetachBody(BaseModel):

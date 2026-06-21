@@ -595,12 +595,18 @@ def test_adapter_capabilities_are_explicit_and_honest():
     assert pd["apply_resolved"] and pd["apply_missing"]
     assert pd["external_resolve"] is True and pd["external_reopen"] is True
     assert pd["external_acknowledge"] is True
+    # PagerDuty advertises the richer bounded inbound fields it can normalize (G-13).
+    assert pd["inbound_fields"] == {"assignee": True, "severity": True,
+                                    "updated_at": True, "comment_count": True}
     # Outbound-only: can push, cannot refresh / validate / status-sync / apply / typed action.
     jira = adapter_capabilities("jira")
-    assert jira == {"refresh": False, "push_outward": True, "relink_validation": False,
-                    "status_sync": False, "apply_resolved": False, "apply_missing": False,
-                    "external_resolve": False, "external_reopen": False,
-                    "external_acknowledge": False, "support_level": "outbound_only"}
+    assert jira["refresh"] is False and jira["push_outward"] is True
+    assert jira["status_sync"] is False and jira["support_level"] == "outbound_only"
+    assert all(v is False for v in (jira["apply_resolved"], jira["apply_missing"],
+               jira["external_resolve"], jira["external_reopen"], jira["external_acknowledge"]))
+    # Generic / outbound-only advertise NO richer inbound fields.
+    assert all(v is False for v in jira["inbound_fields"].values())
+    assert all(v is False for v in adapter_capabilities("generic")["inbound_fields"].values())
 
 
 def test_external_resolved_is_actionable_without_silently_mutating_local(capture_send, monkeypatch):
@@ -1064,7 +1070,9 @@ def test_target_policy_and_external_action_over_http_with_gating(op, capture_sen
     assert tgt["capabilities"]["external_resolve"] is True
     assert set(tgt["policy_overrides"]) == {
         "allow_apply_resolved", "allow_apply_missing", "allow_external_resolve",
-        "allow_external_reopen", "allow_external_acknowledge", "allow_push_outward"}
+        "allow_external_reopen", "allow_external_acknowledge", "allow_push_outward",
+        "allow_external_assignee", "allow_external_severity", "allow_external_updated_at",
+        "allow_external_comment_count", "allow_external_suggestions"}
     # PATCH an override over HTTP.
     patched = client.patch(f"/operator/incident-targets/{tgt['id']}", headers=OP,
                            json={"allow_external_reopen": False}).json()["target"]
@@ -1104,4 +1112,142 @@ def test_no_policy_fields_leak_into_user_routes(capture_send):
     user_job = client.get(f"/jobs/{job['id']}", headers=auth).json()["job"]
     for operator_only in ("policy_overrides", "allow_external_resolve", "external_resolve",
                           "capabilities", "available_actions"):
+        assert operator_only not in user_job
+
+
+# ── G-13: per-target INBOUND-state policy overrides ──────────────────────────
+
+
+def _pd_with_status(monkeypatch, *, assignee="Dana", severity="critical", count=3):
+    """A PagerDuty target whose outbound send succeeds (so a link exists) and whose
+    refresh observes a full rich snapshot."""
+    def _send(self, url, body_json, secret, adapter=None):
+        return (True, 202, None, "pd-1", "https://ext/x")
+    monkeypatch.setattr(type(incident_sync_service), "_send", _send)
+
+    def _fetch(self, url, ref, secret, adapter=None):
+        from app.incident_sync import _external_state
+        snap = _external_state(exists=True, status="acknowledged", url="https://ext/x",
+                               assignee=assignee, severity=severity,
+                               updated_at="2026-06-20T00:00:00Z", comment_count=count)
+        return (True, snap, None)
+    monkeypatch.setattr(type(incident_sync_service), "_fetch", _fetch)
+    return incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+
+
+def test_inbound_field_policy_precedence_is_capability_then_override():
+    from app.incident_sync import inbound_field_policy, POLICY_ALLOWED, POLICY_DENIED_CAPABILITY, POLICY_DENIED_TARGET
+    # Capability: generic cannot provide external assignee regardless of override.
+    ok, code, _ = inbound_field_policy("generic", {"allow_external_assignee": True}, "assignee")
+    assert ok is False and code == POLICY_DENIED_CAPABILITY
+    # PagerDuty can, no override → allowed.
+    ok, code, _ = inbound_field_policy("pagerduty", None, "assignee")
+    assert ok and code == POLICY_ALLOWED
+    # Per-target override hides an otherwise-capable field.
+    ok, code, reason = inbound_field_policy("pagerduty", {"allow_external_severity": False}, "severity")
+    assert ok is False and code == POLICY_DENIED_TARGET and "hides" in reason
+
+
+def test_target_policy_view_includes_inbound_section(capture_send):
+    t = incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    incident_sync_service.update_target(t["id"], allow_external_assignee=False)
+    policy = incident_sync_service.target_policy(t["id"])
+    assert "inbound" in policy
+    asg = policy["inbound"]["assignee"]
+    assert asg["capable"] is True and asg["override"] is False and asg["effective"] is False
+    sev = policy["inbound"]["severity"]
+    assert sev["capable"] is True and sev["override"] is None and sev["effective"] is True
+    # Generic target: inbound fields are honestly not capable.
+    g = incident_sync_service.create_target(name="g", url="https://h.example.com/g")
+    gp = incident_sync_service.target_policy(g["id"])
+    assert gp["inbound"]["assignee"]["capable"] is False
+
+
+def test_refresh_stores_only_permitted_inbound_fields(monkeypatch):
+    t = _pd_with_status(monkeypatch)
+    incident_sync_service.update_target(t["id"], allow_external_assignee=False)
+    incident_service.observe([_alert(job_id="inb-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "inb-1")
+    incident_sync_service.refresh(inc["id"])
+    link = incident_sync_service.incident_sync_status(inc["id"])["links"][0]
+    # Assignee hidden by policy → not imported; other rich fields still present.
+    assert link["external_assignee"] is None
+    assert link["external_severity"] == "critical" and link["external_comment_count"] == 3
+    assert link["inbound_visibility"]["assignee"] is False and link["inbound_visibility"]["severity"] is True
+    # Refresh NEVER mutates local state.
+    assert incident_service.get(inc["id"])["state"] == "open"
+
+
+def test_read_time_mask_hides_field_disabled_after_import(monkeypatch):
+    t = _pd_with_status(monkeypatch)
+    incident_service.observe([_alert(job_id="inb-2")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "inb-2")
+    incident_sync_service.refresh(inc["id"])  # imported with assignee visible
+    assert incident_sync_service.incident_sync_status(inc["id"])["links"][0]["external_assignee"] == "Dana"
+    # Disable AFTER import → read masks it immediately, without a re-refresh.
+    incident_sync_service.update_target(t["id"], allow_external_assignee=False)
+    assert incident_sync_service.incident_sync_status(inc["id"])["links"][0]["external_assignee"] is None
+
+
+def test_hidden_field_suppresses_its_suggestion(monkeypatch):
+    # External assignee differs from local owner → owner-mismatch suggestion normally.
+    t = _pd_with_status(monkeypatch, assignee="Dana")
+    incident_service.observe([_alert(job_id="inb-3")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "inb-3")
+    incident_service.assign(inc["id"], "alice")  # local owner != external "Dana"
+    incident_sync_service.refresh(inc["id"])
+    codes = [s["code"] for s in incident_sync_service.incident_sync_status(inc["id"])["summary"]["suggestions"]]
+    assert "owner_mismatch" in codes
+    # Hide assignee → the owner-mismatch suggestion disappears (derived from hidden field).
+    incident_sync_service.update_target(t["id"], allow_external_assignee=False)
+    codes2 = [s["code"] for s in incident_sync_service.incident_sync_status(inc["id"])["summary"]["suggestions"]]
+    assert "owner_mismatch" not in codes2
+
+
+def test_suggestions_master_switch_suppresses_all(monkeypatch):
+    t = _pd_with_status(monkeypatch, severity="critical")
+    incident_service.observe([_alert(job_id="inb-4")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "inb-4")
+    incident_sync_service.refresh(inc["id"])
+    assert incident_sync_service.incident_sync_status(inc["id"])["summary"]["suggestions"]  # some exist
+    incident_sync_service.update_target(t["id"], allow_external_suggestions=False)
+    assert incident_sync_service.incident_sync_status(inc["id"])["summary"]["suggestions"] == []
+
+
+def test_inbound_policy_over_http_with_gating(op, capture_send, monkeypatch):
+    def _fetch(self, url, ref, secret, adapter=None):
+        from app.incident_sync import _external_state
+        return (True, _external_state(exists=True, status="open", assignee="Dana", severity="high"), None)
+    monkeypatch.setattr(type(incident_sync_service), "_fetch", _fetch)
+    tgt = client.post("/operator/incident-targets", headers=OP,
+                      json={"name": "pd", "url": "https://h.example.com/pd", "kind": "pagerduty"}).json()["target"]
+    # PATCH an inbound override over HTTP.
+    patched = client.patch(f"/operator/incident-targets/{tgt['id']}", headers=OP,
+                           json={"allow_external_severity": False}).json()["target"]
+    assert patched["policy_overrides"]["allow_external_severity"] is False
+    # Policy view shows the inbound decision.
+    policy = client.get(f"/operator/incident-targets/{tgt['id']}/policy", headers=OP).json()
+    assert policy["inbound"]["severity"]["effective"] is False
+    assert policy["inbound"]["assignee"]["effective"] is True
+    # Refresh + status over HTTP masks the disabled field.
+    incident_service.observe([_alert(job_id="http-inb")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "http-inb")
+    client.post(f"/operator/incidents/{inc['id']}/sync/refresh", headers=OP)
+    link = client.get(f"/operator/incidents/{inc['id']}/sync", headers=OP).json()["links"][0]
+    assert link["external_severity"] is None and link["external_assignee"] == "Dana"
+    # Gating.
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.get(f"/operator/incident-targets/{tgt['id']}/policy", headers=auth).status_code in (401, 403)
+
+
+def test_no_inbound_policy_fields_leak_into_user_routes(capture_send):
+    from app.execution_queue import execution_queue
+    incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    owner = _account()
+    job = execution_queue.enqueue(f"account:{owner['id']}", "noop", {}, title="T")
+    auth = {"Authorization": f"Bearer {make_account_token(owner['id'])}"}
+    user_job = client.get(f"/jobs/{job['id']}", headers=auth).json()["job"]
+    for operator_only in ("allow_external_assignee", "allow_external_suggestions",
+                          "inbound_visibility", "suggestions_allowed", "inbound_fields"):
         assert operator_only not in user_job

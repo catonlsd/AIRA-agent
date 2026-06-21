@@ -66,6 +66,7 @@ import {
   applyActionLabel,
   applyExternalState,
   detachIncidentLink,
+  hiddenInboundFields,
   invokeExternalAction,
   incidentEventLabel,
   incidentSyncSummary,
@@ -433,6 +434,15 @@ function IncidentRow({ inc, operatorName, onChanged }: {
                   {link.external_comment_count != null ? <span>{link.external_comment_count} note{link.external_comment_count === 1 ? "" : "s"}</span> : null}
                   {link.external_updated_at ? <span>updated {link.external_updated_at}</span> : null}
                 </div>
+              ) : null}
+
+              {link && hiddenInboundFields(link).length > 0 ? (
+                <p className="mb-1.5 text-[10px] text-[var(--text-subtle)]">
+                  Hidden by target policy: {hiddenInboundFields(link).join(", ")}
+                </p>
+              ) : null}
+              {link && !link.suggestions_allowed ? (
+                <p className="mb-1.5 text-[10px] text-[var(--text-subtle)]">Suggestions disabled for this target.</p>
               ) : null}
 
               <div className="flex flex-wrap items-center gap-2 text-[11px]">

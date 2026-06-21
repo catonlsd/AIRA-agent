@@ -1455,6 +1455,51 @@ explicit `apply_resolved`, now gated by capability AND per-target policy.
   denial, gating, 404, and 422 on unknown action; no policy field leaks into
   `/jobs/{id}`) and `frontend/lib/operator.test.mts` (`policyOverrideLabel`).
 
+### Per-target inbound-state policy & richer adapter advertisement (G-13)
+
+The same per-target tri-state model now governs **inbound** data, not just outbound
+actions: an operator can hide a richer external field (assignee / severity /
+updated_at / comment_count) or silence suggestions **for one target** without DB
+edits. Local-state primacy is untouched — inbound policy only changes what is
+*observed, stored, and suggested*, never what becomes local truth.
+
+- **Adapters advertise their bounded inbound fields.** Each adapter declares
+  `inbound_fields` (PagerDuty: assignee/severity/updated_at/comment_count; generic
+  and outbound-only: none). `adapter_capabilities` surfaces this as an
+  `inbound_fields` map — the console shows exactly what's *possible* per kind.
+- **Three-layer inbound resolution.** `inbound_field_policy(kind, overrides, field) →
+  (allowed, code, reason)`: adapter **capability** → per-target **override**
+  (tri-state NULL/True/False, can only narrow) → read-time **mask**. Same stable
+  codes (`denied:capability` / `denied:target_policy`). Suggestions are a derived
+  view gated by a master `allow_external_suggestions`.
+- **Durable per-target inbound overrides.** `external_incident_targets` gains five
+  nullable columns (`allow_external_assignee` / `_severity` / `_updated_at` /
+  `_comment_count` / `_suggestions`; additive ALTER), tunable via the same
+  `PATCH /operator/incident-targets/{id}`.
+- **Data minimization + read-time masking.** `refresh` imports **only** the richer
+  fields this target permits (a disabled field is never stored). `_clean_link` also
+  **masks at read** — toggling a target's policy hides even previously-imported
+  values immediately, and exposes `inbound_visibility` + `suggestions_allowed` so the
+  console can explain *why* a field is absent.
+- **Policy-aware suggestions.** Suggestions derive only from the masked link, so a
+  target that hides external assignee produces no owner-mismatch suggestion, one that
+  hides severity produces no severity suggestion, and `allow_external_suggestions:
+  false` suppresses them wholesale.
+- **Policy inspection** extends `GET /operator/incident-targets/{id}/policy` with an
+  `inbound` section (`{capable, override, effective, code, reason}` per field +
+  suggestions). Targets' read payloads carry the full `policy_overrides`; links carry
+  `inbound_visibility` / `suggestions_allowed`.
+- **Console:** the incident sync line renders only permitted richer fields and adds a
+  calm "Hidden by target policy: …" note (pure `hiddenInboundFields` helper) plus a
+  "Suggestions disabled for this target" line — honest about what's hidden vs
+  unavailable. No inbound-policy field leaks into `GET /jobs/{id}`.
+- Pinned by `backend/tests/test_incident_sync.py` (inbound precedence capability→
+  override; override hides a capable field; policy view `inbound` section; refresh
+  stores only permitted fields + never mutates local; read-time mask hides a field
+  disabled after import; hidden field suppresses its suggestion; suggestions master
+  switch; full HTTP path with gating; no inbound-policy leak into `/jobs/{id}`) and
+  `frontend/lib/operator.test.mts` (`hiddenInboundFields`).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:
