@@ -74,6 +74,14 @@ def ensure_runtime_columns() -> None:
                 ("external_updated_at", "VARCHAR(40)"),
                 ("external_comment_count", "INTEGER"),
             ],
+            "external_incident_targets": [
+                ("allow_apply_resolved", "BOOLEAN"),
+                ("allow_apply_missing", "BOOLEAN"),
+                ("allow_external_resolve", "BOOLEAN"),
+                ("allow_external_reopen", "BOOLEAN"),
+                ("allow_external_acknowledge", "BOOLEAN"),
+                ("allow_push_outward", "BOOLEAN"),
+            ],
         }
         for table, columns in additions.items():
             if table not in inspector.get_table_names():

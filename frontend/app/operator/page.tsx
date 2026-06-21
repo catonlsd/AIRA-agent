@@ -66,6 +66,7 @@ import {
   applyActionLabel,
   applyExternalState,
   detachIncidentLink,
+  invokeExternalAction,
   incidentEventLabel,
   incidentSyncSummary,
   incidentTone,
@@ -297,6 +298,14 @@ function IncidentRow({ inc, operatorName, onChanged }: {
     void onSyncRepair(() => pushIncidentOutward(inc.id));
   }, [inc.id, onSyncRepair]);
 
+  // Vendor-typed external actions surfaced from the backend's available_actions list
+  // (only the ones that are actually available — capability + per-target policy).
+  const externalActions = (sync?.summary.available_actions ?? []).filter(
+    (a) => a.available && (a.action === "external_resolve" || a.action === "external_reopen" || a.action === "external_acknowledge"));
+  const onExternalAction = useCallback((action: "external_resolve" | "external_reopen" | "external_acknowledge") => {
+    void onSyncRepair(() => invokeExternalAction(inc.id, action));
+  }, [inc.id, onSyncRepair]);
+
   const saveNote = useCallback(async () => {
     setBusy(true);
     try { if (await noteIncident(inc.id, noteDraft.slice(0, 280))) { setEditingNote(false); onChanged(); } }
@@ -467,6 +476,13 @@ function IncidentRow({ inc, operatorName, onChanged }: {
                     <Upload className="h-3 w-3" /> Push outward
                   </button>
                 ) : null}
+                {externalActions.map((a) => (
+                  <button key={a.action} type="button" disabled={busy}
+                    onClick={() => onExternalAction(a.action as "external_resolve" | "external_reopen" | "external_acknowledge")}
+                    title={`${a.label} · ${actionEffectLabel(a.effect)}`} className={INC_BTN}>
+                    <Upload className="h-3 w-3" /> {a.label}
+                  </button>
+                ))}
               </div>
               {actions?.can_apply && actions.apply_action ? (
                 <p className="mt-1 text-[10px] text-[var(--text-subtle)]">

@@ -598,6 +598,15 @@ class IncidentTargetUpdate(BaseModel):
     sync_actions: str | None = Field(default=None, max_length=255)
     secret: str | None = Field(default=None, max_length=255)
     enabled: bool | None = None
+    # Per-target action policy overrides (G-12). Tri-state at the model layer too —
+    # null leaves it unchanged; True/False sets the explicit override (still bounded
+    # by adapter capability when an action is actually invoked).
+    allow_apply_resolved: bool | None = None
+    allow_apply_missing: bool | None = None
+    allow_external_resolve: bool | None = None
+    allow_external_reopen: bool | None = None
+    allow_external_acknowledge: bool | None = None
+    allow_push_outward: bool | None = None
 
 
 class SyncDetachBody(BaseModel):
@@ -616,6 +625,12 @@ class SyncApplyBody(BaseModel):
 
 
 class SyncPushBody(BaseModel):
+    target_id: str | None = Field(default=None, max_length=36)
+
+
+class SyncExternalActionBody(BaseModel):
+    # Vendor-typed external action (effect: external only; never changes local state).
+    action: str = Field(..., pattern="^(external_resolve|external_reopen|external_acknowledge)$")
     target_id: str | None = Field(default=None, max_length=36)
 
 
@@ -848,6 +863,25 @@ def operator_incident_sync_push(incident_id: str, body: SyncPushBody, request: R
     return result
 
 
+@router.post("/incidents/{incident_id}/sync/external-action")
+def operator_incident_sync_external_action(incident_id: str, body: SyncExternalActionBody, request: Request) -> dict:
+    """Invoke a richer VENDOR-TYPED external action (resolve / reopen / acknowledge),
+    gated by adapter capability AND per-target policy. Effect is strictly external —
+    local incident state is never changed. 409 when capability/policy/state refuse it."""
+    _require_operator(request)
+    from app.incidents import incident_service
+    from app.incident_sync import incident_sync_service
+
+    incident = incident_service.get(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    result = incident_sync_service.external_action(incident_id, body.action, target_id=body.target_id,
+                                                   actor=_operator_name(request), incident=incident)
+    if not result.get("ok"):
+        raise HTTPException(status_code=409, detail=result.get("message", "Cannot perform external action."))
+    return result
+
+
 @router.post("/incident-sync/reconcile")
 def operator_incident_sync_reconcile(request: Request, limit: int | None = None) -> dict:
     """Bounded scheduled reconciliation: recheck the active, refresh-capable links
@@ -885,3 +919,17 @@ def operator_incident_target_capabilities(target_id: str, request: Request) -> d
     caps = adapter_capabilities(target.get("kind"))
     return {"target_id": target_id, "kind": target.get("kind"),
             "support_level": caps["support_level"], "capabilities": caps}
+
+
+@router.get("/incident-targets/{target_id}/policy")
+def operator_incident_target_policy(target_id: str, request: Request) -> dict:
+    """Per-target action policy: for each bounded action, what the adapter is CAPABLE
+    of, the per-target OVERRIDE (null / true / false), and the net EFFECTIVE decision.
+    The single place an operator sees capability-vs-override-vs-effect, no DB edits."""
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    policy = incident_sync_service.target_policy(target_id)
+    if policy is None:
+        raise HTTPException(status_code=404, detail="Target not found.")
+    return policy

@@ -79,6 +79,7 @@ class GenericIncidentAdapter:
     supports_apply_missing = True    # generic: if external is gone, operator may detach
     supports_external_resolve = False  # generic push has no typed "resolve" — just state notification
     supports_external_reopen = False   # ditto for reopen
+    supports_external_acknowledge = False
 
     def shape(self, payload: dict) -> dict:
         return payload
@@ -131,6 +132,7 @@ class PagerDutyIncidentAdapter:
     supports_apply_missing = True
     supports_external_resolve = True
     supports_external_reopen = True
+    supports_external_acknowledge = True   # PagerDuty event_action: acknowledge
     _EVENT_ACTION = {
         "opened": "trigger", "reopened": "trigger", "recovered": "resolve",
         "acknowledged": "acknowledge",
@@ -219,6 +221,7 @@ class OutboundOnlyAdapter(GenericIncidentAdapter):
     supports_apply_missing = False
     supports_external_resolve = False
     supports_external_reopen = False
+    supports_external_acknowledge = False
 
 
 _ADAPTERS = {
@@ -257,38 +260,85 @@ def adapter_capabilities(kind: Optional[str]) -> dict[str, Any]:
         "apply_missing": bool(getattr(adapter, "supports_apply_missing", False)),
         "external_resolve": bool(getattr(adapter, "supports_external_resolve", False)),
         "external_reopen": bool(getattr(adapter, "supports_external_reopen", False)),
+        "external_acknowledge": bool(getattr(adapter, "supports_external_acknowledge", False)),
         "support_level": level,
     }
 
 
-# ── Inbound apply policy (G-11): the bounded allow-list separate from capability ──
+# ── Action policy (G-11 → G-12): capability + PER-TARGET override, audited refusals ──
 #
-# Capability = "what the adapter CAN do" (declared on the adapter class).
-# Policy     = "what AIRA-X ALLOWS as a system for this adapter + action."
-# Keeping them distinct gives future room (e.g. per-target policy overrides) without
-# touching the adapter classes. Today: refusal is granular and audited.
+# Three honest layers, in precedence order:
+#   1. adapter CAPABILITY  — what the adapter kind can technically do (class flags).
+#   2. target OVERRIDE     — per-target tri-state: NULL = adapter default, True =
+#                            explicitly permitted (still bounded by capability),
+#                            False = explicitly denied for THIS target. An override
+#                            can only NARROW capability, never enable beyond it.
+#   3. incident STATE      — whether the action is applicable right now (handled by
+#                            the caller / `available_actions`).
+# `target_action_policy` resolves layers 1+2; codes are stable so the audit trail and
+# console group refusals reliably.
 
 POLICY_ALLOWED = "allowed"
 POLICY_DENIED_CAPABILITY = "denied:capability"
+POLICY_DENIED_TARGET = "denied:target_policy"
 POLICY_DENIED_UNKNOWN = "denied:unknown_action"
 
+# action → (capability key, per-target override field). The single source of truth
+# tying an action to the adapter flag and the target column that can narrow it.
+_ACTION_POLICY = {
+    "accept_resolved": ("apply_resolved", "allow_apply_resolved"),
+    "accept_missing": ("apply_missing", "allow_apply_missing"),
+    "external_resolve": ("external_resolve", "allow_external_resolve"),
+    "external_reopen": ("external_reopen", "allow_external_reopen"),
+    "external_acknowledge": ("external_acknowledge", "allow_external_acknowledge"),
+    "resend_current_state": ("push_outward", "allow_push_outward"),
+}
+# The per-target override columns operators can tune (read + PATCH).
+TARGET_OVERRIDE_FIELDS = tuple(field for _cap, field in _ACTION_POLICY.values())
 
-def apply_policy(adapter_kind: Optional[str], apply_action: str) -> tuple[bool, str, str]:
-    """Bounded allow-list for inbound-state applications → (allowed, code, reason).
-    The code is stable (`allowed` / `denied:capability` / `denied:unknown_action`)
-    so the audit trail and console can group refusals reliably."""
+
+def target_action_policy(adapter_kind: Optional[str], overrides: Optional[dict],
+                         action: str) -> tuple[bool, str, str]:
+    """Resolve capability + per-target override for one action → (allowed, code,
+    reason). `overrides` is the target's tri-state override dict (or None)."""
+    mapping = _ACTION_POLICY.get(action)
+    if mapping is None:
+        return (False, POLICY_DENIED_UNKNOWN, f"unknown action: {action!r}")
+    cap_key, override_field = mapping
     caps = adapter_capabilities(adapter_kind)
-    if apply_action == "accept_resolved":
-        if not caps["apply_resolved"]:
-            return (False, POLICY_DENIED_CAPABILITY,
-                    "adapter does not support applying external resolution")
-        return (True, POLICY_ALLOWED, "external resolved → local recovered is policy-allowed")
-    if apply_action == "accept_missing":
-        if not caps["apply_missing"]:
-            return (False, POLICY_DENIED_CAPABILITY,
-                    "adapter does not support applying missing external")
-        return (True, POLICY_ALLOWED, "external missing → detach is policy-allowed")
-    return (False, POLICY_DENIED_UNKNOWN, f"unknown apply action: {apply_action!r}")
+    if not caps.get(cap_key):
+        return (False, POLICY_DENIED_CAPABILITY, f"adapter does not support {action}")
+    if overrides is not None and overrides.get(override_field) is False:
+        return (False, POLICY_DENIED_TARGET, f"target policy disables {action}")
+    return (True, POLICY_ALLOWED, f"{action} is permitted for this target")
+
+
+def apply_policy(adapter_kind: Optional[str], apply_action: str,
+                 overrides: Optional[dict] = None) -> tuple[bool, str, str]:
+    """Back-compat wrapper for the inbound-apply actions (accept_resolved /
+    accept_missing). Delegates to `target_action_policy`."""
+    return target_action_policy(adapter_kind, overrides, apply_action)
+
+
+def effective_target_policy(adapter_kind: Optional[str], overrides: Optional[dict]) -> dict[str, Any]:
+    """Curated capability-vs-override-vs-effective view for one target — exactly what
+    `GET /operator/incident-targets/{id}/policy` returns. Operator can see what the
+    adapter CAN do, what this target is PERMITTED to do, and the net effect."""
+    caps = adapter_capabilities(adapter_kind)
+    actions = {}
+    for action in _ACTION_POLICY:
+        cap_key, override_field = _ACTION_POLICY[action]
+        capable = bool(caps.get(cap_key))
+        override = (overrides or {}).get(override_field)
+        allowed, code, reason = target_action_policy(adapter_kind, overrides, action)
+        actions[action] = {
+            "capable": capable,
+            "override": override,          # None / True / False
+            "effective": allowed,
+            "code": code,
+            "reason": reason,
+        }
+    return {"kind": adapter_kind, "capabilities": caps, "actions": actions}
 
 
 # ── external status normalization + link-status classification (pure) ─────────
@@ -400,15 +450,34 @@ _ACTION_LABELS = {
     "refresh": "Refresh", "redrive": "Redrive failed sync", "detach": "Detach",
     "relink": "Relink", "apply_resolved": "Apply external resolution",
     "apply_missing": "Detach missing external", "push": "Push outward",
+    "external_resolve": "Resolve externally", "external_reopen": "Reopen externally",
+    "external_acknowledge": "Acknowledge externally",
 }
+
+
+def _any_target_allows(active_links: list[dict], action: str) -> tuple[bool, str]:
+    """Is `action` permitted (capability + per-target override) for ANY active link?
+    Returns (available, reason). The reason explains the *closest* refusal so the
+    operator sees whether capability or target policy is the blocker."""
+    if not active_links:
+        return (False, "no active external link")
+    reasons: list[str] = []
+    for link in active_links:
+        allowed, _code, reason = target_action_policy(
+            link.get("target_kind"), link.get("policy_overrides"), action)
+        if allowed:
+            return (True, "")
+        reasons.append(reason)
+    return (False, reasons[0] if reasons else "not permitted")
 
 
 def _available_actions(*, links: list[dict], active_links: list[dict],
                        failed: list[dict], latest: Optional[dict],
-                       apply_action: Optional[str]) -> list[dict]:
+                       apply_action: Optional[str], worst_link: Optional[dict]) -> list[dict]:
     """Per-action availability list — `{action, label, available, reason, effect}`.
-    Combines capability + current state + policy into one curated list so the
-    console (and the `/sync/actions` endpoint) doesn't re-derive gating logic."""
+    Combines adapter capability + PER-TARGET policy override + current incident state
+    into one curated list, so the console (and `/sync/actions`) doesn't re-derive
+    gating logic. Precedence: capability → target override → incident-state."""
     out: list[dict] = []
 
     def push(action: str, available: bool, reason: str, effect: str) -> None:
@@ -436,20 +505,27 @@ def _available_actions(*, links: list[dict], active_links: list[dict],
          EFFECT_LINKAGE)
 
     # Apply-from-external (split into the two distinct typed actions). Available only
-    # when the observed disagreement supports it AND policy/capability allow it.
-    target_kind = active_links[0]["target_kind"] if active_links else None
+    # when the observed disagreement offers it AND capability + per-target policy
+    # allow it — evaluated against the SPECIFIC link the disagreement comes from.
     for typed in ("accept_resolved", "accept_missing"):
         action_key = "apply_resolved" if typed == "accept_resolved" else "apply_missing"
         effect = EFFECT_LOCAL if typed == "accept_resolved" else EFFECT_LINKAGE
-        if apply_action == typed:
-            allowed, _code, reason = apply_policy(target_kind, typed)
+        if apply_action == typed and worst_link is not None:
+            allowed, _code, reason = target_action_policy(
+                worst_link.get("target_kind"), worst_link.get("policy_overrides"), typed)
             push(action_key, allowed, "" if allowed else reason, effect)
         else:
             push(action_key, False, "external state does not currently offer this", effect)
 
-    # Push outward — external. Available if any active link's adapter can push.
-    push_ok = any(link["capabilities"]["push_outward"] and not link["detached"] for link in links)
-    push("push", push_ok, "" if push_ok else "no push-capable target", EFFECT_EXTERNAL)
+    # Push outward — external. Available if any active link's target permits it.
+    push_ok, push_reason = _any_target_allows(active_links, "resend_current_state")
+    push("push", push_ok, "" if push_ok else (push_reason or "no push-capable target"),
+         EFFECT_EXTERNAL)
+
+    # Vendor-typed external actions (G-12) — external effect, capability + policy gated.
+    for action in ("external_resolve", "external_reopen", "external_acknowledge"):
+        ok, reason = _any_target_allows(active_links, action)
+        push(action, ok, "" if ok else reason, EFFECT_EXTERNAL)
     return out
 
 
@@ -525,12 +601,20 @@ class IncidentSyncService:
 
     def update_target(self, target_id: str, **changes: Any) -> Optional[dict[str, Any]]:
         allowed = {"name", "url", "kind", "enabled", "sync_actions", "secret"}
+        # Per-target action overrides are tri-state — None means "leave unchanged"
+        # here (we never clear back to NULL via PATCH today; explicit True/False set).
+        override_fields = set(TARGET_OVERRIDE_FIELDS)
         with self._session_factory() as session:
             row = session.get(ExternalIncidentTarget, target_id)
             if row is None:
                 return None
             for key, value in changes.items():
-                if key not in allowed or value is None:
+                if value is None:
+                    continue
+                if key in override_fields:
+                    setattr(row, key, bool(value))
+                    continue
+                if key not in allowed:
                     continue
                 if key == "kind" and value not in _KINDS:
                     return None
@@ -777,12 +861,19 @@ class IncidentSyncService:
         }
 
     @staticmethod
+    def _target_overrides(row: ExternalIncidentTarget) -> dict[str, Any]:
+        """The tri-state per-target action overrides (None / True / False)."""
+        return {field: getattr(row, field, None) for field in TARGET_OVERRIDE_FIELDS}
+
+    @staticmethod
     def _target_names(session) -> dict[str, dict[str, Any]]:
-        return {t.id: {"name": t.name, "kind": t.kind}
+        return {t.id: {"name": t.name, "kind": t.kind,
+                       "overrides": IncidentSyncService._target_overrides(t)}
                 for t in session.query(ExternalIncidentTarget).all()}
 
     @staticmethod
     def _clean_target(row: ExternalIncidentTarget) -> dict[str, Any]:
+        overrides = IncidentSyncService._target_overrides(row)
         return {
             "id": row.id,
             "name": row.name,
@@ -792,6 +883,8 @@ class IncidentSyncService:
             "sync_actions": row.sync_actions,
             "has_secret": bool(row.secret),   # presence only — never the value
             "consecutive_failures": row.consecutive_failures or 0,
+            "capabilities": adapter_capabilities(row.kind),
+            "policy_overrides": overrides,    # tri-state per-action overrides
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }
 
@@ -855,6 +948,7 @@ class IncidentSyncService:
             "detached": detached,
             "detached_at": row.detached_at.isoformat() if row.detached_at else None,
             "capabilities": caps,
+            "policy_overrides": target.get("overrides") or {},  # per-target tri-state
             "refresh_supported": supports_refresh,
             "link_status": status,
             "reason": reason,
@@ -931,11 +1025,11 @@ class IncidentSyncService:
             # operator exactly what an action will change (local / linkage / external
             # / none) and why it's available or not. The console renders from this
             # list directly so action-gating logic doesn't live in two places.
-            available_actions = _available_actions(
-                links=links, active_links=active_links, failed=failed, latest=latest,
-                apply_action=apply_action)
             # Operator-facing suggestions from the worst active link's observed state.
             primary = max(active_links, key=lambda link: _LINK_SEVERITY.get(link["link_status"], 0)) if active_links else None
+            available_actions = _available_actions(
+                links=links, active_links=active_links, failed=failed, latest=latest,
+                apply_action=apply_action, worst_link=primary)
             suggestions = external_state_suggestions(local_incident, primary) if primary else []
             support_level = primary["capabilities"]["support_level"] if primary else (
                 links[0]["capabilities"]["support_level"] if links else "none")
@@ -1236,8 +1330,9 @@ class IncidentSyncService:
                                detail="no matching active link for action")
             return {"ok": False, "code": "denied:state",
                     "message": "No matching external link for that action."}
-        # Policy gate (vendor-specific allow-list). Capability + system policy in one.
-        allowed, code, reason = apply_policy(link["target_kind"], apply_action)
+        # Policy gate: adapter capability + PER-TARGET override (G-12), audited.
+        allowed, code, reason = target_action_policy(
+            link["target_kind"], link.get("policy_overrides"), apply_action)
         if not allowed:
             self._record_apply(incident_id, link["target_id"], apply_action, "refused:" + code.split(":", 1)[1],
                                actor=actor, detail=reason)
@@ -1332,6 +1427,95 @@ class IncidentSyncService:
                 session.commit()
         except Exception:
             pass
+
+    # Maps a vendor-typed external action → the incident transition the adapter shapes.
+    _EXTERNAL_ACTION_TRANSITION = {
+        "external_resolve": "recovered",       # → PagerDuty event_action: resolve
+        "external_reopen": "reopened",         # → PagerDuty event_action: trigger
+        "external_acknowledge": "acknowledged",  # → PagerDuty event_action: acknowledge
+    }
+
+    def external_action(self, incident_id: str, action: str, *, target_id: Optional[str] = None,
+                        actor: Optional[str] = None, incident: Optional[dict] = None) -> dict[str, Any]:
+        """Invoke a richer VENDOR-TYPED outbound action (resolve / reopen / acknowledge)
+        on the external incident, gated by adapter capability AND per-target policy.
+        Effect is strictly EXTERNAL — local incident state is never changed here. Each
+        target is policy-checked individually; refusals are audited per target."""
+        if action not in self._EXTERNAL_ACTION_TRANSITION:
+            return {"ok": False, "code": POLICY_DENIED_UNKNOWN, "message": "Unknown external action."}
+        snapshot = incident
+        if snapshot is None:
+            try:
+                from app.incidents import incident_service
+                snapshot = incident_service.get(incident_id)
+            except Exception:
+                snapshot = None
+        if not snapshot:
+            return {"ok": False, "message": "Incident not found."}
+        transition = self._EXTERNAL_ACTION_TRANSITION[action]
+        created: list[str] = []
+        applied_targets = 0
+        last_refusal: Optional[tuple[str, str]] = None
+        try:
+            with self._session_factory() as session:
+                # Only targets this incident is actually LINKED to (not detached).
+                links = (session.query(IncidentExternalLink)
+                         .filter(IncidentExternalLink.incident_id == incident_id,
+                                 IncidentExternalLink.detached_at.is_(None)).all())
+                if target_id:
+                    links = [l for l in links if l.target_id == target_id]
+                if not links:
+                    return {"ok": False, "code": "denied:state",
+                            "message": "Incident has no active external link for that target."}
+                for link in links:
+                    target = session.get(ExternalIncidentTarget, link.target_id)
+                    if target is None or not target.enabled:
+                        continue
+                    overrides = self._target_overrides(target)
+                    allowed, code, reason = target_action_policy(target.kind, overrides, action)
+                    if not allowed:
+                        last_refusal = (code, reason)
+                        self._log_reconcile(session, incident_id, target.id, f"external:{action}",
+                                            "refused:" + code.split(":", 1)[1], actor=actor, detail=reason)
+                        continue
+                    record = IncidentSyncRecord(
+                        id=uuid4().hex, target_id=target.id, incident_id=incident_id,
+                        signal=snapshot.get("signal"), action=transition, actor=actor,
+                        state=snapshot.get("state"), severity=snapshot.get("severity"),
+                        classification=snapshot.get("classification"), subject=snapshot.get("subject"),
+                        assignee=snapshot.get("assignee"), note=(snapshot.get("note") or None),
+                        status=STATUS_PENDING, attempts=0)
+                    session.add(record)
+                    created.append(record.id)
+                    applied_targets += 1
+                session.commit()
+            for record_id in created:
+                self._attempt(record_id)
+            if applied_targets:
+                with self._session_factory() as session:
+                    self._log_reconcile(session, incident_id, target_id, f"external:{action}", "ok",
+                                        actor=actor, detail=f"sent vendor '{transition}' to {applied_targets} target(s)")
+                    session.commit()
+        except Exception:
+            return {"ok": False, "message": "External action failed."}
+        if not applied_targets:
+            code = last_refusal[0] if last_refusal else "denied:state"
+            msg = last_refusal[1] if last_refusal else "No target permits this action."
+            return {"ok": False, "code": code, "message": msg}
+        return {"ok": True, "changed_local": False, "code": POLICY_ALLOWED,
+                "status": self.incident_sync_status(incident_id),
+                "message": f"Sent external {action.replace('external_', '')} to {applied_targets} target(s)."}
+
+    def target_policy(self, target_id: str) -> Optional[dict[str, Any]]:
+        """Curated capability-vs-override-vs-effective view for one target (G-12)."""
+        with self._session_factory() as session:
+            target = session.get(ExternalIncidentTarget, target_id)
+            if target is None:
+                return None
+            policy = effective_target_policy(target.kind, self._target_overrides(target))
+            policy["target_id"] = target.id
+            policy["name"] = target.name
+            return policy
 
     def reconcile(self, *, max_incidents: Optional[int] = None, actor: Optional[str] = None) -> dict[str, int]:
         """Bounded scheduled reconciliation: recheck the active, refresh-capable links

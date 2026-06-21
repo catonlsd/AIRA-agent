@@ -594,12 +594,13 @@ def test_adapter_capabilities_are_explicit_and_honest():
     # PagerDuty: vendor-typed external_resolve/reopen via event_action mapping.
     assert pd["apply_resolved"] and pd["apply_missing"]
     assert pd["external_resolve"] is True and pd["external_reopen"] is True
+    assert pd["external_acknowledge"] is True
     # Outbound-only: can push, cannot refresh / validate / status-sync / apply / typed action.
     jira = adapter_capabilities("jira")
     assert jira == {"refresh": False, "push_outward": True, "relink_validation": False,
                     "status_sync": False, "apply_resolved": False, "apply_missing": False,
                     "external_resolve": False, "external_reopen": False,
-                    "support_level": "outbound_only"}
+                    "external_acknowledge": False, "support_level": "outbound_only"}
 
 
 def test_external_resolved_is_actionable_without_silently_mutating_local(capture_send, monkeypatch):
@@ -876,18 +877,22 @@ def test_available_actions_carries_per_action_effect(capture_send, monkeypatch):
     incident_sync_service.refresh(inc["id"])
     actions = incident_sync_service.incident_actions(inc["id"])
     by_action = {a["action"]: a for a in actions}
-    # The list is the SAME shape regardless of availability.
+    # The list is the SAME shape regardless of availability (now incl. vendor actions).
     assert set(a["action"] for a in actions) == {
-        "refresh", "redrive", "detach", "relink", "apply_resolved", "apply_missing", "push"}
+        "refresh", "redrive", "detach", "relink", "apply_resolved", "apply_missing", "push",
+        "external_resolve", "external_reopen", "external_acknowledge"}
     assert all(set(a) == {"action", "label", "available", "reason", "effect"} for a in actions)
     # Effects are honest about blast radius.
     assert by_action["refresh"]["effect"] == "none"
     assert by_action["detach"]["effect"] == "linkage" and by_action["apply_missing"]["effect"] == "linkage"
     assert by_action["apply_resolved"]["effect"] == "local"  # the only "changes local" action
     assert by_action["push"]["effect"] == "external" and by_action["redrive"]["effect"] == "external"
+    assert by_action["external_resolve"]["effect"] == "external"
     # apply_resolved is currently available; apply_missing has a "state" reason.
     assert by_action["apply_resolved"]["available"] is True
     assert by_action["apply_missing"]["available"] is False and by_action["apply_missing"]["reason"]
+    # PagerDuty supports vendor-typed external actions.
+    assert by_action["external_resolve"]["available"] is True
 
 
 def test_available_actions_on_outbound_only_target_excludes_apply(monkeypatch):
@@ -947,3 +952,156 @@ def test_unknown_apply_action_over_http_is_validated(op, capture_send):
     # The Pydantic body rejects unknown actions at the boundary (pattern), so 422.
     bad = client.post(f"/operator/incidents/{inc['id']}/sync/apply", headers=OP, json={"action": "foo"})
     assert bad.status_code == 422
+
+
+# ── G-12: per-target policy overrides + vendor-typed external actions ─────────
+
+
+def _pd_target():
+    return incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+
+
+def test_target_action_policy_precedence_is_capability_then_override():
+    from app.incident_sync import target_action_policy, POLICY_ALLOWED, POLICY_DENIED_CAPABILITY, POLICY_DENIED_TARGET
+    # Capability layer: generic cannot do typed external_resolve regardless of override.
+    ok, code, _ = target_action_policy("generic", {"allow_external_resolve": True}, "external_resolve")
+    assert ok is False and code == POLICY_DENIED_CAPABILITY
+    # PagerDuty CAN, and no override → allowed.
+    ok, code, _ = target_action_policy("pagerduty", None, "external_resolve")
+    assert ok and code == POLICY_ALLOWED
+    # Per-target override can DENY an otherwise-capable action.
+    ok, code, reason = target_action_policy("pagerduty", {"allow_external_resolve": False}, "external_resolve")
+    assert ok is False and code == POLICY_DENIED_TARGET and "target policy" in reason
+    # Override True on a capable action is allowed (same as default).
+    ok, code, _ = target_action_policy("pagerduty", {"allow_external_resolve": True}, "external_resolve")
+    assert ok and code == POLICY_ALLOWED
+
+
+def test_target_policy_view_shows_capability_override_effective(capture_send):
+    t = _pd_target()
+    incident_sync_service.update_target(t["id"], allow_external_reopen=False)
+    policy = incident_sync_service.target_policy(t["id"])
+    assert policy["kind"] == "pagerduty"
+    # external_resolve: capable, no override, effective True.
+    res = policy["actions"]["external_resolve"]
+    assert res["capable"] is True and res["override"] is None and res["effective"] is True
+    # external_reopen: capable but target-denied → effective False.
+    reo = policy["actions"]["external_reopen"]
+    assert reo["capable"] is True and reo["override"] is False and reo["effective"] is False
+    # No secret leaks into the policy view.
+    assert "secret" not in str(policy) or "has_secret" in str(policy)
+
+
+def test_target_override_denies_apply_resolved(capture_send, monkeypatch):
+    t = incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_sync_service.update_target(t["id"], allow_apply_resolved=False)
+    incident_service.observe([_alert(job_id="ovr-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "ovr-1")
+    _fetch_returning(monkeypatch, ok=True, exists=True, status="resolved")
+    incident_sync_service.refresh(inc["id"])
+    # Even though state offers accept_resolved, the target override denies it.
+    actions = {a["action"]: a for a in incident_sync_service.incident_actions(inc["id"])}
+    assert actions["apply_resolved"]["available"] is False and actions["apply_resolved"]["reason"]
+    result = incident_sync_service.apply_from_external(inc["id"], "accept_resolved", actor="alice")
+    assert result["ok"] is False and result["code"] == "denied:target_policy"
+    # Audited + local untouched.
+    trail = incident_sync_service.incident_sync_status(inc["id"])["reconciliation"]
+    assert any(e["action"] == "apply:accept_resolved" and "target_policy" in e["outcome"] for e in trail)
+    assert incident_service.get(inc["id"])["state"] == "open"
+
+
+def test_external_action_executes_only_when_capability_and_policy_align(monkeypatch):
+    sent = []
+    def _capture(self, url, body_json, secret, adapter=None):
+        import json as _json
+        sent.append(_json.loads(body_json))
+        return (True, 202, None, "pd-1", None)
+    monkeypatch.setattr(type(incident_sync_service), "_send", _capture)
+    _pd_target()
+    incident_service.observe([_alert(job_id="ext-act")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "ext-act")
+    sent.clear()
+    result = incident_sync_service.external_action(inc["id"], "external_resolve", actor="alice")
+    assert result["ok"] and result["changed_local"] is False
+    # The vendor envelope carried the typed resolve event_action.
+    assert sent and sent[-1]["event_action"] == "resolve"
+    # Local incident untouched — external action only.
+    assert incident_service.get(inc["id"])["state"] == "open"
+
+
+def test_external_action_refused_by_capability_is_audited(capture_send):
+    # Generic adapter cannot do typed external_resolve.
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="ext-gen")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "ext-gen")
+    result = incident_sync_service.external_action(inc["id"], "external_resolve", actor="bob")
+    assert result["ok"] is False and result["code"] == "denied:capability"
+    trail = incident_sync_service.incident_sync_status(inc["id"])["reconciliation"]
+    assert any(e["action"] == "external:external_resolve" and "capability" in e["outcome"] for e in trail)
+
+
+def test_external_action_refused_by_target_override(monkeypatch):
+    def _ok(self, url, body_json, secret, adapter=None):
+        return (True, 202, None, "pd-x", None)
+    monkeypatch.setattr(type(incident_sync_service), "_send", _ok)
+    t = _pd_target()
+    incident_sync_service.update_target(t["id"], allow_external_acknowledge=False)
+    incident_service.observe([_alert(job_id="ext-ovr")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "ext-ovr")
+    result = incident_sync_service.external_action(inc["id"], "external_acknowledge", actor="alice")
+    assert result["ok"] is False and result["code"] == "denied:target_policy"
+    trail = incident_sync_service.incident_sync_status(inc["id"])["reconciliation"]
+    assert any(e["action"] == "external:external_acknowledge" and "target_policy" in e["outcome"] for e in trail)
+
+
+def test_target_policy_and_external_action_over_http_with_gating(op, capture_send, monkeypatch):
+    def _ok(self, url, body_json, secret, adapter=None):
+        return (True, 202, None, "pd-h", None)
+    monkeypatch.setattr(type(incident_sync_service), "_send", _ok)
+    tgt = client.post("/operator/incident-targets", headers=OP,
+                      json={"name": "pd", "url": "https://h.example.com/pd", "kind": "pagerduty"}).json()["target"]
+    # Target carries capabilities + tri-state overrides in its read payload.
+    assert tgt["capabilities"]["external_resolve"] is True
+    assert set(tgt["policy_overrides"]) == {
+        "allow_apply_resolved", "allow_apply_missing", "allow_external_resolve",
+        "allow_external_reopen", "allow_external_acknowledge", "allow_push_outward"}
+    # PATCH an override over HTTP.
+    patched = client.patch(f"/operator/incident-targets/{tgt['id']}", headers=OP,
+                           json={"allow_external_reopen": False}).json()["target"]
+    assert patched["policy_overrides"]["allow_external_reopen"] is False
+    # Policy view over HTTP.
+    policy = client.get(f"/operator/incident-targets/{tgt['id']}/policy", headers=OP).json()
+    assert policy["actions"]["external_reopen"]["effective"] is False
+    assert policy["actions"]["external_resolve"]["effective"] is True
+    # External action over HTTP.
+    incident_service.observe([_alert(job_id="http-ext")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "http-ext")
+    done = client.post(f"/operator/incidents/{inc['id']}/sync/external-action", headers=OP,
+                       json={"action": "external_resolve"})
+    assert done.status_code == 200 and done.json()["changed_local"] is False
+    # Reopen is denied by the override → 409.
+    denied = client.post(f"/operator/incidents/{inc['id']}/sync/external-action", headers=OP,
+                         json={"action": "external_reopen"})
+    assert denied.status_code == 409
+    # Gating: normal account token denied on policy + external-action.
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.get(f"/operator/incident-targets/{tgt['id']}/policy", headers=auth).status_code in (401, 403)
+    assert client.post(f"/operator/incidents/{inc['id']}/sync/external-action", headers=auth,
+                       json={"action": "external_resolve"}).status_code in (401, 403)
+    assert client.get("/operator/incident-targets/nope/policy", headers=OP).status_code == 404
+    # Unknown external action rejected at the boundary (422).
+    assert client.post(f"/operator/incidents/{inc['id']}/sync/external-action", headers=OP,
+                       json={"action": "nope"}).status_code == 422
+
+
+def test_no_policy_fields_leak_into_user_routes(capture_send):
+    from app.execution_queue import execution_queue
+    incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    owner = _account()
+    job = execution_queue.enqueue(f"account:{owner['id']}", "noop", {}, title="T")
+    auth = {"Authorization": f"Bearer {make_account_token(owner['id'])}"}
+    user_job = client.get(f"/jobs/{job['id']}", headers=auth).json()["job"]
+    for operator_only in ("policy_overrides", "allow_external_resolve", "external_resolve",
+                          "capabilities", "available_actions"):
+        assert operator_only not in user_job

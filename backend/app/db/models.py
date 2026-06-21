@@ -389,6 +389,16 @@ class ExternalIncidentTarget(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     sync_actions: Mapped[str | None] = mapped_column(String(255), nullable=True)  # CSV allow-list; null = all
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    # Per-target action policy overrides (G-12). Tri-state: NULL = defer to the
+    # adapter capability default; True = explicitly permitted (still bounded by
+    # capability); False = explicitly denied for THIS target even if the adapter can.
+    # An override can never enable beyond capability — only narrow it.
+    allow_apply_resolved: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    allow_apply_missing: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    allow_external_resolve: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    allow_external_reopen: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    allow_external_acknowledge: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    allow_push_outward: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
 

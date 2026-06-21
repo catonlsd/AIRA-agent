@@ -14,6 +14,7 @@ import {
   incidentSyncSummary,
   incidentTone,
   linkStatusTone,
+  policyOverrideLabel,
   redriveBlockedReason,
   supportLevelLabel,
   syncStatusTone,
@@ -120,4 +121,10 @@ test("actionEffectLabel is explicit about each action's blast radius", () => {
   assert.equal(actionEffectLabel("external"), "changes external state");
   assert.equal(actionEffectLabel("linkage"), "linkage only");
   assert.equal(actionEffectLabel("none"), "observation only");
+});
+
+test("policyOverrideLabel distinguishes default from explicit allow/deny", () => {
+  assert.equal(policyOverrideLabel(null), "Default");
+  assert.equal(policyOverrideLabel(true), "Allowed");
+  assert.equal(policyOverrideLabel(false), "Denied");
 });

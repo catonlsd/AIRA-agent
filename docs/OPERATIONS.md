@@ -1406,6 +1406,55 @@ local incident from external observation is still an explicit operator
   `/sync/actions` endpoint with gating + 404; HTTP-level 422 on unknown apply
   action) and `frontend/lib/operator.test.mts` (`actionEffectLabel`).
 
+### Per-target action policy & real vendor-typed external actions (G-12)
+
+Action availability now varies **per target**, not just per adapter kind, and
+richer adapters expose **real vendor-typed outbound actions** (resolve / reopen /
+acknowledge) — all without DB edits, all bounded, audited, and operator-only. Local
+state primacy is intact: the only action that changes a local incident is still the
+explicit `apply_resolved`, now gated by capability AND per-target policy.
+
+- **Three-layer precedence.** `target_action_policy(kind, overrides, action) →
+  (allowed, code, reason)` resolves: (1) adapter **capability** (class flags), then
+  (2) per-target **override** (tri-state: NULL = adapter default, True = permitted,
+  False = denied — an override can only *narrow* capability, never enable beyond it),
+  then the caller applies (3) incident-**state** applicability. Stable codes add
+  `denied:target_policy` alongside the existing `denied:capability` /
+  `denied:unknown_action`.
+- **Durable per-target overrides.** `external_incident_targets` gains six nullable
+  override columns (`allow_apply_resolved` / `allow_apply_missing` /
+  `allow_external_resolve` / `allow_external_reopen` / `allow_external_acknowledge`
+  / `allow_push_outward`; additive `ensure_runtime_columns` ALTER). Tunable via the
+  existing `PATCH /operator/incident-targets/{id}` (operator-only, validated,
+  secret never exposed).
+- **Real vendor-typed external actions.** Adapters declare
+  `supports_external_resolve` / `_reopen` / `_acknowledge`; PagerDuty maps each to a
+  typed `event_action` (`resolve` / `trigger` / `acknowledge`), generic/outbound-only
+  honestly don't. `external_action(incident, action)` →
+  `POST /operator/incidents/{id}/sync/external-action` sends the mapped vendor event
+  to **each linked target individually**, policy-checked per target, refusals audited
+  per target. Effect is strictly **external** — it never changes local state.
+- **Policy inspection.** `GET /operator/incident-targets/{id}/policy` returns, for
+  every bounded action, `{capable, override, effective, code, reason}` — the single
+  place an operator sees capability-vs-override-vs-effect. Targets' read payloads now
+  carry `capabilities` + `policy_overrides`; links carry `policy_overrides`; the
+  `available_actions[]` matrix gains the three vendor actions (all `effect: external`)
+  and is now evaluated against per-target policy.
+- **Console:** the incident sync line renders the available vendor-typed external
+  actions (from `available_actions`, already capability+policy gated) with their
+  effect hint; pure helpers `policyOverrideLabel` (Default/Allowed/Denied) and the
+  existing `actionEffectLabel` keep the UI honest. No `policy_overrides` /
+  `capabilities` / `available_actions` field leaks into `GET /jobs/{id}`.
+- Pinned by `backend/tests/test_incident_sync.py` (precedence capability→override
+  is honest; per-target override denies an otherwise-capable action; policy view
+  shows capable/override/effective; override-denied `apply_resolved` refused with
+  `denied:target_policy` + audited + local untouched; vendor `external_action`
+  executes only when capability+policy align and sends the typed `event_action`
+  without touching local; capability- and target-denied external actions audited;
+  full HTTP path for policy view + PATCH override + external-action with 409 on
+  denial, gating, 404, and 422 on unknown action; no policy field leaks into
+  `/jobs/{id}`) and `frontend/lib/operator.test.mts` (`policyOverrideLabel`).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

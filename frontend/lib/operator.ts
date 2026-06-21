@@ -160,6 +160,17 @@ export type IncidentEvent = {
 
 export type SyncStatus = "pending" | "synced" | "failed";
 
+/** Per-target action override (tri-state): null = adapter default, true = permitted
+ * (still bounded by capability), false = explicitly denied for this target. */
+export type TargetPolicyOverrides = {
+  allow_apply_resolved: boolean | null;
+  allow_apply_missing: boolean | null;
+  allow_external_resolve: boolean | null;
+  allow_external_reopen: boolean | null;
+  allow_external_acknowledge: boolean | null;
+  allow_push_outward: boolean | null;
+};
+
 export type IncidentTarget = {
   id: string;
   name: string;
@@ -169,7 +180,25 @@ export type IncidentTarget = {
   sync_actions: string | null;
   has_secret: boolean;
   consecutive_failures: number;
+  capabilities: AdapterCapabilities;
+  policy_overrides: TargetPolicyOverrides;
   created_at: string | null;
+};
+
+export type TargetActionPolicy = {
+  capable: boolean;
+  override: boolean | null;
+  effective: boolean;
+  code: string;
+  reason: string;
+};
+
+export type TargetPolicyView = {
+  target_id: string;
+  name: string;
+  kind: string;
+  capabilities: AdapterCapabilities;
+  actions: Record<string, TargetActionPolicy>;
 };
 
 export type IncidentSyncRecord = {
@@ -205,7 +234,7 @@ export type AdapterCapabilities = {
   refresh: boolean; push_outward: boolean; relink_validation: boolean;
   status_sync: boolean;
   apply_resolved: boolean; apply_missing: boolean;
-  external_resolve: boolean; external_reopen: boolean;
+  external_resolve: boolean; external_reopen: boolean; external_acknowledge: boolean;
   support_level: SupportLevel;
 };
 
@@ -213,8 +242,14 @@ export type AdapterCapabilities = {
  * backend computes this honestly from capability + state + policy). */
 export type ActionEffect = "none" | "local" | "linkage" | "external";
 
+export type SyncActionName =
+  | "refresh" | "redrive" | "detach" | "relink" | "apply_resolved" | "apply_missing"
+  | "push" | "external_resolve" | "external_reopen" | "external_acknowledge";
+
+export type ExternalActionName = "external_resolve" | "external_reopen" | "external_acknowledge";
+
 export type IncidentSyncAction = {
-  action: "refresh" | "redrive" | "detach" | "relink" | "apply_resolved" | "apply_missing" | "push";
+  action: SyncActionName;
   label: string;
   available: boolean;
   reason: string;
@@ -296,6 +331,14 @@ export function applyActionLabel(action: "accept_resolved" | "accept_missing" | 
   if (action === "accept_resolved") return "Apply external resolution (recover locally)";
   if (action === "accept_missing") return "Detach (external missing)";
   return "";
+}
+
+/** Tri-state per-target override label (pure; unit-tested). Distinguishes "adapter
+ * default" from an explicit operator allow/deny so the policy view is unambiguous. */
+export function policyOverrideLabel(override: boolean | null): string {
+  if (override === true) return "Allowed";
+  if (override === false) return "Denied";
+  return "Default";
 }
 
 /** Honest, short label for what a sync/resolution action will mutate (pure;
@@ -741,4 +784,27 @@ export async function pushIncidentOutward(incidentId: string, targetId?: string)
   });
   const body = await res.json().catch(() => null);
   return res.ok ? { ok: true, message: body?.message } : { ok: false, message: body?.detail };
+}
+
+export async function invokeExternalAction(incidentId: string, action: ExternalActionName, targetId?: string): Promise<{ ok: boolean; message?: string }> {
+  const res = await fetch(`${API_URL}/operator/incidents/${encodeURIComponent(incidentId)}/sync/external-action`, {
+    method: "POST", cache: "no-store", headers: opHeaders(true), body: JSON.stringify({ action, target_id: targetId }),
+  });
+  const body = await res.json().catch(() => null);
+  return res.ok ? { ok: true, message: body?.message } : { ok: false, message: body?.detail };
+}
+
+export async function fetchTargetPolicy(targetId: string): Promise<TargetPolicyView | null> {
+  const res = await fetch(`${API_URL}/operator/incident-targets/${encodeURIComponent(targetId)}/policy`, { cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function setTargetPolicyOverride(targetId: string, field: keyof TargetPolicyOverrides, value: boolean): Promise<IncidentTarget | null> {
+  const res = await fetch(`${API_URL}/operator/incident-targets/${encodeURIComponent(targetId)}`, {
+    method: "PATCH", cache: "no-store", headers: opHeaders(true), body: JSON.stringify({ [field]: value }),
+  });
+  if (!res.ok) return null;
+  const body = await res.json();
+  return body?.target ?? null;
 }
