@@ -73,10 +73,14 @@ import {
   incidentTone,
   noteIncident,
   pushIncidentOutward,
+  readinessLabel,
+  readinessTone,
   redriveIncidentSyncContext,
   refreshIncidentSync,
   relinkIncident,
   supportLevelLabel,
+  testTarget,
+  validateTarget,
   patchDestination,
   redriveBlockedReason,
   redriveDelivery,
@@ -161,9 +165,10 @@ function relTimeUntil(iso: string | null): string {
 // ── external incident sync (Incidents tab) — targets + recent attempts ────────
 const INC_BTN = "inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-strong)] transition hover:border-[var(--border-strong)] disabled:opacity-50";
 
-function SyncPanel({ targets, records, onRedrive, busyId }: {
+function SyncPanel({ targets, records, onRedrive, onValidate, onTest, busyId, flash }: {
   targets: IncidentTarget[]; records: IncidentSyncRecord[];
-  onRedrive: (id: string) => void; busyId: string | null;
+  onRedrive: (id: string) => void; onValidate: (id: string) => void; onTest: (id: string) => void;
+  busyId: string | null; flash: Record<string, string>;
 }) {
   if (targets.length === 0 && records.length === 0) return null;
   const failed = records.filter((r) => r.status === "failed");
@@ -178,14 +183,28 @@ function SyncPanel({ targets, records, onRedrive, busyId }: {
       </div>
 
       {targets.length > 0 ? (
-        <div className="mb-3 flex flex-wrap gap-1.5">
+        <div className="mb-3 grid gap-1.5">
           {targets.map((t) => (
-            <span key={t.id} className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold",
-              t.enabled ? "border-[var(--border)] text-[var(--text-strong)]" : "border-[var(--border)] text-[var(--text-subtle)] line-through")}>
+            <div key={t.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1.5 text-[11px]">
               <span className={cn("h-1.5 w-1.5 rounded-full", t.enabled ? "bg-[var(--success)]" : "bg-[var(--text-subtle)]")} aria-hidden="true" />
-              {t.name} <span className="text-[var(--text-subtle)]">· {t.kind}</span>
+              <span className={cn("font-black", t.enabled ? "text-[var(--text-strong)]" : "text-[var(--text-subtle)] line-through")}>{t.name}</span>
+              <span className="text-[var(--text-subtle)]">· {t.kind}</span>
+              {t.profile && t.profile !== t.kind ? <span className="rounded-full border border-[var(--border)] px-1.5 text-[10px] uppercase tracking-wide text-[var(--text-subtle)]">{t.profile}</span> : null}
+              <Badge tone={readinessTone(t.readiness.state)}>{readinessLabel(t.readiness.state)}</Badge>
+              {t.readiness_facts.last_validated_at ? <span className="text-[var(--text-subtle)]">checked {relTime(t.readiness_facts.last_validated_at)}</span> : null}
+              {t.readiness.state !== "ready" && t.readiness.reason ? <span className="text-[var(--text-subtle)]">· {t.readiness.reason}</span> : null}
               {t.consecutive_failures > 0 ? <span className="text-[var(--danger)]">⚠ {t.consecutive_failures}</span> : null}
-            </span>
+              <span className="ml-auto flex items-center gap-1.5">
+                {flash[t.id] ? <span className="text-[var(--success)]">{flash[t.id]}</span> : null}
+                <button type="button" disabled={busyId === t.id} onClick={() => onValidate(t.id)} className={INC_BTN}>
+                  <ShieldCheck className="h-3 w-3" /> Validate
+                </button>
+                <button type="button" disabled={busyId === t.id || !t.enabled} onClick={() => onTest(t.id)} className={INC_BTN}
+                  title={t.enabled ? "Send a synthetic, no-op test event" : "Target is disabled"}>
+                  <Send className="h-3 w-3" /> Test
+                </button>
+              </span>
+            </div>
           ))}
         </div>
       ) : (
@@ -564,6 +583,7 @@ export default function OperatorConsole() {
   const [operatorName, setOperatorNameState] = useState<string | null>(null);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [syncTargets, setSyncTargets] = useState<IncidentTarget[]>([]);
+  const [targetFlash, setTargetFlash] = useState<Record<string, string>>({});
   const [syncRecords, setSyncRecords] = useState<IncidentSyncRecord[]>([]);
   const [analytics, setAnalytics] = useState<DeliveryAnalytics | null>(null);
   const [destinations, setDestinations] = useState<DestinationHealth[]>([]);
@@ -662,6 +682,29 @@ export default function OperatorConsole() {
       await loadIncidents();
     } finally { setBusy(null); }
   }, [loadIncidents]);
+
+  const flashTarget = useCallback((id: string, msg: string) => {
+    setTargetFlash((f) => ({ ...f, [id]: msg }));
+    window.setTimeout(() => setTargetFlash((f) => { const n = { ...f }; delete n[id]; return n; }), 4000);
+  }, []);
+
+  const onValidateTarget = useCallback(async (id: string) => {
+    setBusy(id);
+    try {
+      const res = await validateTarget(id);
+      flashTarget(id, res ? `${readinessLabel(res.readiness.state)}${res.ok ? "" : " — " + res.readiness.reason}` : "Validate failed.");
+      await loadIncidents();
+    } finally { setBusy(null); }
+  }, [loadIncidents, flashTarget]);
+
+  const onTestTarget = useCallback(async (id: string) => {
+    setBusy(id);
+    try {
+      const res = await testTarget(id);
+      flashTarget(id, res?.ok ? "Test event sent." : (res && "message" in res && res.message) || "Test failed.");
+      await loadIncidents();
+    } finally { setBusy(null); }
+  }, [loadIncidents, flashTarget]);
 
   const startEdit = useCallback((d: DestinationHealth) => {
     setEditing(d.destination_id);
@@ -914,7 +957,9 @@ export default function OperatorConsole() {
       {/* ── Incidents ── */}
       {tab === "incidents" ? (
         <div className="grid gap-5">
-          <SyncPanel targets={syncTargets} records={syncRecords} onRedrive={(id) => void onRedriveSync(id)} busyId={busy} />
+          <SyncPanel targets={syncTargets} records={syncRecords} onRedrive={(id) => void onRedriveSync(id)}
+            onValidate={(id) => void onValidateTarget(id)} onTest={(id) => void onTestTarget(id)}
+            busyId={busy} flash={targetFlash} />
           {incidents.length === 0 ? (
             <section className="sarvam-card rounded-[1.5rem] p-8 text-center">
               <CheckCircle2 className="mx-auto mb-2 h-7 w-7 text-[var(--success)]" />

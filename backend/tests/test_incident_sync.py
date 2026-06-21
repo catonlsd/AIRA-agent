@@ -1383,3 +1383,146 @@ def test_no_profile_fields_leak_into_user_routes(capture_send):
     user_job = client.get(f"/jobs/{job['id']}", headers=auth).json()["job"]
     for operator_only in ("profile", "profile_label", "default_actions", "support_level", "source"):
         assert operator_only not in user_job
+
+
+# ── G-15: preflight validation, safe test-send & durable readiness ───────────
+
+
+def _stub_fetch(monkeypatch, *, ok=True, snapshot=None, err=None):
+    def _f(self, url, ref, secret, adapter=None):
+        return (ok, snapshot if snapshot is not None else {"exists": True, "status": "open"}, err)
+    monkeypatch.setattr(type(incident_sync_service), "_fetch", _f)
+
+
+def _record_send(monkeypatch, *, ok=True, code=200, err=None):
+    sent: list[dict] = []
+    def _s(self, url, body_json, secret, adapter=None):
+        import json as _json
+        sent.append(_json.loads(body_json))
+        return (ok, code, err, "ref-1", None)
+    monkeypatch.setattr(type(incident_sync_service), "_send", _s)
+    return sent
+
+
+def test_compute_readiness_is_pure_and_honest():
+    from app.incident_sync import (compute_readiness, READY_UNVERIFIED, READY_READY, READY_DEGRADED,
+                                   READY_AUTH_FAILED, READY_TEST_FAILED, READY_INVALID_CONFIG, READY_DISABLED)
+    from datetime import datetime
+    base = dict(config_ok=True, config_reason="ok", last_validated_at=None, last_test_at=None,
+                last_success_at=None, last_failure_at=None, last_check_error=None, last_check_kind=None)
+    assert compute_readiness(enabled=False, **base)["state"] == READY_DISABLED
+    assert compute_readiness(enabled=True, **{**base, "config_ok": False, "config_reason": "bad url"})["state"] == READY_INVALID_CONFIG
+    assert compute_readiness(enabled=True, **base)["state"] == READY_UNVERIFIED
+    t = datetime(2026, 6, 20)
+    assert compute_readiness(enabled=True, **{**base, "last_validated_at": t, "last_success_at": t, "last_check_kind": "config"})["state"] == READY_READY
+    assert compute_readiness(enabled=True, **{**base, "last_validated_at": t, "last_failure_at": t, "last_check_error": "HTTP401", "last_check_kind": "connectivity"})["state"] == READY_AUTH_FAILED
+    assert compute_readiness(enabled=True, **{**base, "last_test_at": t, "last_failure_at": t, "last_check_error": "HTTP500", "last_check_kind": "test"})["state"] == READY_TEST_FAILED
+    assert compute_readiness(enabled=True, **{**base, "last_validated_at": t, "last_failure_at": t, "last_check_error": "timeout", "last_check_kind": "connectivity"})["state"] == READY_DEGRADED
+
+
+def test_fresh_target_is_unverified():
+    t = incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    assert t["readiness"]["state"] == "unverified" and t["readiness"]["source"] == "none"
+
+
+def test_validate_passes_for_reachable_refresh_capable_target(monkeypatch):
+    _stub_fetch(monkeypatch, ok=True)
+    t = incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    result = incident_sync_service.validate(t["id"])
+    by_check = {c["name"]: c for c in result["checks"]}
+    assert by_check["config"]["status"] == "pass" and by_check["profile"]["status"] == "pass"
+    assert by_check["connectivity"]["status"] == "pass"
+    assert result["ok"] and result["readiness"]["state"] == "ready"
+    assert result["readiness"]["source"] == "connectivity"
+    # Durable: a fresh read still reports ready.
+    assert incident_sync_service.get_target(t["id"])["readiness"]["state"] == "ready"
+
+
+def test_validate_detects_auth_failure(monkeypatch):
+    _stub_fetch(monkeypatch, ok=False, snapshot=None, err="HTTP401")
+    t = incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    result = incident_sync_service.validate(t["id"])
+    assert result["ok"] is False
+    assert next(c for c in result["checks"] if c["name"] == "connectivity")["status"] == "fail"
+    assert result["readiness"]["state"] == "auth_failed"
+
+
+def test_validate_outbound_only_skips_connectivity_honestly():
+    # jira = outbound-only → cannot probe; config-only validation still passes → ready.
+    t = incident_sync_service.create_target(name="j", url="https://h.example.com/j", kind="jira")
+    result = incident_sync_service.validate(t["id"])
+    conn = next(c for c in result["checks"] if c["name"] == "connectivity")
+    assert conn["status"] == "skip" and "outbound-only" in conn["detail"]
+    assert result["readiness"]["state"] == "ready" and result["readiness"]["source"] == "config"
+
+
+def test_validate_flags_invalid_config_and_ineffective_override():
+    t = incident_sync_service.create_target(name="g", url="https://h.example.com/g")
+    # Generic cannot do typed external_resolve → enabling it is an ineffective override.
+    incident_sync_service.update_target(t["id"], allow_external_resolve=True)
+    result = incident_sync_service.validate(t["id"])
+    assert next(c for c in result["checks"] if c["name"] == "policy")["status"] == "warn"
+
+
+def test_test_send_uses_real_transport_without_touching_incidents(monkeypatch):
+    sent = _record_send(monkeypatch, ok=True)
+    t = incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    before = len(incident_sync_service.list_records())
+    result = incident_sync_service.test_send(t["id"])
+    assert result["ok"] and result["readiness"]["state"] == "ready"
+    # The synthetic event went through the real adapter, marked test, resolve no-op.
+    assert sent and sent[-1].get("test") is True and sent[-1]["event_action"] == "resolve"
+    assert sent[-1]["dedup_key"] == "aira-x:preflight-test"
+    # NO incident sync record was written — incident history untouched.
+    assert len(incident_sync_service.list_records()) == before
+    # And no real incident was created.
+    from app.incidents import incident_service
+    assert all(i["subject"] != "preflight-test" for i in incident_service.list())
+
+
+def test_test_send_failure_marks_test_failed(monkeypatch):
+    _record_send(monkeypatch, ok=False, code=500, err="HTTP500")
+    t = incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    result = incident_sync_service.test_send(t["id"])
+    assert result["ok"] is False and result["readiness"]["state"] == "test_failed"
+    assert result["readiness_facts"]["last_check_kind"] == "test"
+
+
+def test_test_send_refused_for_disabled_target(monkeypatch):
+    _record_send(monkeypatch, ok=True)
+    t = incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty", enabled=False)
+    result = incident_sync_service.test_send(t["id"])
+    assert result["ok"] is False and result["code"] == "disabled"
+
+
+def test_validate_and_test_over_http_with_gating(op, monkeypatch):
+    _stub_fetch(monkeypatch, ok=True)
+    _record_send(monkeypatch, ok=True)
+    created = client.post("/operator/incident-targets", headers=OP,
+                          json={"name": "pd", "url": "https://h.example.com/pd", "kind": "pagerduty"}).json()["target"]
+    assert created["readiness"]["state"] == "unverified"
+    val = client.post(f"/operator/incident-targets/{created['id']}/validate", headers=OP).json()
+    assert val["readiness"]["state"] == "ready" and any(c["name"] == "connectivity" for c in val["checks"])
+    test = client.post(f"/operator/incident-targets/{created['id']}/test", headers=OP).json()
+    assert test["ok"] and test["readiness"]["state"] == "ready"
+    # Health now carries readiness + facts; secret never leaks.
+    health = client.get(f"/operator/incident-targets/{created['id']}/health", headers=OP).json()["target"]
+    assert health["readiness"]["state"] == "ready" and health["readiness_facts"]["last_test_at"]
+    assert health["has_secret"] is False and "secret_value" not in str(health)
+    # Gating + 404.
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.post(f"/operator/incident-targets/{created['id']}/validate", headers=auth).status_code in (401, 403)
+    assert client.post(f"/operator/incident-targets/{created['id']}/test", headers=auth).status_code in (401, 403)
+    assert client.post("/operator/incident-targets/nope/validate", headers=OP).status_code == 404
+
+
+def test_no_readiness_fields_leak_into_user_routes(capture_send):
+    from app.execution_queue import execution_queue
+    incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    owner = _account()
+    job = execution_queue.enqueue(f"account:{owner['id']}", "noop", {}, title="T")
+    auth = {"Authorization": f"Bearer {make_account_token(owner['id'])}"}
+    user_job = client.get(f"/jobs/{job['id']}", headers=auth).json()["job"]
+    for operator_only in ("readiness", "readiness_facts", "last_validated_at", "last_check_error"):
+        assert operator_only not in user_job

@@ -383,6 +383,8 @@ _ACTION_POLICY = {
 }
 # The per-target override columns operators can tune (read + PATCH).
 TARGET_OVERRIDE_FIELDS = tuple(field for _cap, field in _ACTION_POLICY.values())
+# Reverse map (override column → capability key) for preflight "ineffective override" checks.
+_OVERRIDE_FIELD_CAP = {field: cap for cap, field in _ACTION_POLICY.values()}
 
 # ── Inbound-state policy (G-13): per-target visibility of richer external fields ──
 #
@@ -489,6 +491,59 @@ def _clean_profile(prof: dict[str, Any]) -> dict[str, Any]:
 
 def list_profiles() -> list[dict[str, Any]]:
     return [_clean_profile(p) for p in _PROFILES.values()]
+
+
+# ── Target readiness / preflight validation (G-15) ───────────────────────────
+#
+# Readiness is COMPUTED from durable check evidence (timestamps + last error/kind) +
+# current config — never a stored string that can go stale. The evidence comes from
+# two explicit, bounded, operator-triggered checks: `validate` (config + optional
+# connectivity) and `test_send` (a synthetic, no-op resolve through the real adapter
+# transport). Neither ever touches a real incident or local state.
+
+READY_UNVERIFIED = "unverified"      # configured but never checked
+READY_READY = "ready"                # last check succeeded
+READY_DEGRADED = "degraded"          # last check failed (non-auth, non-test-specific)
+READY_INVALID_CONFIG = "invalid_config"
+READY_AUTH_FAILED = "auth_failed"
+READY_TEST_FAILED = "test_failed"
+READY_DISABLED = "disabled"
+
+CHECK_CONFIG = "config"
+CHECK_CONNECTIVITY = "connectivity"
+CHECK_TEST = "test"
+
+# The marker every synthetic test event carries, so receivers/logs never confuse it
+# with production incident traffic, and the vendor action is always a no-op.
+TEST_SIGNAL = "aira-x:preflight-test"
+
+
+def _looks_like_auth_error(err: Optional[str]) -> bool:
+    e = (err or "").lower()
+    return "auth" in e or err in ("HTTP401", "HTTP403")
+
+
+def compute_readiness(*, enabled: bool, config_ok: bool, config_reason: str,
+                      last_validated_at: Optional[datetime], last_test_at: Optional[datetime],
+                      last_success_at: Optional[datetime], last_failure_at: Optional[datetime],
+                      last_check_error: Optional[str], last_check_kind: Optional[str]) -> dict[str, Any]:
+    """Pure readiness verdict from config + durable check evidence → {state, source,
+    reason}. `source` says what evidence backs the verdict (none/config/connectivity/test)."""
+    if not enabled:
+        return {"state": READY_DISABLED, "source": "config", "reason": "target is disabled"}
+    if not config_ok:
+        return {"state": READY_INVALID_CONFIG, "source": "config", "reason": config_reason}
+    if last_validated_at is None and last_test_at is None:
+        return {"state": READY_UNVERIFIED, "source": "none", "reason": "not yet validated or tested"}
+    source = last_check_kind or "config"
+    failed_latest = bool(last_failure_at and (last_success_at is None or last_failure_at > last_success_at))
+    if failed_latest:
+        if _looks_like_auth_error(last_check_error):
+            return {"state": READY_AUTH_FAILED, "source": source, "reason": last_check_error or "auth failed"}
+        if last_check_kind == CHECK_TEST:
+            return {"state": READY_TEST_FAILED, "source": source, "reason": last_check_error or "test send failed"}
+        return {"state": READY_DEGRADED, "source": source, "reason": last_check_error or "last check failed"}
+    return {"state": READY_READY, "source": source, "reason": "last check succeeded"}
 
 
 def inbound_field_policy(adapter_kind: Optional[str], overrides: Optional[dict],
@@ -1154,6 +1209,42 @@ class IncidentSyncService:
                 for t in session.query(ExternalIncidentTarget).all()}
 
     @staticmethod
+    def _validate_config(row: ExternalIncidentTarget) -> tuple[bool, str]:
+        """Pure structural config validation (no network): url, profile/kind match."""
+        url = (row.url or "").strip()
+        if not url.lower().startswith(("http://", "https://")):
+            return (False, "url must be an http(s) endpoint")
+        if row.kind not in _KINDS:
+            return (False, f"unknown adapter kind {row.kind!r}")
+        profile = IncidentSyncService._resolve_profile(row)
+        prof = profile_for(profile)
+        if prof is None:
+            return (False, f"unknown profile {profile!r}")
+        if prof["kind"] != row.kind:
+            return (False, f"profile {profile!r} is for kind {prof['kind']!r}, not {row.kind!r}")
+        return (True, "configuration is valid")
+
+    @staticmethod
+    def _readiness(row: ExternalIncidentTarget) -> dict[str, Any]:
+        config_ok, config_reason = IncidentSyncService._validate_config(row)
+        return compute_readiness(
+            enabled=bool(row.enabled), config_ok=config_ok, config_reason=config_reason,
+            last_validated_at=row.last_validated_at, last_test_at=row.last_test_at,
+            last_success_at=row.last_success_at, last_failure_at=row.last_failure_at,
+            last_check_error=row.last_check_error, last_check_kind=row.last_check_kind)
+
+    @staticmethod
+    def _readiness_facts(row: ExternalIncidentTarget) -> dict[str, Any]:
+        return {
+            "last_validated_at": row.last_validated_at.isoformat() if row.last_validated_at else None,
+            "last_test_at": row.last_test_at.isoformat() if row.last_test_at else None,
+            "last_success_at": row.last_success_at.isoformat() if row.last_success_at else None,
+            "last_failure_at": row.last_failure_at.isoformat() if row.last_failure_at else None,
+            "last_check_error": row.last_check_error,
+            "last_check_kind": row.last_check_kind,
+        }
+
+    @staticmethod
     def _clean_target(row: ExternalIncidentTarget) -> dict[str, Any]:
         overrides = IncidentSyncService._target_overrides(row)
         profile = IncidentSyncService._resolve_profile(row)
@@ -1171,6 +1262,8 @@ class IncidentSyncService:
             "consecutive_failures": row.consecutive_failures or 0,
             "capabilities": adapter_capabilities(row.kind),
             "policy_overrides": overrides,    # tri-state per-action + inbound overrides
+            "readiness": IncidentSyncService._readiness(row),
+            "readiness_facts": IncidentSyncService._readiness_facts(row),
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }
 
@@ -1919,6 +2012,141 @@ class IncidentSyncService:
         session.add(IncidentReconciliationEvent(
             incident_id=incident_id, target_id=target_id, action=action, outcome=outcome,
             actor=actor, detail=(detail[:200] if detail else None), created_at=_now()))
+
+    # ── preflight validation + safe test-send (G-15) ──────────────────────────
+
+    def validate(self, target_id: str, *, actor: Optional[str] = None) -> Optional[dict[str, Any]]:
+        """Run bounded PREFLIGHT checks on a target and record durable evidence. Never
+        touches a real incident or local state. Returns a curated per-check result +
+        the recomputed readiness. Checks: config present, profile/kind compatible,
+        policy overrides effective, secret sanity, and — only for refresh-capable
+        adapters — a real connectivity/auth probe (honestly skipped otherwise)."""
+        with self._session_factory() as session:
+            target = session.get(ExternalIncidentTarget, target_id)
+            if target is None:
+                return None
+            now = _now()
+            checks: list[dict[str, Any]] = []
+
+            config_ok, config_reason = self._validate_config(target)
+            checks.append({"name": "config", "status": "pass" if config_ok else "fail",
+                           "detail": config_reason})
+
+            profile = self._resolve_profile(target)
+            prof = profile_for(profile)
+            prof_ok = bool(prof) and prof["kind"] == target.kind
+            checks.append({"name": "profile", "status": "pass" if prof_ok else "fail",
+                           "detail": (f"profile {profile!r} matches kind {target.kind!r}" if prof_ok
+                                      else f"profile {profile!r} incompatible with kind {target.kind!r}")})
+
+            caps = adapter_capabilities(target.kind)
+            overrides = self._target_overrides(target)
+            ineffective = [field for field in TARGET_OVERRIDE_FIELDS
+                           if overrides.get(field) is True
+                           and not caps.get(_OVERRIDE_FIELD_CAP.get(field, ""), False)]
+            checks.append({"name": "policy", "status": "warn" if ineffective else "pass",
+                           "detail": ("overrides enable actions the adapter can't do: " + ", ".join(ineffective)
+                                      if ineffective else "policy overrides are within capability")})
+
+            signed = bool(target.secret)
+            checks.append({"name": "secret", "status": "pass",
+                           "detail": "requests are HMAC-signed" if signed else "no secret — requests are unsigned"})
+
+            # Connectivity / auth — only refresh-capable adapters can honestly probe.
+            connectivity_ran = False
+            conn_ok: Optional[bool] = None
+            conn_err: Optional[str] = None
+            if config_ok and caps["refresh"]:
+                ok, _snap, err = self._fetch(target.url, None, target.secret, adapter_for(target.kind))
+                # A network exception → unreachable/auth; any HTTP response → reachable.
+                reachable = ok or (err or "").startswith("HTTP")
+                conn_ok = reachable and not _looks_like_auth_error(err)
+                conn_err = None if conn_ok else (err or "unreachable")
+                connectivity_ran = True
+                checks.append({"name": "connectivity",
+                               "status": "pass" if conn_ok else "fail",
+                               "detail": ("endpoint reachable" if conn_ok else f"probe failed: {conn_err}")})
+            else:
+                checks.append({"name": "connectivity", "status": "skip",
+                               "detail": ("config invalid" if not config_ok
+                                          else "adapter is outbound-only — cannot probe connectivity")})
+
+            # Durable evidence: config validation always; connectivity result if it ran.
+            target.last_validated_at = now
+            if connectivity_ran:
+                if conn_ok:
+                    target.last_success_at = now
+                    target.last_check_error = None
+                else:
+                    target.last_failure_at = now
+                    target.last_check_error = (conn_err or "")[:200]
+                target.last_check_kind = CHECK_CONNECTIVITY
+            elif not config_ok:
+                target.last_failure_at = now
+                target.last_check_error = config_reason[:200]
+                target.last_check_kind = CHECK_CONFIG
+            else:
+                # Config-only validation passed; record it as evidence without claiming
+                # connectivity (readiness will read 'ready' on config evidence).
+                target.last_success_at = now
+                target.last_check_error = None
+                target.last_check_kind = CHECK_CONFIG
+            session.commit()
+            ok_overall = config_ok and prof_ok and (conn_ok is not False)
+            return {"ok": ok_overall, "checks": checks, "readiness": self._readiness(target),
+                    "readiness_facts": self._readiness_facts(target)}
+
+    def test_send(self, target_id: str, *, actor: Optional[str] = None) -> Optional[dict[str, Any]]:
+        """Send ONE bounded, clearly-synthetic test event through the real adapter
+        transport. The event resolves a synthetic ref (`aira-x:preflight-test`) — a
+        no-op on the vendor side — and carries a `test` marker, so it never creates or
+        mutates a real incident, never writes an IncidentSyncRecord, and never pollutes
+        incident history. Records durable test evidence. Refused for disabled/invalid
+        targets."""
+        with self._session_factory() as session:
+            target = session.get(ExternalIncidentTarget, target_id)
+            if target is None:
+                return None
+            if not target.enabled:
+                return {"ok": False, "code": "disabled", "message": "Target is disabled."}
+            config_ok, config_reason = self._validate_config(target)
+            if not config_ok:
+                return {"ok": False, "code": "invalid_config", "message": config_reason}
+            kind, url, secret = target.kind, target.url, target.secret
+        adapter = adapter_for(kind)
+        # Synthetic snapshot: action 'recovered' → a no-op vendor resolve/close of a ref
+        # that was never triggered. Clearly marked as a test; no real incident involved.
+        payload = {
+            "type": "incident.transition", "test": True, "action": "recovered",
+            "target_kind": kind, "actor": actor,
+            "incident": {"id": "preflight-test", "signal": TEST_SIGNAL, "state": "recovered",
+                         "severity": "info", "classification": "preflight",
+                         "subject": "AIRA-X target preflight test", "assignee": None,
+                         "note": "synthetic test event — not a real incident"},
+            "at": _now().isoformat(),
+        }
+        shaped = adapter.shape(payload)
+        if isinstance(shaped, dict):
+            shaped.setdefault("test", True)  # marker survives generic shaping
+        ok, code, err, _ref, _url = self._send(url, json.dumps(shaped), secret, adapter)
+        now = _now()
+        with self._session_factory() as session:
+            target = session.get(ExternalIncidentTarget, target_id)
+            if target is None:
+                return None
+            target.last_test_at = now
+            target.last_check_kind = CHECK_TEST
+            if ok:
+                target.last_success_at = now
+                target.last_check_error = None
+            else:
+                target.last_failure_at = now
+                target.last_check_error = (err or (f"HTTP{code}" if code else "send failed"))[:200]
+            session.commit()
+            return {"ok": ok, "status_code": code,
+                    "error": None if ok else target.last_check_error,
+                    "message": "Synthetic test event sent." if ok else "Test send failed.",
+                    "readiness": self._readiness(target), "readiness_facts": self._readiness_facts(target)}
 
     def target_health(self, target_id: str) -> Optional[dict[str, Any]]:
         """Curated health for one target: recent attempt mix + last success/failure."""

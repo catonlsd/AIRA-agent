@@ -1545,6 +1545,47 @@ never what becomes local truth.
   overridden without touching local; full HTTP path with gating + 404; no profile
   leak into `/jobs/{id}`) and `frontend/lib/operator.test.mts` (`policySourceLabel`).
 
+### Target preflight validation, safe test-send & durable readiness (G-15)
+
+Onboarding a sync target stops being "save config and hope": an operator can
+**validate** a target and send a **safe synthetic test** before trusting it with real
+incidents, and the result is a durable, explainable **readiness** state. Nothing here
+touches a real incident or local state.
+
+- **Readiness is computed, not stored stale.** Six durable evidence columns on
+  `external_incident_targets` (`last_validated_at` / `last_test_at` / `last_success_at`
+  / `last_failure_at` / `last_check_error` / `last_check_kind`; additive ALTER). Pure
+  `compute_readiness(...)` derives the state from config + evidence → `unverified` /
+  `ready` / `degraded` / `invalid_config` / `auth_failed` / `test_failed` / `disabled`,
+  with a `source` (none/config/connectivity/test) and reason.
+- **Preflight validation** (`validate(target)` → `POST .../validate`): bounded checks —
+  config present, profile/kind compatible, policy overrides effective (warns on
+  enabling an action the adapter can't do), secret/signing sanity, and a **real
+  connectivity/auth probe** via the injectable `_fetch` for refresh-capable adapters
+  (outbound-only adapters honestly report `skip`). Records durable evidence; an
+  HTTP 401/403 → `auth_failed`.
+- **Safe test-send** (`test_send(target)` → `POST .../test`): ONE clearly-synthetic
+  event through the **real adapter transport** — action `recovered` resolving the
+  synthetic `aira-x:preflight-test` ref (a no-op vendor resolve/close of something
+  never triggered), carrying a `test: true` marker. It **never** creates/mutates a
+  real incident, **never** writes an `IncidentSyncRecord`, and never pollutes incident
+  history. Refused (409) for disabled/invalid targets. Records durable test evidence.
+- **Inspection.** `_clean_target` (and thus the existing `GET .../health` + the targets
+  list) now carries `readiness` + `readiness_facts`; the validate/test responses return
+  the per-check list and the recomputed readiness so the console renders from one place.
+- **Console:** the External-sync panel's target rows now show a **readiness badge**
+  (pure `readinessTone`/`readinessLabel`), the last-checked time + reason, and
+  **Validate** / **Test** buttons (Test disabled for a disabled target). No readiness
+  field leaks into `GET /jobs/{id}`.
+- Pinned by `backend/tests/test_incident_sync.py` (`compute_readiness` pure across all
+  states; fresh target is unverified; validate passes a reachable refresh-capable
+  target and detects auth failure; outbound-only skips connectivity honestly; invalid
+  config + ineffective-override warning; test-send uses the real transport with the
+  `test` marker + resolve no-op, writes NO sync record and creates NO incident;
+  test-send failure → `test_failed`; refused for disabled; full HTTP path with gating
+  + 404; no readiness leak into `/jobs/{id}`) and `frontend/lib/operator.test.mts`
+  (`readinessTone`/`readinessLabel`).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

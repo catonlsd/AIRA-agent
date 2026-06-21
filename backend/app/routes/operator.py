@@ -915,7 +915,8 @@ def operator_incident_sync_reconcile(request: Request, limit: int | None = None)
 
 @router.get("/incident-targets/{target_id}/health")
 def operator_incident_target_health(target_id: str, request: Request) -> dict:
-    """Curated health for one sync target (recent attempt mix + last success/fail)."""
+    """Curated health for one sync target (recent attempt mix + last success/fail) +
+    durable readiness (state / source / last validated / tested / failure)."""
     _require_operator(request)
     from app.incident_sync import incident_sync_service
 
@@ -923,6 +924,36 @@ def operator_incident_target_health(target_id: str, request: Request) -> dict:
     if health is None:
         raise HTTPException(status_code=404, detail="Target not found.")
     return {"target": health}
+
+
+@router.post("/incident-targets/{target_id}/validate")
+def operator_incident_target_validate(target_id: str, request: Request) -> dict:
+    """Run bounded PREFLIGHT validation (config + profile compatibility + policy +
+    secret sanity + a real connectivity probe for refresh-capable adapters). Records
+    durable evidence; never touches a real incident or local state."""
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    result = incident_sync_service.validate(target_id, actor=_operator_name(request))
+    if result is None:
+        raise HTTPException(status_code=404, detail="Target not found.")
+    return result
+
+
+@router.post("/incident-targets/{target_id}/test")
+def operator_incident_target_test(target_id: str, request: Request) -> dict:
+    """Send ONE bounded, clearly-synthetic test event through the real adapter
+    transport (a no-op vendor resolve of a synthetic ref). Never creates/mutates a
+    real incident or writes incident history. 409 for disabled/invalid targets."""
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    result = incident_sync_service.test_send(target_id, actor=_operator_name(request))
+    if result is None:
+        raise HTTPException(status_code=404, detail="Target not found.")
+    if not result.get("ok") and result.get("code") in ("disabled", "invalid_config"):
+        raise HTTPException(status_code=409, detail=result.get("message", "Cannot test this target."))
+    return result
 
 
 @router.get("/incident-targets/{target_id}/capabilities")

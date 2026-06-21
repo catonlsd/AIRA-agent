@@ -412,6 +412,14 @@ class ExternalIncidentTarget(Base):
     allow_external_updated_at: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     allow_external_comment_count: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     allow_external_suggestions: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Target preflight readiness (G-15): durable evidence from validate / test-send.
+    # Readiness STATE itself is computed from config + these facts (never stored stale).
+    last_validated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_test_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_check_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    last_check_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)  # config|connectivity|test
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
 

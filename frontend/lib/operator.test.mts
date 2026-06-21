@@ -17,6 +17,8 @@ import {
   linkStatusTone,
   policyOverrideLabel,
   policySourceLabel,
+  readinessLabel,
+  readinessTone,
   redriveBlockedReason,
   supportLevelLabel,
   syncStatusTone,
@@ -129,6 +131,17 @@ test("policyOverrideLabel distinguishes default from explicit allow/deny", () =>
   assert.equal(policyOverrideLabel(null), "Default");
   assert.equal(policyOverrideLabel(true), "Allowed");
   assert.equal(policyOverrideLabel(false), "Denied");
+});
+
+test("readinessTone + readinessLabel are honest about verification state", () => {
+  assert.equal(readinessTone("ready"), "good");
+  assert.equal(readinessTone("unverified"), "warn");
+  assert.equal(readinessTone("degraded"), "warn");
+  assert.equal(readinessTone("auth_failed"), "bad");
+  assert.equal(readinessTone("invalid_config"), "bad");
+  assert.equal(readinessTone("disabled"), "muted");
+  assert.equal(readinessLabel("test_failed"), "Test failed");
+  assert.equal(readinessLabel("unverified"), "Unverified");
 });
 
 test("policySourceLabel names where a decision came from", () => {

@@ -179,6 +179,26 @@ export type TargetPolicyOverrides = {
 
 export type InboundFieldName = "assignee" | "severity" | "updated_at" | "comment_count";
 
+export type ReadinessState =
+  | "unverified" | "ready" | "degraded" | "invalid_config" | "auth_failed" | "test_failed" | "disabled";
+
+export type TargetReadiness = { state: ReadinessState; source: string; reason: string };
+
+export type ReadinessFacts = {
+  last_validated_at: string | null;
+  last_test_at: string | null;
+  last_success_at: string | null;
+  last_failure_at: string | null;
+  last_check_error: string | null;
+  last_check_kind: string | null;
+};
+
+export type PreflightCheck = { name: string; status: "pass" | "fail" | "warn" | "skip"; detail: string };
+
+export type ValidateResult = { ok: boolean; checks: PreflightCheck[]; readiness: TargetReadiness; readiness_facts: ReadinessFacts };
+
+export type TestSendResult = { ok: boolean; status_code: number | null; error: string | null; message: string; readiness: TargetReadiness; readiness_facts: ReadinessFacts };
+
 export type IncidentTarget = {
   id: string;
   name: string;
@@ -192,6 +212,8 @@ export type IncidentTarget = {
   consecutive_failures: number;
   capabilities: AdapterCapabilities;
   policy_overrides: TargetPolicyOverrides;
+  readiness: TargetReadiness;
+  readiness_facts: ReadinessFacts;
   created_at: string | null;
 };
 
@@ -382,6 +404,24 @@ export function policyOverrideLabel(override: boolean | null): string {
   if (override === true) return "Allowed";
   if (override === false) return "Denied";
   return "Default";
+}
+
+/** Tone + label for a target's preflight readiness (pure; unit-tested). Honest about
+ * "merely configured" (unverified) vs actually checked. */
+export function readinessTone(state: ReadinessState): Tone {
+  if (state === "ready") return "good";
+  if (state === "degraded" || state === "unverified") return "warn";
+  if (state === "invalid_config" || state === "auth_failed" || state === "test_failed") return "bad";
+  return "muted"; // disabled
+}
+
+export function readinessLabel(state: ReadinessState): string {
+  const labels: Record<ReadinessState, string> = {
+    unverified: "Unverified", ready: "Ready", degraded: "Degraded",
+    invalid_config: "Invalid config", auth_failed: "Auth failed",
+    test_failed: "Test failed", disabled: "Disabled",
+  };
+  return labels[state] ?? state;
 }
 
 /** Human label for where a policy decision came from (pure; unit-tested). Lets the
@@ -880,4 +920,24 @@ export async function fetchTargetProfile(targetId: string): Promise<TargetProfil
   const res = await fetch(`${API_URL}/operator/incident-targets/${encodeURIComponent(targetId)}/profile`, { cache: "no-store", headers: opHeaders() });
   if (!res.ok) return null;
   return res.json();
+}
+
+export async function validateTarget(targetId: string): Promise<ValidateResult | null> {
+  const res = await fetch(`${API_URL}/operator/incident-targets/${encodeURIComponent(targetId)}/validate`, { method: "POST", cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function testTarget(targetId: string): Promise<TestSendResult | { ok: false; message?: string } | null> {
+  const res = await fetch(`${API_URL}/operator/incident-targets/${encodeURIComponent(targetId)}/test`, { method: "POST", cache: "no-store", headers: opHeaders() });
+  const body = await res.json().catch(() => null);
+  if (res.ok) return body;
+  return { ok: false, message: body?.detail };
+}
+
+export async function fetchTargetHealth(targetId: string): Promise<IncidentTarget | null> {
+  const res = await fetch(`${API_URL}/operator/incident-targets/${encodeURIComponent(targetId)}/health`, { cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return null;
+  const body = await res.json();
+  return body?.target ?? null;
 }

@@ -87,6 +87,12 @@ def ensure_runtime_columns() -> None:
                 ("allow_external_updated_at", "BOOLEAN"),
                 ("allow_external_comment_count", "BOOLEAN"),
                 ("allow_external_suggestions", "BOOLEAN"),
+                ("last_validated_at", "DATETIME"),
+                ("last_test_at", "DATETIME"),
+                ("last_success_at", "DATETIME"),
+                ("last_failure_at", "DATETIME"),
+                ("last_check_error", "VARCHAR(200)"),
+                ("last_check_kind", "VARCHAR(24)"),
             ],
         }
         for table, columns in additions.items():
