@@ -213,6 +213,80 @@ class PagerDutyIncidentAdapter:
                                severity=severity, updated_at=updated, comment_count=count)
 
 
+class OpsgenieIncidentAdapter:
+    """Second first-class richer adapter (G-14): shapes the snapshot into an Opsgenie
+    Alert-API-style envelope (`action` create/close/acknowledge, `alias` = the incident
+    signal) and parses an alert-shaped response (status open/acked/closed, owner,
+    priority P1–P5). Real shaping + bounded parsing — it does NOT claim a verified
+    Opsgenie connection; point a target of kind=opsgenie at any endpoint speaking this
+    shape. Honestly has NO clean `reopen` mapping, so `external_reopen` stays False."""
+
+    kind = "opsgenie"
+    supports_refresh = True
+    supports_push_outward = True
+    supports_status_sync = True
+    inbound_fields = frozenset({"assignee", "severity", "updated_at"})  # no bounded note count in basic alert
+    supports_apply_resolved = True
+    supports_apply_missing = True
+    supports_external_resolve = True       # → close the alert
+    supports_external_reopen = False       # Opsgenie has no clean reopen — honest
+    supports_external_acknowledge = True   # → acknowledge the alert
+    _ACTION = {"opened": "create", "reopened": "create", "recovered": "close",
+               "acknowledged": "acknowledge"}
+    _PRIORITY = {"p1": "critical", "p2": "critical", "p3": "warning", "p4": "warning", "p5": "info"}
+
+    def shape(self, payload: dict) -> dict:
+        incident = payload.get("incident", {})
+        action = payload.get("action", "")
+        return {
+            "action": self._ACTION.get(action, "create"),
+            "alias": incident.get("signal") or incident.get("id"),
+            "message": f"{incident.get('classification') or 'incident'} · {incident.get('subject') or ''}".strip(" ·"),
+            "source": "AIRA-X",
+            "details": {
+                "incident_id": incident.get("id"),
+                "state": incident.get("state"),
+                "assignee": incident.get("assignee"),
+                "note": incident.get("note"),
+                "action": action,
+                "actor": payload.get("actor"),
+            },
+        }
+
+    def parse(self, status_code: Optional[int], headers: dict, body: Optional[dict]) -> tuple[Optional[str], Optional[str]]:
+        ref = url = None
+        if body:
+            ref = body.get("alias") or body.get("id") or body.get("tinyId")
+            url = body.get("url") or body.get("html_url") or (headers.get("Location") if headers else None)
+        else:
+            ref = (headers.get("X-Incident-Ref") if headers else None)
+        return ((str(ref)[:120] if ref else None), (str(url)[:500] if url else None))
+
+    def parse_status(self, status_code: Optional[int], headers: dict, body: Optional[dict]) -> tuple[Optional[bool], Optional[str], Optional[str]]:
+        if status_code == 404:
+            return (False, EXT_MISSING, None)
+        if not body:
+            return (True, EXT_UNKNOWN, None)
+        # Opsgenie surfaces both a status (open/closed) and an acknowledged flag.
+        raw = body.get("status")
+        if body.get("acknowledged") is True and raw != "closed":
+            raw = "acknowledged"
+        url = body.get("url") or body.get("html_url")
+        return (True, _normalize_status(raw), (str(url)[:500] if url else None))
+
+    def parse_snapshot(self, status_code: Optional[int], headers: dict, body: Optional[dict]) -> dict:
+        exists, status, url = self.parse_status(status_code, headers, body)
+        if not body:
+            return _external_state(exists=exists, status=status, url=url)
+        owner = body.get("owner")
+        if isinstance(owner, dict):
+            owner = owner.get("username") or owner.get("name")
+        severity = self._PRIORITY.get(str(body.get("priority") or "").lower())
+        updated = body.get("updatedAt") or body.get("updated_at")
+        return _external_state(exists=exists, status=status, url=url, assignee=owner,
+                               severity=severity, updated_at=updated)
+
+
 class OutboundOnlyAdapter(GenericIncidentAdapter):
     """Reserved target kinds with no real inbound adapter yet: outbound shaping +
     push-outward work (via the generic envelope), but refresh / relink-validation are
@@ -232,8 +306,8 @@ class OutboundOnlyAdapter(GenericIncidentAdapter):
 _ADAPTERS = {
     "generic": GenericIncidentAdapter(),
     "pagerduty": PagerDutyIncidentAdapter(),
+    "opsgenie": OpsgenieIncidentAdapter(),
     "jira": OutboundOnlyAdapter(),
-    "opsgenie": OutboundOnlyAdapter(),
 }
 _GENERIC = _ADAPTERS["generic"]
 _KINDS = set(_ADAPTERS)
@@ -294,6 +368,7 @@ def adapter_inbound_fields(kind: Optional[str]) -> frozenset:
 POLICY_ALLOWED = "allowed"
 POLICY_DENIED_CAPABILITY = "denied:capability"
 POLICY_DENIED_TARGET = "denied:target_policy"
+POLICY_DENIED_PROFILE = "denied:profile"      # disabled by the target's profile default (G-14)
 POLICY_DENIED_UNKNOWN = "denied:unknown_action"
 
 # action → (capability key, per-target override field). The single source of truth
@@ -337,10 +412,89 @@ TARGET_INBOUND_OVERRIDE_FIELDS = (
 ALL_TARGET_OVERRIDE_FIELDS = TARGET_OVERRIDE_FIELDS + TARGET_INBOUND_OVERRIDE_FIELDS
 
 
+# ── Adapter profiles / presets (G-14): default policy that sits BETWEEN capability ──
+# and per-target overrides. A profile bundles a vendor/use-case's sane defaults so an
+# operator can onboard a target without hand-setting every override. Precedence:
+#   1. CAPABILITY      — adapter can do it at all (hard ceiling; profile never exceeds).
+#   2. PROFILE default — sane baseline for this profile (`default_actions`/`default_inbound`;
+#                        a value of False disables-by-default; missing = capability default).
+#   3. target OVERRIDE — explicit per-target tri-state; MORE specific than the profile,
+#                        so an explicit True can re-enable what a profile disabled.
+#   4. incident STATE  — applicability right now (handled by the caller).
+# Profiles are pure declarations over EXISTING adapters — no new vendor logic hides here.
+
+_PROFILES: dict[str, dict[str, Any]] = {
+    "generic": {
+        "name": "generic", "label": "Generic webhook", "kind": "generic",
+        "summary": "Bounded outbound export + existence/status refresh. No richer fields.",
+        "default_actions": {}, "default_inbound": {},
+    },
+    "pagerduty": {
+        "name": "pagerduty", "label": "PagerDuty", "kind": "pagerduty",
+        "summary": "Rich: status sync (assignee/severity/updated/notes), typed resolve/reopen/acknowledge.",
+        "default_actions": {}, "default_inbound": {},
+    },
+    "pagerduty-readonly": {
+        "name": "pagerduty-readonly", "label": "PagerDuty (observe-only)", "kind": "pagerduty",
+        "summary": "Same rich inbound observation, but NO outbound mutations by default — watch, don't push.",
+        # Disable every action that changes the EXTERNAL system; local apply stays available.
+        "default_actions": {"external_resolve": False, "external_reopen": False,
+                            "external_acknowledge": False, "resend_current_state": False},
+        "default_inbound": {},
+    },
+    "opsgenie": {
+        "name": "opsgenie", "label": "Opsgenie", "kind": "opsgenie",
+        "summary": "Rich: status sync (owner/priority/updated), typed close/acknowledge. No reopen.",
+        "default_actions": {}, "default_inbound": {},
+    },
+    "jira-outbound": {
+        "name": "jira-outbound", "label": "Jira (outbound-only)", "kind": "jira",
+        "summary": "Outbound export only — Jira state is not read back (no refresh / inbound).",
+        "default_actions": {}, "default_inbound": {},
+    },
+}
+# Profile names selectable when creating/updating a target.
+PROFILE_NAMES = tuple(_PROFILES)
+# The default profile for a bare adapter kind (back-compat: kind == profile name).
+_KIND_DEFAULT_PROFILE = {"generic": "generic", "pagerduty": "pagerduty",
+                         "opsgenie": "opsgenie", "jira": "jira-outbound"}
+
+
+def profile_for(name: Optional[str]) -> Optional[dict[str, Any]]:
+    return _PROFILES.get(name or "")
+
+
+def default_profile_for_kind(kind: Optional[str]) -> str:
+    return _KIND_DEFAULT_PROFILE.get(kind or "generic", kind or "generic")
+
+
+def profile_default(profile_name: Optional[str], category: str, key: str) -> Optional[bool]:
+    """The profile's default for one action/inbound key, or None if the profile leaves
+    it at the capability default. `category` is 'actions' or 'inbound'."""
+    prof = _PROFILES.get(profile_name or "")
+    if prof is None:
+        return None
+    table = prof.get("default_actions" if category == "actions" else "default_inbound", {})
+    return table.get(key)
+
+
+def _clean_profile(prof: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": prof["name"], "label": prof["label"], "kind": prof["kind"],
+        "summary": prof["summary"],
+        "support_level": adapter_capabilities(prof["kind"])["support_level"],
+        "default_actions": prof["default_actions"], "default_inbound": prof["default_inbound"],
+    }
+
+
+def list_profiles() -> list[dict[str, Any]]:
+    return [_clean_profile(p) for p in _PROFILES.values()]
+
+
 def inbound_field_policy(adapter_kind: Optional[str], overrides: Optional[dict],
-                         field: str) -> tuple[bool, str, str]:
-    """Resolve capability + per-target override for one inbound field (or the special
-    `suggestions` master) → (allowed, code, reason)."""
+                         field: str, profile: Optional[str] = None) -> tuple[bool, str, str]:
+    """Resolve capability → profile default → per-target override for one inbound field
+    (or the special `suggestions` master) → (allowed, code, reason)."""
     if field == "suggestions":
         capable = adapter_capabilities(adapter_kind)["refresh"]
         override_field = "allow_external_suggestions"
@@ -354,19 +508,23 @@ def inbound_field_policy(adapter_kind: Optional[str], overrides: Optional[dict],
         label = f"external {field}"
     if not capable:
         return (False, POLICY_DENIED_CAPABILITY, f"adapter cannot provide {label}")
-    if overrides is not None and overrides.get(override_field) is False:
+    override = (overrides or {}).get(override_field)
+    if override is False:
         return (False, POLICY_DENIED_TARGET, f"target policy hides {label}")
+    if override is None and profile_default(profile, "inbound", field) is False:
+        return (False, POLICY_DENIED_PROFILE, f"profile default hides {label}")
     return (True, POLICY_ALLOWED, f"{label} is permitted for this target")
 
 
-def inbound_field_allowed(adapter_kind: Optional[str], overrides: Optional[dict], field: str) -> bool:
-    return inbound_field_policy(adapter_kind, overrides, field)[0]
+def inbound_field_allowed(adapter_kind: Optional[str], overrides: Optional[dict], field: str,
+                          profile: Optional[str] = None) -> bool:
+    return inbound_field_policy(adapter_kind, overrides, field, profile)[0]
 
 
 def target_action_policy(adapter_kind: Optional[str], overrides: Optional[dict],
-                         action: str) -> tuple[bool, str, str]:
-    """Resolve capability + per-target override for one action → (allowed, code,
-    reason). `overrides` is the target's tri-state override dict (or None)."""
+                         action: str, profile: Optional[str] = None) -> tuple[bool, str, str]:
+    """Resolve capability → profile default → per-target override for one action →
+    (allowed, code, reason). An explicit override is MORE specific than the profile."""
     mapping = _ACTION_POLICY.get(action)
     if mapping is None:
         return (False, POLICY_DENIED_UNKNOWN, f"unknown action: {action!r}")
@@ -374,33 +532,50 @@ def target_action_policy(adapter_kind: Optional[str], overrides: Optional[dict],
     caps = adapter_capabilities(adapter_kind)
     if not caps.get(cap_key):
         return (False, POLICY_DENIED_CAPABILITY, f"adapter does not support {action}")
-    if overrides is not None and overrides.get(override_field) is False:
+    override = (overrides or {}).get(override_field)
+    if override is False:
         return (False, POLICY_DENIED_TARGET, f"target policy disables {action}")
+    if override is None and profile_default(profile, "actions", action) is False:
+        return (False, POLICY_DENIED_PROFILE, f"profile default disables {action}")
     return (True, POLICY_ALLOWED, f"{action} is permitted for this target")
 
 
 def apply_policy(adapter_kind: Optional[str], apply_action: str,
-                 overrides: Optional[dict] = None) -> tuple[bool, str, str]:
+                 overrides: Optional[dict] = None, profile: Optional[str] = None) -> tuple[bool, str, str]:
     """Back-compat wrapper for the inbound-apply actions (accept_resolved /
     accept_missing). Delegates to `target_action_policy`."""
-    return target_action_policy(adapter_kind, overrides, apply_action)
+    return target_action_policy(adapter_kind, overrides, apply_action, profile)
 
 
-def effective_target_policy(adapter_kind: Optional[str], overrides: Optional[dict]) -> dict[str, Any]:
-    """Curated capability-vs-override-vs-effective view for one target — exactly what
-    `GET /operator/incident-targets/{id}/policy` returns. Operator can see what the
-    adapter CAN do, what this target is PERMITTED to do, and the net effect."""
+def _decision_source(capable: bool, override: Optional[bool], code: str) -> str:
+    """Where the EFFECTIVE decision came from — for honest console explainability."""
+    if not capable:
+        return "capability"
+    if override is not None:
+        return "override"
+    if code == POLICY_DENIED_PROFILE:
+        return "profile"
+    return "default"
+
+
+def effective_target_policy(adapter_kind: Optional[str], overrides: Optional[dict],
+                            profile: Optional[str] = None) -> dict[str, Any]:
+    """Curated capability-vs-profile-vs-override-vs-effective view for one target —
+    exactly what `GET /operator/incident-targets/{id}/policy` returns. Each entry's
+    `source` says whether the effective decision is from capability / profile / override."""
     caps = adapter_capabilities(adapter_kind)
     actions = {}
     for action in _ACTION_POLICY:
         cap_key, override_field = _ACTION_POLICY[action]
         capable = bool(caps.get(cap_key))
         override = (overrides or {}).get(override_field)
-        allowed, code, reason = target_action_policy(adapter_kind, overrides, action)
+        allowed, code, reason = target_action_policy(adapter_kind, overrides, action, profile)
         actions[action] = {
             "capable": capable,
+            "profile_default": profile_default(profile, "actions", action),
             "override": override,          # None / True / False
             "effective": allowed,
+            "source": _decision_source(capable, override, code),
             "code": code,
             "reason": reason,
         }
@@ -408,19 +583,21 @@ def effective_target_policy(adapter_kind: Optional[str], overrides: Optional[dic
     for field in (*_INBOUND_FIELDS, "suggestions"):
         override_field = ("allow_external_suggestions" if field == "suggestions"
                           else _INBOUND_FIELD_POLICY[field][1])
-        allowed, code, reason = inbound_field_policy(adapter_kind, overrides, field)
-        if field == "suggestions":
-            capable = caps["refresh"]
-        else:
-            capable = field in adapter_inbound_fields(adapter_kind)
+        capable = (caps["refresh"] if field == "suggestions"
+                   else field in adapter_inbound_fields(adapter_kind))
+        override = (overrides or {}).get(override_field)
+        allowed, code, reason = inbound_field_policy(adapter_kind, overrides, field, profile)
         inbound[field] = {
             "capable": capable,
-            "override": (overrides or {}).get(override_field),
+            "profile_default": profile_default(profile, "inbound", field),
+            "override": override,
             "effective": allowed,
+            "source": _decision_source(capable, override, code),
             "code": code,
             "reason": reason,
         }
-    return {"kind": adapter_kind, "capabilities": caps, "actions": actions, "inbound": inbound}
+    return {"kind": adapter_kind, "profile": profile, "capabilities": caps,
+            "actions": actions, "inbound": inbound}
 
 
 # ── external status normalization + link-status classification (pure) ─────────
@@ -546,7 +723,7 @@ def _any_target_allows(active_links: list[dict], action: str) -> tuple[bool, str
     reasons: list[str] = []
     for link in active_links:
         allowed, _code, reason = target_action_policy(
-            link.get("target_kind"), link.get("policy_overrides"), action)
+            link.get("target_kind"), link.get("policy_overrides"), action, link.get("profile"))
         if allowed:
             return (True, "")
         reasons.append(reason)
@@ -594,7 +771,8 @@ def _available_actions(*, links: list[dict], active_links: list[dict],
         effect = EFFECT_LOCAL if typed == "accept_resolved" else EFFECT_LINKAGE
         if apply_action == typed and worst_link is not None:
             allowed, _code, reason = target_action_policy(
-                worst_link.get("target_kind"), worst_link.get("policy_overrides"), typed)
+                worst_link.get("target_kind"), worst_link.get("policy_overrides"), typed,
+                worst_link.get("profile"))
             push(action_key, allowed, "" if allowed else reason, effect)
         else:
             push(action_key, False, "external state does not currently offer this", effect)
@@ -665,16 +843,25 @@ class IncidentSyncService:
     # ── targets (operator-only config) ────────────────────────────────────────
 
     def create_target(self, *, name: str, url: str, kind: str = "generic",
-                      sync_actions: Optional[str] = None, secret: Optional[str] = None,
-                      enabled: bool = True) -> Optional[dict[str, Any]]:
+                      profile: Optional[str] = None, sync_actions: Optional[str] = None,
+                      secret: Optional[str] = None, enabled: bool = True) -> Optional[dict[str, Any]]:
         name, url = (name or "").strip(), (url or "").strip()
         if not name or not url.lower().startswith(("http://", "https://")):
             return None
+        # A profile, if given, is the source of truth for the adapter kind (onboarding
+        # from a preset). Otherwise the kind picks its default profile.
+        if profile is not None:
+            prof = profile_for(profile)
+            if prof is None:
+                return None
+            kind = prof["kind"]
+        else:
+            profile = default_profile_for_kind(kind)
         if kind not in _KINDS:
             return None
         with self._session_factory() as session:
             row = ExternalIncidentTarget(
-                id=uuid4().hex, name=name[:120], url=url[:500], kind=kind,
+                id=uuid4().hex, name=name[:120], url=url[:500], kind=kind, profile=profile,
                 enabled=bool(enabled), sync_actions=(sync_actions or None),
                 secret=(secret or None))
             session.add(row)
@@ -695,6 +882,13 @@ class IncidentSyncService:
                     continue
                 if key in override_fields:
                     setattr(row, key, bool(value))
+                    continue
+                if key == "profile":
+                    prof = profile_for(value)
+                    if prof is None:
+                        return None
+                    row.profile = value
+                    row.kind = prof["kind"]  # switching profile re-points the adapter kind
                     continue
                 if key not in allowed:
                     continue
@@ -948,25 +1142,35 @@ class IncidentSyncService:
         return {field: getattr(row, field, None) for field in ALL_TARGET_OVERRIDE_FIELDS}
 
     @staticmethod
+    def _resolve_profile(row: ExternalIncidentTarget) -> str:
+        """The effective profile name for a target (NULL → the kind's default profile)."""
+        return row.profile or default_profile_for_kind(row.kind)
+
+    @staticmethod
     def _target_names(session) -> dict[str, dict[str, Any]]:
         return {t.id: {"name": t.name, "kind": t.kind,
+                       "profile": IncidentSyncService._resolve_profile(t),
                        "overrides": IncidentSyncService._target_overrides(t)}
                 for t in session.query(ExternalIncidentTarget).all()}
 
     @staticmethod
     def _clean_target(row: ExternalIncidentTarget) -> dict[str, Any]:
         overrides = IncidentSyncService._target_overrides(row)
+        profile = IncidentSyncService._resolve_profile(row)
+        prof = profile_for(profile)
         return {
             "id": row.id,
             "name": row.name,
             "kind": row.kind,
+            "profile": profile,
+            "profile_label": prof["label"] if prof else profile,
             "url": row.url,
             "enabled": bool(row.enabled),
             "sync_actions": row.sync_actions,
             "has_secret": bool(row.secret),   # presence only — never the value
             "consecutive_failures": row.consecutive_failures or 0,
             "capabilities": adapter_capabilities(row.kind),
-            "policy_overrides": overrides,    # tri-state per-action overrides
+            "policy_overrides": overrides,    # tri-state per-action + inbound overrides
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }
 
@@ -1005,6 +1209,7 @@ class IncidentSyncService:
         stale_seconds = max(1, int(getattr(settings, "incident_link_stale_seconds", 86400)))
         kind = target.get("kind")
         overrides = target.get("overrides") or {}
+        profile = target.get("profile")
         caps = adapter_capabilities(kind)
         supports_refresh = caps["refresh"]
         detached = row.detached_at is not None
@@ -1013,16 +1218,16 @@ class IncidentSyncService:
             last_checked_at=row.last_checked_at, external_exists=row.external_exists,
             external_status=row.external_status, now=now, stale_seconds=stale_seconds,
             detached=detached)
-        # Read-time MASK (G-13): present a richer field only if THIS target's inbound
-        # policy currently permits it — so toggling a target's policy hides even
-        # previously-imported values immediately. `inbound_visibility` explains each.
+        # Read-time MASK (G-13 + G-14 profile defaults): present a richer field only if
+        # THIS target's inbound policy (profile default + override) permits it.
         def _field(name: str, value):
-            return value if inbound_field_allowed(kind, overrides, name) else None
-        inbound_visibility = {f: inbound_field_allowed(kind, overrides, f) for f in _INBOUND_FIELDS}
+            return value if inbound_field_allowed(kind, overrides, name, profile) else None
+        inbound_visibility = {f: inbound_field_allowed(kind, overrides, f, profile) for f in _INBOUND_FIELDS}
         return {
             "target_id": row.target_id,
             "target_name": target.get("name"),
             "target_kind": kind,
+            "profile": profile,
             "external_ref": row.external_ref,
             "external_url": row.external_url,
             "last_action": row.last_action,
@@ -1036,7 +1241,7 @@ class IncidentSyncService:
             "external_updated_at": _field("updated_at", row.external_updated_at),
             "external_comment_count": _field("comment_count", row.external_comment_count),
             "inbound_visibility": inbound_visibility,
-            "suggestions_allowed": inbound_field_allowed(kind, overrides, "suggestions"),
+            "suggestions_allowed": inbound_field_allowed(kind, overrides, "suggestions", profile),
             "detached": detached,
             "detached_at": row.detached_at.isoformat() if row.detached_at else None,
             "capabilities": caps,
@@ -1215,14 +1420,15 @@ class IncidentSyncService:
                         # even imported (stored as None).
                         if getattr(adapter, "supports_status_sync", False):
                             overrides = self._target_overrides(target)
+                            prof = self._resolve_profile(target)
                             link.external_assignee = (snap.get("assignee")
-                                if inbound_field_allowed(target.kind, overrides, "assignee") else None)
+                                if inbound_field_allowed(target.kind, overrides, "assignee", prof) else None)
                             link.external_severity = (snap.get("severity")
-                                if inbound_field_allowed(target.kind, overrides, "severity") else None)
+                                if inbound_field_allowed(target.kind, overrides, "severity", prof) else None)
                             link.external_updated_at = (snap.get("updated_at")
-                                if inbound_field_allowed(target.kind, overrides, "updated_at") else None)
+                                if inbound_field_allowed(target.kind, overrides, "updated_at", prof) else None)
                             link.external_comment_count = (snap.get("comment_count")
-                                if inbound_field_allowed(target.kind, overrides, "comment_count") else None)
+                                if inbound_field_allowed(target.kind, overrides, "comment_count", prof) else None)
                         outcome = "missing" if exists is False else "ok"
                         self._log_reconcile(session, incident_id, link.target_id, "refresh", outcome,
                                             actor=actor, detail=(snap.get("status") or ("not found" if exists is False else None)))
@@ -1433,9 +1639,9 @@ class IncidentSyncService:
                                detail="no matching active link for action")
             return {"ok": False, "code": "denied:state",
                     "message": "No matching external link for that action."}
-        # Policy gate: adapter capability + PER-TARGET override (G-12), audited.
+        # Policy gate: adapter capability → profile default → per-target override, audited.
         allowed, code, reason = target_action_policy(
-            link["target_kind"], link.get("policy_overrides"), apply_action)
+            link["target_kind"], link.get("policy_overrides"), apply_action, link.get("profile"))
         if not allowed:
             self._record_apply(incident_id, link["target_id"], apply_action, "refused:" + code.split(":", 1)[1],
                                actor=actor, detail=reason)
@@ -1575,7 +1781,8 @@ class IncidentSyncService:
                     if target is None or not target.enabled:
                         continue
                     overrides = self._target_overrides(target)
-                    allowed, code, reason = target_action_policy(target.kind, overrides, action)
+                    allowed, code, reason = target_action_policy(
+                        target.kind, overrides, action, self._resolve_profile(target))
                     if not allowed:
                         last_refusal = (code, reason)
                         self._log_reconcile(session, incident_id, target.id, f"external:{action}",
@@ -1610,15 +1817,36 @@ class IncidentSyncService:
                 "message": f"Sent external {action.replace('external_', '')} to {applied_targets} target(s)."}
 
     def target_policy(self, target_id: str) -> Optional[dict[str, Any]]:
-        """Curated capability-vs-override-vs-effective view for one target (G-12)."""
+        """Curated capability-vs-profile-vs-override-vs-effective view for one target."""
         with self._session_factory() as session:
             target = session.get(ExternalIncidentTarget, target_id)
             if target is None:
                 return None
-            policy = effective_target_policy(target.kind, self._target_overrides(target))
+            profile = self._resolve_profile(target)
+            policy = effective_target_policy(target.kind, self._target_overrides(target), profile)
             policy["target_id"] = target.id
             policy["name"] = target.name
+            prof = profile_for(profile)
+            policy["profile_label"] = prof["label"] if prof else profile
+            policy["profile_summary"] = prof["summary"] if prof else None
             return policy
+
+    def target_profile(self, target_id: str) -> Optional[dict[str, Any]]:
+        """Onboarding view (G-14): the target's profile + its defaults + effective
+        policy with per-decision sources. Operator-only; no secrets."""
+        with self._session_factory() as session:
+            target = session.get(ExternalIncidentTarget, target_id)
+            if target is None:
+                return None
+            profile = self._resolve_profile(target)
+            prof = profile_for(profile)
+            return {
+                "target_id": target.id,
+                "name": target.name,
+                "kind": target.kind,
+                "profile": (_clean_profile(prof) if prof else {"name": profile}),
+                "policy": effective_target_policy(target.kind, self._target_overrides(target), profile),
+            }
 
     def reconcile(self, *, max_incidents: Optional[int] = None, actor: Optional[str] = None) -> dict[str, int]:
         """Bounded scheduled reconciliation: recheck the active, refresh-capable links

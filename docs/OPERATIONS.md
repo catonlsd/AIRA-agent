@@ -1500,6 +1500,51 @@ edits. Local-state primacy is untouched — inbound policy only changes what is
   switch; full HTTP path with gating; no inbound-policy leak into `/jobs/{id}`) and
   `frontend/lib/operator.test.mts` (`hiddenInboundFields`).
 
+### Adapter profiles/presets, broader vendor rollout & onboarding (G-14)
+
+The incident-sync model grows a **profile layer** so operators onboard a target from
+a vendor preset instead of hand-setting every override, and a **second first-class
+rich adapter** (Opsgenie) proves the model isn't PagerDuty-only. Local-state primacy
+is untouched: profiles only set *defaults* for what's observed/suggested/allowed,
+never what becomes local truth.
+
+- **Opsgenie rich adapter.** `OpsgenieIncidentAdapter` is now a real status-sync
+  adapter (was outbound-only): Alert-API-style `shape` (action create/close/
+  acknowledge, `alias` = signal), `parse_status` (open/acked/closed), and
+  `parse_snapshot` (bounded owner/priority→severity/updatedAt; **no** note count, and
+  raw bodies never imported). Honestly has **no clean reopen** so
+  `external_reopen` stays False. Registry order is now generic / pagerduty / opsgenie
+  (rich) / jira (outbound-only).
+- **Profile registry** (`_PROFILES`, pure declarations over existing adapters — no new
+  vendor logic hides here): `generic`, `pagerduty`, **`pagerduty-readonly`** (same
+  rich inbound, but every external-mutation action disabled by default — "watch,
+  don't push"), `opsgenie`, `jira-outbound`. Each profile carries a label, summary,
+  support level, and `default_actions`/`default_inbound` maps. `list_profiles()`.
+- **Four-layer precedence.** `target_action_policy` / `inbound_field_policy` now
+  resolve **capability → profile default → per-target override → state**. An explicit
+  override is *more specific* than the profile, so it can re-enable what a profile
+  disabled (still bounded by capability — a profile can never exceed it). New stable
+  code `denied:profile`.
+- **Durable profile on the target.** `external_incident_targets` gains a `profile`
+  column (additive ALTER; NULL → the kind's default profile). `create_target(profile=)`
+  onboards from a preset (the profile picks the adapter kind); `update_target(profile=)`
+  re-points the kind. `_clean_target` exposes `profile` + `profile_label`.
+- **Onboarding inspection.** `GET /operator/incident-target-profiles` lists presets;
+  `GET /operator/incident-targets/{id}/profile` shows the target's profile + defaults
+  + effective policy; the `/policy` view now adds `profile_default` and a **`source`**
+  per decision (`capability` / `profile` / `override` / `default`) — so an operator
+  can see *why* something is on/off before relying on the target.
+- **Console:** the incident sync line shows a profile badge when a target uses a
+  non-default preset; pure `policySourceLabel` names the decision source. No
+  profile/preset field leaks into `GET /jobs/{id}`.
+- Pinned by `backend/tests/test_incident_sync.py` (Opsgenie is a real rich adapter +
+  bounded shape/snapshot that drops raw bodies; profiles list honest + gated; profile
+  default narrows within capability and an override re-enables it; profile can't
+  exceed capability; create/patch from profile sets kind + defaults; profile view
+  shows defaults + sources; readonly profile blocks an external action until
+  overridden without touching local; full HTTP path with gating + 404; no profile
+  leak into `/jobs/{id}`) and `frontend/lib/operator.test.mts` (`policySourceLabel`).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

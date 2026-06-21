@@ -448,6 +448,9 @@ function IncidentRow({ inc, operatorName, onChanged }: {
               <div className="flex flex-wrap items-center gap-2 text-[11px]">
                 <Badge tone={syncLine.tone}>{syncLine.label}</Badge>
                 {link?.target_name ? <span className="text-[var(--text-muted)]">{link.target_name}{link.target_kind ? ` · ${link.target_kind}` : ""}</span> : null}
+                {link?.profile && link.profile !== link.target_kind ? (
+                  <span className="rounded-full border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--text-subtle)]">{link.profile}</span>
+                ) : null}
                 {link?.external_ref ? <span className="text-[var(--text-subtle)]">ref {link.external_ref}</span> : null}
                 {link?.external_url ? (
                   <a href={link.external_url} target="_blank" rel="noreferrer"

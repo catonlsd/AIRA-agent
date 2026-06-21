@@ -383,7 +383,11 @@ class ExternalIncidentTarget(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
-    kind: Mapped[str] = mapped_column(String(24), default="generic")  # generic|pagerduty|… (adapter-ready)
+    kind: Mapped[str] = mapped_column(String(24), default="generic")  # generic|pagerduty|opsgenie|jira
+    # The adapter PROFILE/preset this target onboarded from (G-14): supplies default
+    # policy that sits between adapter capability and per-target overrides. NULL falls
+    # back to the kind's default profile. Never expands capability — only sets defaults.
+    profile: Mapped[str | None] = mapped_column(String(40), nullable=True)
     url: Mapped[str] = mapped_column(String(500), nullable=False)
     secret: Mapped[str | None] = mapped_column(String(255), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)

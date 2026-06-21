@@ -183,6 +183,8 @@ export type IncidentTarget = {
   id: string;
   name: string;
   kind: string;
+  profile: string;
+  profile_label: string;
   url: string;
   enabled: boolean;
   sync_actions: string | null;
@@ -193,10 +195,16 @@ export type IncidentTarget = {
   created_at: string | null;
 };
 
+/** Where an effective policy decision came from (G-14): the adapter ceiling, the
+ * profile preset default, an explicit per-target override, or the plain default. */
+export type PolicySource = "capability" | "profile" | "override" | "default";
+
 export type TargetActionPolicy = {
   capable: boolean;
+  profile_default: boolean | null;
   override: boolean | null;
   effective: boolean;
+  source: PolicySource;
   code: string;
   reason: string;
 };
@@ -205,9 +213,30 @@ export type TargetPolicyView = {
   target_id: string;
   name: string;
   kind: string;
+  profile: string;
+  profile_label: string;
+  profile_summary: string | null;
   capabilities: AdapterCapabilities;
   actions: Record<string, TargetActionPolicy>;
   inbound: Record<string, TargetActionPolicy>;
+};
+
+export type IncidentAdapterProfile = {
+  name: string;
+  label: string;
+  kind: string;
+  summary: string;
+  support_level: SupportLevel;
+  default_actions: Record<string, boolean>;
+  default_inbound: Record<string, boolean>;
+};
+
+export type TargetProfileView = {
+  target_id: string;
+  name: string;
+  kind: string;
+  profile: IncidentAdapterProfile | { name: string };
+  policy: TargetPolicyView;
 };
 
 export type IncidentSyncRecord = {
@@ -272,6 +301,7 @@ export type IncidentExternalLink = {
   target_id: string;
   target_name: string | null;
   target_kind: string | null;
+  profile: string | null;
   external_ref: string | null;
   external_url: string | null;
   last_action: string | null;
@@ -351,6 +381,15 @@ export function applyActionLabel(action: "accept_resolved" | "accept_missing" | 
 export function policyOverrideLabel(override: boolean | null): string {
   if (override === true) return "Allowed";
   if (override === false) return "Denied";
+  return "Default";
+}
+
+/** Human label for where a policy decision came from (pure; unit-tested). Lets the
+ * console say "disabled by profile" vs "overridden" vs "adapter can't" honestly. */
+export function policySourceLabel(source: PolicySource): string {
+  if (source === "capability") return "Adapter limit";
+  if (source === "profile") return "Profile default";
+  if (source === "override") return "Target override";
   return "Default";
 }
 
@@ -828,4 +867,17 @@ export async function setTargetPolicyOverride(targetId: string, field: keyof Tar
   if (!res.ok) return null;
   const body = await res.json();
   return body?.target ?? null;
+}
+
+export async function fetchIncidentTargetProfiles(): Promise<IncidentAdapterProfile[]> {
+  const res = await fetch(`${API_URL}/operator/incident-target-profiles`, { cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return [];
+  const body = await res.json();
+  return Array.isArray(body?.profiles) ? body.profiles : [];
+}
+
+export async function fetchTargetProfile(targetId: string): Promise<TargetProfileView | null> {
+  const res = await fetch(`${API_URL}/operator/incident-targets/${encodeURIComponent(targetId)}/profile`, { cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return null;
+  return res.json();
 }

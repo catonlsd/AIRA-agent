@@ -75,6 +75,7 @@ def ensure_runtime_columns() -> None:
                 ("external_comment_count", "INTEGER"),
             ],
             "external_incident_targets": [
+                ("profile", "VARCHAR(40)"),
                 ("allow_apply_resolved", "BOOLEAN"),
                 ("allow_apply_missing", "BOOLEAN"),
                 ("allow_external_resolve", "BOOLEAN"),

@@ -1251,3 +1251,135 @@ def test_no_inbound_policy_fields_leak_into_user_routes(capture_send):
     for operator_only in ("allow_external_assignee", "allow_external_suggestions",
                           "inbound_visibility", "suggestions_allowed", "inbound_fields"):
         assert operator_only not in user_job
+
+
+# ── G-14: adapter profiles / presets + broader vendor rollout ────────────────
+
+
+def test_opsgenie_is_a_real_rich_adapter():
+    from app.incident_sync import adapter_capabilities
+    og = adapter_capabilities("opsgenie")
+    assert og["support_level"] == "rich" and og["status_sync"] is True
+    # Honest: close + acknowledge, but NO clean reopen.
+    assert og["external_resolve"] is True and og["external_acknowledge"] is True
+    assert og["external_reopen"] is False
+    assert og["inbound_fields"] == {"assignee": True, "severity": True,
+                                    "updated_at": True, "comment_count": False}
+
+
+def test_opsgenie_shape_and_snapshot_are_bounded():
+    from app.incident_sync import adapter_for, _external_state
+    og = adapter_for("opsgenie")
+    env = og.shape({"action": "recovered", "incident": {"signal": "stuck:J1", "subject": "J1"}})
+    assert env["action"] == "close" and env["alias"] == "stuck:J1" and "details" in env
+    snap = og.parse_snapshot(200, {}, {"status": "open", "acknowledged": True,
+                                       "owner": {"username": "ops-amy"}, "priority": "P1",
+                                       "updatedAt": "2026-06-20T00:00:00Z",
+                                       "description": "RAW SHOULD NOT APPEAR"})
+    assert snap["status"] == "acknowledged" and snap["assignee"] == "ops-amy"
+    assert snap["severity"] == "critical" and snap["comment_count"] is None
+    assert "description" not in snap  # raw vendor body never imported
+
+
+def test_profiles_list_is_honest_and_operator_gated(op):
+    from app.incident_sync import list_profiles
+    names = {p["name"] for p in list_profiles()}
+    assert {"generic", "pagerduty", "pagerduty-readonly", "opsgenie"} <= names
+    ro = next(p for p in list_profiles() if p["name"] == "pagerduty-readonly")
+    # Readonly preset declares its outbound-mutation defaults OFF, honestly.
+    assert ro["kind"] == "pagerduty" and ro["support_level"] == "rich"
+    assert ro["default_actions"]["external_resolve"] is False
+    # HTTP listing is operator-gated.
+    assert client.get("/operator/incident-target-profiles", headers=OP).status_code == 200
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.get("/operator/incident-target-profiles", headers=auth).status_code in (401, 403)
+
+
+def test_profile_default_narrows_within_capability_and_override_can_re_enable(monkeypatch):
+    from app.incident_sync import target_action_policy, POLICY_ALLOWED, POLICY_DENIED_PROFILE, POLICY_DENIED_CAPABILITY
+    # pagerduty-readonly disables external_resolve by DEFAULT (capability still True).
+    ok, code, _ = target_action_policy("pagerduty", None, "external_resolve", "pagerduty-readonly")
+    assert ok is False and code == POLICY_DENIED_PROFILE
+    # An explicit target override is MORE specific → re-enables it (still within capability).
+    ok, code, _ = target_action_policy("pagerduty", {"allow_external_resolve": True}, "external_resolve", "pagerduty-readonly")
+    assert ok and code == POLICY_ALLOWED
+    # A profile can NEVER exceed capability: generic has no typed resolve.
+    ok, code, _ = target_action_policy("generic", {"allow_external_resolve": True}, "external_resolve", "pagerduty")
+    assert ok is False and code == POLICY_DENIED_CAPABILITY
+
+
+def test_create_target_from_profile_sets_kind_and_defaults(capture_send):
+    t = incident_sync_service.create_target(name="ro", url="https://h.example.com/ro", profile="pagerduty-readonly")
+    assert t["kind"] == "pagerduty" and t["profile"] == "pagerduty-readonly"
+    assert t["profile_label"] == "PagerDuty (observe-only)"
+    # A bare kind picks its default profile.
+    g = incident_sync_service.create_target(name="og", url="https://h.example.com/og", kind="opsgenie")
+    assert g["profile"] == "opsgenie"
+    # Unknown profile is rejected.
+    assert incident_sync_service.create_target(name="x", url="https://h.example.com/x", profile="nope") is None
+
+
+def test_target_profile_view_shows_defaults_and_sources(capture_send):
+    t = incident_sync_service.create_target(name="ro", url="https://h.example.com/ro", profile="pagerduty-readonly")
+    view = incident_sync_service.target_profile(t["id"])
+    assert view["profile"]["name"] == "pagerduty-readonly"
+    res = view["policy"]["actions"]["external_resolve"]
+    # Capable, profile-disabled by default, effective False, source = profile.
+    assert res["capable"] is True and res["profile_default"] is False
+    assert res["effective"] is False and res["source"] == "profile"
+    # Now override it on the target → source flips to override, effective True.
+    incident_sync_service.update_target(t["id"], allow_external_resolve=True)
+    res2 = incident_sync_service.target_profile(t["id"])["policy"]["actions"]["external_resolve"]
+    assert res2["effective"] is True and res2["source"] == "override"
+
+
+def test_readonly_profile_blocks_external_action_until_overridden(monkeypatch):
+    sent = []
+    def _ok(self, url, body_json, secret, adapter=None):
+        sent.append(1)
+        return (True, 202, None, "pd-1", None)
+    monkeypatch.setattr(type(incident_sync_service), "_send", _ok)
+    t = incident_sync_service.create_target(name="ro", url="https://h.example.com/ro", profile="pagerduty-readonly")
+    incident_service.observe([_alert(job_id="ro-1")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "ro-1")
+    sent.clear()
+    # Readonly profile → external_resolve refused by profile default; nothing sent.
+    res = incident_sync_service.external_action(inc["id"], "external_resolve", actor="alice")
+    assert res["ok"] is False and res["code"] == "denied:profile" and not sent
+    assert incident_service.get(inc["id"])["state"] == "open"  # local untouched
+    # Explicit override re-enables it → now it sends.
+    incident_sync_service.update_target(t["id"], allow_external_resolve=True)
+    res2 = incident_sync_service.external_action(inc["id"], "external_resolve", actor="alice")
+    assert res2["ok"] and res2["changed_local"] is False and sent
+
+
+def test_profile_routes_over_http_with_gating(op, capture_send):
+    created = client.post("/operator/incident-targets", headers=OP,
+                          json={"name": "ro", "url": "https://h.example.com/ro", "profile": "pagerduty-readonly"}).json()["target"]
+    assert created["kind"] == "pagerduty" and created["profile"] == "pagerduty-readonly"
+    prof = client.get(f"/operator/incident-targets/{created['id']}/profile", headers=OP).json()
+    assert prof["profile"]["name"] == "pagerduty-readonly"
+    assert prof["policy"]["actions"]["external_resolve"]["source"] == "profile"
+    # Switch profile via PATCH re-points kind.
+    patched = client.patch(f"/operator/incident-targets/{created['id']}", headers=OP,
+                           json={"profile": "pagerduty"}).json()["target"]
+    assert patched["profile"] == "pagerduty"
+    # Gating + 404.
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.get(f"/operator/incident-targets/{created['id']}/profile", headers=auth).status_code in (401, 403)
+    assert client.get("/operator/incident-targets/nope/profile", headers=OP).status_code == 404
+    # Curated — no secret leakage.
+    assert "secret_value" not in str(prof)
+
+
+def test_no_profile_fields_leak_into_user_routes(capture_send):
+    from app.execution_queue import execution_queue
+    incident_sync_service.create_target(name="ro", url="https://h.example.com/ro", profile="pagerduty-readonly")
+    owner = _account()
+    job = execution_queue.enqueue(f"account:{owner['id']}", "noop", {}, title="T")
+    auth = {"Authorization": f"Bearer {make_account_token(owner['id'])}"}
+    user_job = client.get(f"/jobs/{job['id']}", headers=auth).json()["job"]
+    for operator_only in ("profile", "profile_label", "default_actions", "support_level", "source"):
+        assert operator_only not in user_job

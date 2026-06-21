@@ -586,6 +586,8 @@ class IncidentTargetBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     url: str = Field(..., min_length=1, max_length=500)
     kind: str = Field(default="generic", max_length=24)
+    # Onboard from a profile/preset (G-14). When set it determines the adapter kind.
+    profile: str | None = Field(default=None, max_length=40)
     sync_actions: str | None = Field(default=None, max_length=255)
     secret: str | None = Field(default=None, max_length=255)
     enabled: bool = True
@@ -595,6 +597,7 @@ class IncidentTargetUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=120)
     url: str | None = Field(default=None, max_length=500)
     kind: str | None = Field(default=None, max_length=24)
+    profile: str | None = Field(default=None, max_length=40)  # switch the target's profile (G-14)
     sync_actions: str | None = Field(default=None, max_length=255)
     secret: str | None = Field(default=None, max_length=255)
     enabled: bool | None = None
@@ -640,6 +643,16 @@ class SyncExternalActionBody(BaseModel):
     target_id: str | None = Field(default=None, max_length=36)
 
 
+@router.get("/incident-target-profiles")
+def operator_list_incident_target_profiles(request: Request) -> dict:
+    """Available adapter profiles/presets an operator can onboard a target from (G-14):
+    each with kind, support level, human summary, and default inbound/outbound policy."""
+    _require_operator(request)
+    from app.incident_sync import list_profiles
+
+    return {"profiles": list_profiles()}
+
+
 @router.get("/incident-targets")
 def operator_list_incident_targets(request: Request) -> dict:
     """Configured outbound incident-sync targets (curated; secrets never returned)."""
@@ -655,10 +668,11 @@ def operator_create_incident_target(body: IncidentTargetBody, request: Request) 
     from app.incident_sync import incident_sync_service
 
     target = incident_sync_service.create_target(
-        name=body.name, url=body.url, kind=body.kind,
+        name=body.name, url=body.url, kind=body.kind, profile=body.profile,
         sync_actions=body.sync_actions, secret=body.secret, enabled=body.enabled)
     if target is None:
-        raise HTTPException(status_code=400, detail="Invalid target (name, http(s) url, and known kind required).")
+        raise HTTPException(status_code=400,
+                            detail="Invalid target (name, http(s) url, and a known kind/profile required).")
     return {"target": target}
 
 
@@ -929,9 +943,9 @@ def operator_incident_target_capabilities(target_id: str, request: Request) -> d
 
 @router.get("/incident-targets/{target_id}/policy")
 def operator_incident_target_policy(target_id: str, request: Request) -> dict:
-    """Per-target action policy: for each bounded action, what the adapter is CAPABLE
-    of, the per-target OVERRIDE (null / true / false), and the net EFFECTIVE decision.
-    The single place an operator sees capability-vs-override-vs-effect, no DB edits."""
+    """Per-target action+inbound policy: for each bounded action/field, what the adapter
+    is CAPABLE of, the PROFILE default, the per-target OVERRIDE (null/true/false), and
+    the net EFFECTIVE decision with its `source` (capability/profile/override/default)."""
     _require_operator(request)
     from app.incident_sync import incident_sync_service
 
@@ -939,3 +953,16 @@ def operator_incident_target_policy(target_id: str, request: Request) -> dict:
     if policy is None:
         raise HTTPException(status_code=404, detail="Target not found.")
     return policy
+
+
+@router.get("/incident-targets/{target_id}/profile")
+def operator_incident_target_profile(target_id: str, request: Request) -> dict:
+    """Onboarding view (G-14): the target's profile + its defaults + effective policy
+    with per-decision sources — what this target will actually do, before relying on it."""
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    profile = incident_sync_service.target_profile(target_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Target not found.")
+    return profile

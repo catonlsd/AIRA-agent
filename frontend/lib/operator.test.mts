@@ -16,6 +16,7 @@ import {
   incidentTone,
   linkStatusTone,
   policyOverrideLabel,
+  policySourceLabel,
   redriveBlockedReason,
   supportLevelLabel,
   syncStatusTone,
@@ -128,6 +129,13 @@ test("policyOverrideLabel distinguishes default from explicit allow/deny", () =>
   assert.equal(policyOverrideLabel(null), "Default");
   assert.equal(policyOverrideLabel(true), "Allowed");
   assert.equal(policyOverrideLabel(false), "Denied");
+});
+
+test("policySourceLabel names where a decision came from", () => {
+  assert.equal(policySourceLabel("capability"), "Adapter limit");
+  assert.equal(policySourceLabel("profile"), "Profile default");
+  assert.equal(policySourceLabel("override"), "Target override");
+  assert.equal(policySourceLabel("default"), "Default");
 });
 
 test("hiddenInboundFields lists only capable-but-policy-hidden fields", () => {
