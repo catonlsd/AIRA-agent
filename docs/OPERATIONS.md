@@ -1586,6 +1586,43 @@ touches a real incident or local state.
   + 404; no readiness leak into `/jobs/{id}`) and `frontend/lib/operator.test.mts`
   (`readinessTone`/`readinessLabel`).
 
+### Target lifecycle & secret hygiene (Phase 2)
+
+Onboarding stays trustworthy *after* credentials change: rotation, change-driven
+revalidation, stale-readiness aging, scheduled revalidation, a durable readiness
+history, and a "needs attention" triage list. Readiness evidence stays separate from
+incident business state, and validation/test never touch a real incident.
+
+- **Stale readiness.** `compute_readiness` gains a `stale` verdict — a
+  previously-passing target whose last success is older than
+  `incident_target_revalidate_seconds` (default 7d) reads `stale` ("revalidate")
+  rather than falsely `ready`. `READY_ATTENTION_STATES` groups the non-ready,
+  non-disabled states.
+- **Secret rotation** (`rotate_secret` → `POST .../rotate-secret`) and any
+  secret/URL change via PATCH **invalidate prior readiness evidence**
+  (`_invalidate_readiness` → `unverified`) so a target must be revalidated before it's
+  trusted again. Secrets are never returned (only `has_secret`).
+- **Durable check history.** New `incident_target_check_events` table (monotonic PK)
+  records one curated, secret-free row per lifecycle event — validate / test /
+  revalidate / secret_rotated / config_changed / disabled / enabled — with the
+  resulting readiness/outcome and reason. Surfaced as `check_history` on
+  `GET .../health`.
+- **Scheduled revalidation.** `revalidate_stale(max_targets=)` re-runs preflight on
+  enabled targets that need attention, capped by `incident_revalidate_max_per_sweep`
+  (default 10), wired into the operator sweep alongside `flush_pending` + `reconcile`.
+- **Needs-attention triage.** `targets_needing_attention()` →
+  `GET /operator/incident-targets/attention` lists enabled-but-not-ready targets with
+  readiness + facts. The console's External-sync header shows an "N need attention"
+  badge derived from the loaded targets' readiness; the `stale` state has its own tone.
+- Deployment posture is documented in `docs/PRODUCTION_READINESS.md` (web/worker
+  split, SQLite→Postgres seam, health/ready probes, secret hygiene, backups).
+- Pinned by `backend/tests/test_incident_sync.py` (stale aging pure; secret change +
+  rotate invalidate readiness + audit; disable/re-enable audited; needs-attention
+  excludes ready targets; scheduled revalidate rechecks + flips to ready; full HTTP
+  rotate/attention/history with gating + 404; revalidate config rejected; no lifecycle
+  field leaks into `/jobs/{id}`) and `frontend/lib/operator.test.mts` (`stale` in
+  `readinessTone`/`readinessLabel`).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

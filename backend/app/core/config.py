@@ -208,6 +208,11 @@ class Settings(BaseSettings):
     # Max links a single reconciliation sweep will recheck — bounded so a sweep
     # never spams external systems. >= 1.
     incident_reconcile_max_per_sweep: int = 25
+    # Target readiness goes "stale" when its last successful check is older than this
+    # window (evidence ages out → operator should revalidate). >= 1.
+    incident_target_revalidate_seconds: int = 604800  # 7 days
+    # Max targets a single scheduled revalidation sweep will recheck. >= 1.
+    incident_revalidate_max_per_sweep: int = 10
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -280,11 +285,12 @@ class Settings(BaseSettings):
         return value
 
     @field_validator("incident_sync_max_attempts", "incident_sync_max_redrives",
-                     "incident_link_stale_seconds", "incident_reconcile_max_per_sweep")
+                     "incident_link_stale_seconds", "incident_reconcile_max_per_sweep",
+                     "incident_target_revalidate_seconds", "incident_revalidate_max_per_sweep")
     @classmethod
     def _validate_incident_sync(cls, value):
         if int(value) < 1:
-            raise ValueError("incident sync attempt/redrive/stale/reconcile bounds must be >= 1")
+            raise ValueError("incident sync attempt/redrive/stale/reconcile/revalidate bounds must be >= 1")
         return value
 
     @field_validator("cors_origins", mode="before")

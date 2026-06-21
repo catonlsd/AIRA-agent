@@ -37,6 +37,7 @@ from app.db.models import (
     IncidentExternalLink,
     IncidentReconciliationEvent,
     IncidentSyncRecord,
+    IncidentTargetCheckEvent,
 )
 
 STATUS_PENDING = "pending"
@@ -508,10 +509,16 @@ READY_INVALID_CONFIG = "invalid_config"
 READY_AUTH_FAILED = "auth_failed"
 READY_TEST_FAILED = "test_failed"
 READY_DISABLED = "disabled"
+READY_STALE = "stale"                # was ready, but validation evidence has aged out
 
 CHECK_CONFIG = "config"
 CHECK_CONNECTIVITY = "connectivity"
 CHECK_TEST = "test"
+
+# States that need operator attention (NOT ready and NOT an intentional disable).
+READY_ATTENTION_STATES = frozenset({
+    READY_UNVERIFIED, READY_DEGRADED, READY_INVALID_CONFIG, READY_AUTH_FAILED,
+    READY_TEST_FAILED, READY_STALE})
 
 # The marker every synthetic test event carries, so receivers/logs never confuse it
 # with production incident traffic, and the vendor action is always a no-op.
@@ -526,9 +533,12 @@ def _looks_like_auth_error(err: Optional[str]) -> bool:
 def compute_readiness(*, enabled: bool, config_ok: bool, config_reason: str,
                       last_validated_at: Optional[datetime], last_test_at: Optional[datetime],
                       last_success_at: Optional[datetime], last_failure_at: Optional[datetime],
-                      last_check_error: Optional[str], last_check_kind: Optional[str]) -> dict[str, Any]:
+                      last_check_error: Optional[str], last_check_kind: Optional[str],
+                      now: Optional[datetime] = None, stale_seconds: Optional[int] = None) -> dict[str, Any]:
     """Pure readiness verdict from config + durable check evidence → {state, source,
-    reason}. `source` says what evidence backs the verdict (none/config/connectivity/test)."""
+    reason}. `source` says what evidence backs the verdict (none/config/connectivity/
+    test). A previously-passing target whose evidence has aged past `stale_seconds`
+    reads `stale` — it must be revalidated before it is trusted again."""
     if not enabled:
         return {"state": READY_DISABLED, "source": "config", "reason": "target is disabled"}
     if not config_ok:
@@ -543,6 +553,12 @@ def compute_readiness(*, enabled: bool, config_ok: bool, config_reason: str,
         if last_check_kind == CHECK_TEST:
             return {"state": READY_TEST_FAILED, "source": source, "reason": last_check_error or "test send failed"}
         return {"state": READY_DEGRADED, "source": source, "reason": last_check_error or "last check failed"}
+    # Last check passed — but has the evidence aged out?
+    if stale_seconds and last_success_at is not None and now is not None:
+        age = (now - last_success_at).total_seconds()
+        if age > max(1, int(stale_seconds)):
+            return {"state": READY_STALE, "source": source,
+                    "reason": "validation evidence has aged out — revalidate"}
     return {"state": READY_READY, "source": source, "reason": "last check succeeded"}
 
 
@@ -890,6 +906,7 @@ class IncidentSyncService:
             IncidentSyncRecord.__table__.create(bind=engine, checkfirst=True)
             IncidentExternalLink.__table__.create(bind=engine, checkfirst=True)
             IncidentReconciliationEvent.__table__.create(bind=engine, checkfirst=True)
+            IncidentTargetCheckEvent.__table__.create(bind=engine, checkfirst=True)
         except Exception:
             Base.metadata.create_all(bind=engine)
         from app.db.database import ensure_runtime_columns
@@ -928,10 +945,12 @@ class IncidentSyncService:
         # Per-target overrides (outbound actions + inbound fields) are tri-state —
         # None means "leave unchanged" here; explicit True/False set the override.
         override_fields = set(ALL_TARGET_OVERRIDE_FIELDS)
+        actor = changes.pop("_actor", None)
         with self._session_factory() as session:
             row = session.get(ExternalIncidentTarget, target_id)
             if row is None:
                 return None
+            prev_secret, prev_url, prev_enabled = row.secret, row.url, bool(row.enabled)
             for key, value in changes.items():
                 if value is None:
                     continue
@@ -952,6 +971,19 @@ class IncidentSyncService:
                 if key == "url" and not str(value).lower().startswith(("http://", "https://")):
                     return None
                 setattr(row, key, value)
+            # Lifecycle hygiene (Phase 2): a secret/url change can invalidate prior trust
+            # → wipe readiness evidence so the target must be revalidated. Record why.
+            secret_changed = ("secret" in changes and row.secret != prev_secret)
+            url_changed = ("url" in changes and row.url != prev_url)
+            if secret_changed or url_changed:
+                self._invalidate_readiness(row)
+                what = "secret" if secret_changed and not url_changed else ("url" if url_changed and not secret_changed else "secret+url")
+                self._log_check(session, target_id, "config_changed", "unverified",
+                                actor=actor, detail=f"{what} changed — revalidation required")
+            # Enable/disable safety: record the transition for the audit trail.
+            if "enabled" in changes and bool(row.enabled) != prev_enabled:
+                self._log_check(session, target_id, "enabled" if row.enabled else "disabled",
+                                "ok", actor=actor, detail=("re-enabled" if row.enabled else "disabled by operator"))
             session.commit()
             return self._clean_target(row)
 
@@ -1231,7 +1263,8 @@ class IncidentSyncService:
             enabled=bool(row.enabled), config_ok=config_ok, config_reason=config_reason,
             last_validated_at=row.last_validated_at, last_test_at=row.last_test_at,
             last_success_at=row.last_success_at, last_failure_at=row.last_failure_at,
-            last_check_error=row.last_check_error, last_check_kind=row.last_check_kind)
+            last_check_error=row.last_check_error, last_check_kind=row.last_check_kind,
+            now=_now(), stale_seconds=int(getattr(settings, "incident_target_revalidate_seconds", 604800)))
 
     @staticmethod
     def _readiness_facts(row: ExternalIncidentTarget) -> dict[str, Any]:
@@ -1243,6 +1276,26 @@ class IncidentSyncService:
             "last_check_error": row.last_check_error,
             "last_check_kind": row.last_check_kind,
         }
+
+    @staticmethod
+    def _log_check(session, target_id: str, event: str, outcome: str, *,
+                   actor: Optional[str] = None, detail: Optional[str] = None) -> None:
+        """Append one curated readiness-history entry (secret-free)."""
+        actor = (actor or "").strip()[:80] or None
+        session.add(IncidentTargetCheckEvent(
+            target_id=target_id, event=event, outcome=outcome, actor=actor,
+            detail=(detail[:200] if detail else None), created_at=_now()))
+
+    @staticmethod
+    def _invalidate_readiness(row: ExternalIncidentTarget) -> None:
+        """Clear prior validation evidence so the target reads `unverified` until it is
+        revalidated — used when a secret/url change could invalidate prior trust."""
+        row.last_validated_at = None
+        row.last_test_at = None
+        row.last_success_at = None
+        row.last_failure_at = None
+        row.last_check_error = None
+        row.last_check_kind = None
 
     @staticmethod
     def _clean_target(row: ExternalIncidentTarget) -> dict[str, Any]:
@@ -2091,9 +2144,12 @@ class IncidentSyncService:
                 target.last_success_at = now
                 target.last_check_error = None
                 target.last_check_kind = CHECK_CONFIG
+            readiness = self._readiness(target)
+            self._log_check(session, target_id, "validate", readiness["state"],
+                            actor=actor, detail=(target.last_check_error or readiness["reason"]))
             session.commit()
             ok_overall = config_ok and prof_ok and (conn_ok is not False)
-            return {"ok": ok_overall, "checks": checks, "readiness": self._readiness(target),
+            return {"ok": ok_overall, "checks": checks, "readiness": readiness,
                     "readiness_facts": self._readiness_facts(target)}
 
     def test_send(self, target_id: str, *, actor: Optional[str] = None) -> Optional[dict[str, Any]]:
@@ -2142,11 +2198,101 @@ class IncidentSyncService:
             else:
                 target.last_failure_at = now
                 target.last_check_error = (err or (f"HTTP{code}" if code else "send failed"))[:200]
+            readiness = self._readiness(target)
+            self._log_check(session, target_id, "test", readiness["state"],
+                            actor=actor, detail=(target.last_check_error or "synthetic test ok"))
             session.commit()
             return {"ok": ok, "status_code": code,
                     "error": None if ok else target.last_check_error,
                     "message": "Synthetic test event sent." if ok else "Test send failed.",
-                    "readiness": self._readiness(target), "readiness_facts": self._readiness_facts(target)}
+                    "readiness": readiness, "readiness_facts": self._readiness_facts(target)}
+
+    # ── lifecycle: secret rotation, scheduled revalidation, attention, history ──
+
+    def rotate_secret(self, target_id: str, new_secret: Optional[str], *,
+                      actor: Optional[str] = None) -> Optional[dict[str, Any]]:
+        """Rotate a target's signing secret (or clear it). Invalidates prior readiness
+        evidence so the target must be revalidated, and records the rotation. The
+        secret value is never returned."""
+        with self._session_factory() as session:
+            row = session.get(ExternalIncidentTarget, target_id)
+            if row is None:
+                return None
+            row.secret = (new_secret or None)
+            self._invalidate_readiness(row)
+            self._log_check(session, target_id, "secret_rotated", "unverified",
+                            actor=actor, detail="secret rotated — revalidation required")
+            session.commit()
+            return {"ok": True, "target": self._clean_target(row),
+                    "message": "Secret rotated. Revalidate the target before relying on it."}
+
+    def revalidate_stale(self, *, max_targets: Optional[int] = None,
+                         actor: Optional[str] = None) -> dict[str, int]:
+        """Bounded scheduled revalidation: re-run preflight on enabled targets whose
+        readiness needs attention (stale / unverified / degraded), capped per sweep so
+        we never hammer external endpoints. Records `revalidate` history events."""
+        cap = max_targets if max_targets is not None else int(getattr(settings, "incident_revalidate_max_per_sweep", 10))
+        cap = max(1, int(cap))
+        counts = {"checked": 0, "ready": 0, "attention": 0}
+        try:
+            with self._session_factory() as session:
+                rows = session.query(ExternalIncidentTarget).filter(
+                    ExternalIncidentTarget.enabled.is_(True)).all()
+                candidates = [r.id for r in rows
+                              if self._readiness(r)["state"] in READY_ATTENTION_STATES][:cap]
+            for target_id in candidates:
+                result = self.validate(target_id, actor=actor)
+                if result is None:
+                    continue
+                # The validate() already logged a 'validate' event; add the revalidate marker.
+                with self._session_factory() as session:
+                    self._log_check(session, target_id, "revalidate", result["readiness"]["state"],
+                                    actor=actor, detail=result["readiness"]["reason"])
+                    session.commit()
+                counts["checked"] += 1
+                if result["readiness"]["state"] == READY_READY:
+                    counts["ready"] += 1
+                else:
+                    counts["attention"] += 1
+        except Exception:
+            return counts
+        return counts
+
+    def targets_needing_attention(self) -> list[dict[str, Any]]:
+        """Operator triage: enabled targets whose readiness is NOT ready and NOT an
+        intentional disable (stale / degraded / auth_failed / test_failed /
+        invalid_config / unverified). Curated; secrets never exposed."""
+        out: list[dict[str, Any]] = []
+        try:
+            with self._session_factory() as session:
+                rows = (session.query(ExternalIncidentTarget)
+                        .order_by(ExternalIncidentTarget.created_at.desc()).all())
+                for row in rows:
+                    readiness = self._readiness(row)
+                    if readiness["state"] in READY_ATTENTION_STATES:
+                        out.append({
+                            "id": row.id, "name": row.name, "kind": row.kind,
+                            "profile": self._resolve_profile(row),
+                            "enabled": bool(row.enabled),
+                            "readiness": readiness,
+                            "readiness_facts": self._readiness_facts(row),
+                        })
+        except Exception:
+            return []
+        return out
+
+    def target_check_history(self, target_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
+        """Curated readiness/lifecycle history for one target (newest first)."""
+        try:
+            with self._session_factory() as session:
+                rows = (session.query(IncidentTargetCheckEvent)
+                        .filter(IncidentTargetCheckEvent.target_id == target_id)
+                        .order_by(IncidentTargetCheckEvent.id.desc()).limit(min(limit, 100)).all())
+                return [{"event": r.event, "outcome": r.outcome, "actor": r.actor,
+                         "detail": r.detail,
+                         "at": r.created_at.isoformat() if r.created_at else None} for r in rows]
+        except Exception:
+            return []
 
     def target_health(self, target_id: str) -> Optional[dict[str, Any]]:
         """Curated health for one target: recent attempt mix + last success/failure."""
@@ -2169,11 +2315,13 @@ class IncidentSyncService:
                 "last_failed_at": (failed[0].created_at.isoformat() if failed and failed[0].created_at else None),
                 "last_error": (failed[0].last_error if failed else None),
             })
+            clean["check_history"] = self.target_check_history(target_id, limit=10)
             return clean
 
     def clear_all(self) -> None:
         try:
             with self._session_factory() as session:
+                session.query(IncidentTargetCheckEvent).delete()
                 session.query(IncidentReconciliationEvent).delete()
                 session.query(IncidentExternalLink).delete()
                 session.query(IncidentSyncRecord).delete()

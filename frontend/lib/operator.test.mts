@@ -137,10 +137,12 @@ test("readinessTone + readinessLabel are honest about verification state", () =>
   assert.equal(readinessTone("ready"), "good");
   assert.equal(readinessTone("unverified"), "warn");
   assert.equal(readinessTone("degraded"), "warn");
+  assert.equal(readinessTone("stale"), "warn");
   assert.equal(readinessTone("auth_failed"), "bad");
   assert.equal(readinessTone("invalid_config"), "bad");
   assert.equal(readinessTone("disabled"), "muted");
   assert.equal(readinessLabel("test_failed"), "Test failed");
+  assert.equal(readinessLabel("stale"), "Stale");
   assert.equal(readinessLabel("unverified"), "Unverified");
 });
 

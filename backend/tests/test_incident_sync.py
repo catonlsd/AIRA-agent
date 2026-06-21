@@ -1526,3 +1526,127 @@ def test_no_readiness_fields_leak_into_user_routes(capture_send):
     user_job = client.get(f"/jobs/{job['id']}", headers=auth).json()["job"]
     for operator_only in ("readiness", "readiness_facts", "last_validated_at", "last_check_error"):
         assert operator_only not in user_job
+
+
+# ── Phase 2: target lifecycle & secret hygiene (rotation/stale/history/attention) ──
+
+
+def _make_ready(monkeypatch, **kw):
+    """A validated, ready target (stubs connectivity)."""
+    def _f(self, url, ref, secret, adapter=None):
+        return (True, {"exists": True, "status": "open"}, None)
+    monkeypatch.setattr(type(incident_sync_service), "_fetch", _f)
+    t = incident_sync_service.create_target(name=kw.get("name", "pd"),
+                                            url="https://h.example.com/pd", kind="pagerduty")
+    incident_sync_service.validate(t["id"])
+    return t
+
+
+def test_stale_readiness_when_evidence_ages_out(monkeypatch):
+    from app.incident_sync import compute_readiness, READY_READY, READY_STALE
+    from datetime import datetime, timedelta
+    now = datetime(2026, 6, 20)
+    base = dict(enabled=True, config_ok=True, config_reason="ok", last_validated_at=now,
+                last_test_at=None, last_failure_at=None, last_check_error=None, last_check_kind="connectivity")
+    # Fresh success → ready; aged success → stale.
+    assert compute_readiness(**base, last_success_at=now, now=now, stale_seconds=3600)["state"] == READY_READY
+    old = now - timedelta(hours=2)
+    assert compute_readiness(**{**base, "last_validated_at": old}, last_success_at=old, now=now, stale_seconds=3600)["state"] == READY_STALE
+
+
+def test_secret_change_invalidates_readiness_and_logs(monkeypatch):
+    t = _make_ready(monkeypatch)
+    assert incident_sync_service.get_target(t["id"])["readiness"]["state"] == "ready"
+    # Changing the secret wipes evidence → unverified, and records why.
+    updated = incident_sync_service.update_target(t["id"], secret="new-secret", _actor="alice")
+    assert updated["readiness"]["state"] == "unverified"
+    hist = incident_sync_service.target_check_history(t["id"])
+    assert any(h["event"] == "config_changed" and "secret" in (h["detail"] or "") for h in hist)
+    # Secret value never returned.
+    assert "new-secret" not in str(updated) and updated["has_secret"] is True
+
+
+def test_rotate_secret_requires_revalidation(monkeypatch):
+    t = _make_ready(monkeypatch)
+    result = incident_sync_service.rotate_secret(t["id"], "sekret-xyz", actor="bob")
+    assert result["ok"] and result["target"]["readiness"]["state"] == "unverified"
+    assert result["target"]["has_secret"] is True and "sekret-xyz" not in str(result)
+    hist = incident_sync_service.target_check_history(t["id"])
+    assert hist[0]["event"] == "secret_rotated" and hist[0]["outcome"] == "unverified"
+
+
+def test_disable_reenable_is_audited(monkeypatch):
+    t = _make_ready(monkeypatch)
+    incident_sync_service.update_target(t["id"], enabled=False, _actor="alice")
+    assert incident_sync_service.get_target(t["id"])["readiness"]["state"] == "disabled"
+    incident_sync_service.update_target(t["id"], enabled=True, _actor="alice")
+    events = [h["event"] for h in incident_sync_service.target_check_history(t["id"])]
+    assert "disabled" in events and "enabled" in events
+
+
+def test_needs_attention_lists_unready_targets(monkeypatch):
+    ready = _make_ready(monkeypatch, name="good")
+    # A second target left unverified (never validated).
+    incident_sync_service.create_target(name="bad", url="https://h.example.com/bad", kind="pagerduty")
+    attention = incident_sync_service.targets_needing_attention()
+    names = {t["name"] for t in attention}
+    assert "bad" in names and "good" not in names  # ready target excluded
+    assert all(t["readiness"]["state"] in
+               {"unverified", "degraded", "invalid_config", "auth_failed", "test_failed", "stale"}
+               for t in attention)
+
+
+def test_revalidate_stale_rechecks_attention_targets(monkeypatch):
+    # An unverified target gets revalidated by the bounded sweep.
+    def _f(self, url, ref, secret, adapter=None):
+        return (True, {"exists": True, "status": "open"}, None)
+    monkeypatch.setattr(type(incident_sync_service), "_fetch", _f)
+    t = incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    assert incident_sync_service.get_target(t["id"])["readiness"]["state"] == "unverified"
+    counts = incident_sync_service.revalidate_stale()
+    assert counts["checked"] >= 1 and counts["ready"] >= 1
+    assert incident_sync_service.get_target(t["id"])["readiness"]["state"] == "ready"
+    assert any(h["event"] == "revalidate" for h in incident_sync_service.target_check_history(t["id"]))
+
+
+def test_lifecycle_over_http_with_gating(op, monkeypatch):
+    def _f(self, url, ref, secret, adapter=None):
+        return (True, {"exists": True, "status": "open"}, None)
+    monkeypatch.setattr(type(incident_sync_service), "_fetch", _f)
+    created = client.post("/operator/incident-targets", headers=OP,
+                          json={"name": "pd", "url": "https://h.example.com/pd", "kind": "pagerduty", "secret": "s1"}).json()["target"]
+    client.post(f"/operator/incident-targets/{created['id']}/validate", headers=OP)
+    # Rotate secret over HTTP → unverified + audited; secret hidden.
+    rot = client.post(f"/operator/incident-targets/{created['id']}/rotate-secret", headers=OP, json={"secret": "s2"}).json()
+    assert rot["target"]["readiness"]["state"] == "unverified" and "s2" not in str(rot)
+    # Needs-attention list includes it now.
+    attention = client.get("/operator/incident-targets/attention", headers=OP).json()["targets"]
+    assert any(t["id"] == created["id"] for t in attention)
+    # Health carries the check history.
+    health = client.get(f"/operator/incident-targets/{created['id']}/health", headers=OP).json()["target"]
+    assert any(h["event"] == "secret_rotated" for h in health["check_history"])
+    # Gating.
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.post(f"/operator/incident-targets/{created['id']}/rotate-secret", headers=auth, json={"secret": "x"}).status_code in (401, 403)
+    assert client.get("/operator/incident-targets/attention", headers=auth).status_code in (401, 403)
+    assert client.post("/operator/incident-targets/nope/rotate-secret", headers=OP, json={}).status_code == 404
+
+
+def test_revalidate_config_rejected():
+    from app.core.config import Settings
+    with pytest.raises(ValueError):
+        Settings(incident_target_revalidate_seconds=0)
+    with pytest.raises(ValueError):
+        Settings(incident_revalidate_max_per_sweep=0)
+
+
+def test_no_lifecycle_fields_leak_into_user_routes(capture_send):
+    from app.execution_queue import execution_queue
+    incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    owner = _account()
+    job = execution_queue.enqueue(f"account:{owner['id']}", "noop", {}, title="T")
+    auth = {"Authorization": f"Bearer {make_account_token(owner['id'])}"}
+    user_job = client.get(f"/jobs/{job['id']}", headers=auth).json()["job"]
+    for operator_only in ("check_history", "secret_rotated"):
+        assert operator_only not in user_job

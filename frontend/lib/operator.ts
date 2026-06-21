@@ -180,7 +180,14 @@ export type TargetPolicyOverrides = {
 export type InboundFieldName = "assignee" | "severity" | "updated_at" | "comment_count";
 
 export type ReadinessState =
-  | "unverified" | "ready" | "degraded" | "invalid_config" | "auth_failed" | "test_failed" | "disabled";
+  | "unverified" | "ready" | "degraded" | "invalid_config" | "auth_failed" | "test_failed" | "disabled" | "stale";
+
+export type TargetCheckEvent = { event: string; outcome: string; actor: string | null; detail: string | null; at: string | null };
+
+export type AttentionTarget = {
+  id: string; name: string; kind: string; profile: string; enabled: boolean;
+  readiness: TargetReadiness; readiness_facts: ReadinessFacts;
+};
 
 export type TargetReadiness = { state: ReadinessState; source: string; reason: string };
 
@@ -214,6 +221,7 @@ export type IncidentTarget = {
   policy_overrides: TargetPolicyOverrides;
   readiness: TargetReadiness;
   readiness_facts: ReadinessFacts;
+  check_history?: TargetCheckEvent[];
   created_at: string | null;
 };
 
@@ -410,7 +418,7 @@ export function policyOverrideLabel(override: boolean | null): string {
  * "merely configured" (unverified) vs actually checked. */
 export function readinessTone(state: ReadinessState): Tone {
   if (state === "ready") return "good";
-  if (state === "degraded" || state === "unverified") return "warn";
+  if (state === "degraded" || state === "unverified" || state === "stale") return "warn";
   if (state === "invalid_config" || state === "auth_failed" || state === "test_failed") return "bad";
   return "muted"; // disabled
 }
@@ -419,7 +427,7 @@ export function readinessLabel(state: ReadinessState): string {
   const labels: Record<ReadinessState, string> = {
     unverified: "Unverified", ready: "Ready", degraded: "Degraded",
     invalid_config: "Invalid config", auth_failed: "Auth failed",
-    test_failed: "Test failed", disabled: "Disabled",
+    test_failed: "Test failed", disabled: "Disabled", stale: "Stale",
   };
   return labels[state] ?? state;
 }
@@ -940,4 +948,20 @@ export async function fetchTargetHealth(targetId: string): Promise<IncidentTarge
   if (!res.ok) return null;
   const body = await res.json();
   return body?.target ?? null;
+}
+
+export async function rotateTargetSecret(targetId: string, secret: string | null): Promise<IncidentTarget | null> {
+  const res = await fetch(`${API_URL}/operator/incident-targets/${encodeURIComponent(targetId)}/rotate-secret`, {
+    method: "POST", cache: "no-store", headers: opHeaders(true), body: JSON.stringify({ secret }),
+  });
+  if (!res.ok) return null;
+  const body = await res.json();
+  return body?.target ?? null;
+}
+
+export async function fetchTargetsNeedingAttention(): Promise<AttentionTarget[]> {
+  const res = await fetch(`${API_URL}/operator/incident-targets/attention`, { cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return [];
+  const body = await res.json();
+  return Array.isArray(body?.targets) ? body.targets : [];
 }

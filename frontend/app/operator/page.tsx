@@ -172,6 +172,7 @@ function SyncPanel({ targets, records, onRedrive, onValidate, onTest, busyId, fl
 }) {
   if (targets.length === 0 && records.length === 0) return null;
   const failed = records.filter((r) => r.status === "failed");
+  const attention = targets.filter((t) => t.enabled && t.readiness.state !== "ready");
   return (
     <section className="sarvam-card rounded-[1.5rem] p-5">
       <div className="mb-3 flex items-baseline gap-2">
@@ -179,6 +180,7 @@ function SyncPanel({ targets, records, onRedrive, onValidate, onTest, busyId, fl
           <Share2 className="h-3.5 w-3.5" /> External sync
         </p>
         <span className="text-[11px] text-[var(--text-muted)]">· outbound incident export</span>
+        {attention.length > 0 ? <span className="rounded-full border border-[var(--warning)] px-1.5 text-[10px] font-black text-[var(--warning)]">{attention.length} need{attention.length === 1 ? "s" : ""} attention</span> : null}
         {failed.length > 0 ? <span className="ml-auto rounded-full bg-[var(--danger)] px-1.5 text-[10px] font-black text-white">{failed.length} failed</span> : null}
       </div>
 

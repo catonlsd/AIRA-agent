@@ -524,6 +524,27 @@ class IncidentReconciliationEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
 
 
+class IncidentTargetCheckEvent(Base):
+    """A curated, append-only readiness-history entry for a sync TARGET (lifecycle).
+
+    One row per validate / test / revalidate / secret_rotated / config_changed /
+    disabled / enabled action, with the resulting readiness/outcome and a brief,
+    secret-free reason. Separate from incident business state and from the
+    reconciliation trail (which is per-incident): this answers "what happened to this
+    target's trust over time, and why?" The monotonic integer PK gives stable order.
+    """
+
+    __tablename__ = "incident_target_check_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    target_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    event: Mapped[str] = mapped_column(String(24), nullable=False)     # validate|test|revalidate|secret_rotated|config_changed|disabled|enabled
+    outcome: Mapped[str] = mapped_column(String(24), nullable=False)   # the readiness state / ok / failed
+    actor: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    detail: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+
+
 class ContextBundle(Base):
     """A durable, scope-owned "handoff pack" — a saved combination of context
     references (documents, artifacts, runs) that can be reloaded into chat later.

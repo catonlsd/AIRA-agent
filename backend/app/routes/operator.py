@@ -418,10 +418,11 @@ def operator_deliveries_sweep(request: Request) -> dict:
     routing = delivery_service.route_alerts_detailed(alerts)
     result = delivery_service.deliver_pending()
     incident_service.recover_stale([signal_of(a) for a in alerts])
-    try:  # best-effort: retry pending syncs + bounded reconciliation of stale links
+    try:  # best-effort: retry pending syncs + reconcile stale links + revalidate targets
         from app.incident_sync import incident_sync_service
         incident_sync_service.flush_pending()
         incident_sync_service.reconcile()
+        incident_sync_service.revalidate_stale()
     except Exception:
         pass
     return {"routing": routing, **result}
@@ -643,6 +644,11 @@ class SyncExternalActionBody(BaseModel):
     target_id: str | None = Field(default=None, max_length=36)
 
 
+class RotateSecretBody(BaseModel):
+    # The new signing secret (omit/null to clear it). Never returned by read APIs.
+    secret: str | None = Field(default=None, max_length=255)
+
+
 @router.get("/incident-target-profiles")
 def operator_list_incident_target_profiles(request: Request) -> dict:
     """Available adapter profiles/presets an operator can onboard a target from (G-14):
@@ -681,7 +687,8 @@ def operator_update_incident_target(target_id: str, body: IncidentTargetUpdate, 
     _require_operator(request)
     from app.incident_sync import incident_sync_service
 
-    target = incident_sync_service.update_target(target_id, **body.model_dump(exclude_none=True))
+    target = incident_sync_service.update_target(target_id, _actor=_operator_name(request),
+                                                 **body.model_dump(exclude_none=True))
     if target is None:
         raise HTTPException(status_code=404, detail="Target not found or invalid update.")
     return {"target": target}
@@ -954,6 +961,30 @@ def operator_incident_target_test(target_id: str, request: Request) -> dict:
     if not result.get("ok") and result.get("code") in ("disabled", "invalid_config"):
         raise HTTPException(status_code=409, detail=result.get("message", "Cannot test this target."))
     return result
+
+
+@router.post("/incident-targets/{target_id}/rotate-secret")
+def operator_incident_target_rotate_secret(target_id: str, body: RotateSecretBody, request: Request) -> dict:
+    """Rotate a target's signing secret (or clear it). Invalidates prior readiness
+    evidence so the target reads `unverified` until revalidated; records the rotation.
+    The secret value is never returned."""
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    result = incident_sync_service.rotate_secret(target_id, body.secret, actor=_operator_name(request))
+    if result is None:
+        raise HTTPException(status_code=404, detail="Target not found.")
+    return result
+
+
+@router.get("/incident-targets/attention")
+def operator_incident_targets_attention(request: Request) -> dict:
+    """Targets that need operator attention — enabled but not ready (stale / degraded /
+    auth_failed / test_failed / invalid_config / unverified). Curated triage list."""
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    return {"targets": incident_sync_service.targets_needing_attention()}
 
 
 @router.get("/incident-targets/{target_id}/capabilities")
