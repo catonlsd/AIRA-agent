@@ -1650,3 +1650,156 @@ def test_no_lifecycle_fields_leak_into_user_routes(capture_send):
     user_job = client.get(f"/jobs/{job['id']}", headers=auth).json()["job"]
     for operator_only in ("check_history", "secret_rotated"):
         assert operator_only not in user_job
+
+
+# ── Phase 4: operator runbooks — derived metadata, triage rollups, audit summaries ──
+
+
+def test_readiness_guidance_is_pure_table_driven():
+    from app.incident_sync import (readiness_guidance, READY_READY, READY_UNVERIFIED,
+                                   READY_AUTH_FAILED, READY_INVALID_CONFIG, READY_TEST_FAILED,
+                                   READY_STALE, READY_DEGRADED, READY_DISABLED)
+    # Each attention state maps to a stable recommended_action; ready maps to none.
+    assert readiness_guidance(READY_READY)["recommended_action"] is None
+    assert readiness_guidance(READY_UNVERIFIED)["recommended_action"] == "validate"
+    assert readiness_guidance(READY_STALE)["recommended_action"] == "validate"
+    assert readiness_guidance(READY_DEGRADED)["recommended_action"] == "validate"
+    assert readiness_guidance(READY_AUTH_FAILED)["recommended_action"] == "rotate_secret"
+    assert readiness_guidance(READY_INVALID_CONFIG)["recommended_action"] == "fix_config"
+    assert readiness_guidance(READY_TEST_FAILED)["recommended_action"] == "test"
+    assert readiness_guidance(READY_DISABLED)["recommended_action"] == "enable"
+    # Every entry carries a short, non-empty next_step sentence (except unknown).
+    assert readiness_guidance(READY_AUTH_FAILED)["next_step"]
+    # Unknown / None states degrade safely — no crash, no advice.
+    assert readiness_guidance(None) == {"recommended_action": None, "next_step": None}
+    assert readiness_guidance("not-a-state")["recommended_action"] is None
+    # Pure: returns a fresh dict each call (caller can't mutate the table).
+    g = readiness_guidance(READY_AUTH_FAILED)
+    g["recommended_action"] = "tampered"
+    assert readiness_guidance(READY_AUTH_FAILED)["recommended_action"] == "rotate_secret"
+
+
+def test_readiness_carries_recommended_action_everywhere():
+    # A fresh target is unverified → the runbook step rides along with readiness.
+    t = incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    r = t["readiness"]
+    assert r["state"] == "unverified" and r["recommended_action"] == "validate" and r["next_step"]
+    # Same on a re-read and in the health view.
+    assert incident_sync_service.get_target(t["id"])["readiness"]["recommended_action"] == "validate"
+
+
+def test_auth_failure_recommends_secret_rotation(monkeypatch):
+    _stub_fetch(monkeypatch, ok=False, snapshot=None, err="HTTP401")
+    t = incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    result = incident_sync_service.validate(t["id"])
+    assert result["readiness"]["state"] == "auth_failed"
+    assert result["readiness"]["recommended_action"] == "rotate_secret"
+
+
+def test_attention_items_carry_flattened_triage_fields(monkeypatch):
+    _make_ready(monkeypatch, name="good")
+    incident_sync_service.create_target(name="bad", url="https://h.example.com/bad", kind="pagerduty")
+    attention = incident_sync_service.targets_needing_attention()
+    bad = next(t for t in attention if t["name"] == "bad")
+    assert bad["attention_reason"] == bad["readiness"]["reason"]
+    assert bad["recommended_action"] == "validate" and bad["next_step"]
+    assert bad["since"]  # the waiting-since timestamp is surfaced
+
+
+def test_attention_summary_rolls_up_deterministically(monkeypatch):
+    # ready + two distinct attention states + a disabled target.
+    _make_ready(monkeypatch, name="ready1")
+    incident_sync_service.create_target(name="unv", url="https://h.example.com/u", kind="pagerduty")
+    _stub_fetch(monkeypatch, ok=False, snapshot=None, err="HTTP401")
+    auth = incident_sync_service.create_target(name="authbad", url="https://h.example.com/a", kind="pagerduty")
+    incident_sync_service.validate(auth["id"])
+    incident_sync_service.create_target(name="off", url="https://h.example.com/o", kind="pagerduty", enabled=False)
+
+    summary = incident_sync_service.attention_summary()
+    roll = summary["rollup"]
+    assert roll["total"] == 4 and roll["ready"] == 1 and roll["disabled"] == 1 and roll["attention"] == 2
+    # Grouped by readiness state and by recommended action.
+    assert summary["by_state"].get("unverified") == 1 and summary["by_state"].get("auth_failed") == 1
+    assert summary["by_action"].get("validate") == 1 and summary["by_action"].get("rotate_secret") == 1
+    # The oldest unresolved attention item is surfaced (summary, not a dump).
+    assert summary["oldest"] and summary["oldest"]["state"] in ("unverified", "auth_failed")
+    assert "recommended_action" in summary["oldest"] and summary["oldest"]["since"]
+
+
+def test_attention_summary_empty_is_all_zeros():
+    summary = incident_sync_service.attention_summary()
+    assert summary == {"rollup": {"ready": 0, "attention": 0, "disabled": 0, "total": 0},
+                       "by_state": {}, "by_action": {}, "oldest": None}
+
+
+def test_attention_summary_oldest_is_earliest(monkeypatch):
+    # Two unverified targets; age one's evidence so it is unambiguously the oldest.
+    first = incident_sync_service.create_target(name="old", url="https://h.example.com/old", kind="pagerduty")
+    incident_sync_service.create_target(name="new", url="https://h.example.com/new", kind="pagerduty")
+    with SessionLocal() as s:
+        from app.db.models import ExternalIncidentTarget
+        row = s.get(ExternalIncidentTarget, first["id"])
+        row.created_at = _now() - timedelta(days=30)
+        s.commit()
+    summary = incident_sync_service.attention_summary()
+    assert summary["oldest"]["name"] == "old"
+
+
+def test_check_summary_surfaces_last_pass_and_fail(monkeypatch):
+    # A failed validate, then a passing one → the audit summary separates them.
+    _stub_fetch(monkeypatch, ok=False, snapshot=None, err="HTTP401")
+    t = incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    incident_sync_service.validate(t["id"])      # → auth_failed (a failed validation)
+    _stub_fetch(monkeypatch, ok=True)
+    incident_sync_service.validate(t["id"])      # → ready (a passing validation)
+
+    summary = incident_sync_service.target_health(t["id"])["check_summary"]
+    assert summary["last_validation_ok"] and summary["last_validation_ok"]["outcome"] == "ready"
+    assert summary["last_validation_failed"] and summary["last_validation_failed"]["outcome"] == "auth_failed"
+    # The latest meaningful event is the most recent (the passing validate).
+    assert summary["latest"]["outcome"] == "ready"
+
+
+def test_link_guidance_is_deterministic():
+    from app.incident_sync import (link_guidance, LINK_LINKED, LINK_MISSING, LINK_DRIFTED,
+                                   LINK_STALE, LINK_DETACHED)
+    assert link_guidance(LINK_LINKED)["recommended_action"] is None
+    assert link_guidance(LINK_MISSING)["recommended_action"] == "detach"
+    assert link_guidance(LINK_DRIFTED)["recommended_action"] == "refresh"
+    assert link_guidance(LINK_STALE)["recommended_action"] == "refresh"
+    assert link_guidance(LINK_DETACHED)["recommended_action"] == "relink"
+    # apply_action refines the recommendation when external state was actually observed.
+    assert link_guidance(LINK_DRIFTED, "accept_resolved")["recommended_action"] == "apply_resolved"
+    assert link_guidance(LINK_MISSING, "accept_missing")["recommended_action"] == "detach"
+    # Unknown state degrades safely.
+    assert link_guidance(None)["recommended_action"] is None
+
+
+def test_incident_status_summary_carries_action_and_last_reconciliation(capture_send, monkeypatch):
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="drift-meta")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "drift-meta")
+    # External resolved while local open → drift, and refresh logs a reconciliation event.
+    _fetch_returning(monkeypatch, ok=True, exists=True, status="resolved")
+    status = incident_sync_service.refresh(inc["id"])
+    summary = status["summary"]
+    assert summary["link_status"] == "drifted"
+    # Drift with external-resolved/local-open supports applying the resolution.
+    assert summary["recommended_action"] == "apply_resolved" and summary["next_step"]
+    # The single most recent reconciliation action is surfaced without a history dump.
+    assert summary["last_reconciliation"] and summary["last_reconciliation"]["action"]
+    assert summary["last_reconciliation"] == status["reconciliation"][0]
+
+
+def test_attention_summary_over_http_with_gating(op, monkeypatch):
+    _stub_fetch(monkeypatch, ok=False, snapshot=None, err="HTTP401")
+    created = client.post("/operator/incident-targets", headers=OP,
+                          json={"name": "pd", "url": "https://h.example.com/pd", "kind": "pagerduty"}).json()["target"]
+    client.post(f"/operator/incident-targets/{created['id']}/validate", headers=OP)
+    body = client.get("/operator/incident-targets/attention/summary", headers=OP).json()
+    assert body["rollup"]["attention"] >= 1 and body["by_action"].get("rotate_secret") == 1
+    assert body["oldest"]["recommended_action"] == "rotate_secret"
+    # Operator-only.
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.get("/operator/incident-targets/attention/summary", headers=auth).status_code in (401, 403)

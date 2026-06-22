@@ -75,6 +75,8 @@ import {
   pushIncidentOutward,
   readinessLabel,
   readinessTone,
+  recommendedActionLabel,
+  attentionRollupRows,
   redriveIncidentSyncContext,
   refreshIncidentSync,
   relinkIncident,
@@ -173,6 +175,12 @@ function SyncPanel({ targets, records, onRedrive, onValidate, onTest, busyId, fl
   if (targets.length === 0 && records.length === 0) return null;
   const failed = records.filter((r) => r.status === "failed");
   const attention = targets.filter((t) => t.enabled && t.readiness.state !== "ready");
+  // Deterministic triage rollup from already-loaded targets — grouped by readiness
+  // state, hard failures first, each labeled with the action that clears it.
+  const byState = attention.reduce<Record<string, number>>((acc, t) => {
+    acc[t.readiness.state] = (acc[t.readiness.state] ?? 0) + 1; return acc;
+  }, {});
+  const rollup = attentionRollupRows({ by_state: byState });
   return (
     <section className="sarvam-card rounded-[1.5rem] p-5">
       <div className="mb-3 flex items-baseline gap-2">
@@ -183,6 +191,18 @@ function SyncPanel({ targets, records, onRedrive, onValidate, onTest, busyId, fl
         {attention.length > 0 ? <span className="rounded-full border border-[var(--warning)] px-1.5 text-[10px] font-black text-[var(--warning)]">{attention.length} need{attention.length === 1 ? "s" : ""} attention</span> : null}
         {failed.length > 0 ? <span className="ml-auto rounded-full bg-[var(--danger)] px-1.5 text-[10px] font-black text-white">{failed.length} failed</span> : null}
       </div>
+
+      {rollup.length > 0 ? (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5" aria-label="Attention rollup">
+          {rollup.map((r) => (
+            <span key={r.state} className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 text-[10px]">
+              <Badge tone={r.tone}>{r.count}</Badge>
+              <span className="font-black text-[var(--text-strong)]">{r.label}</span>
+              {r.action ? <span className="text-[var(--text-subtle)]">→ {r.action}</span> : null}
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       {targets.length > 0 ? (
         <div className="mb-3 grid gap-1.5">
@@ -195,6 +215,9 @@ function SyncPanel({ targets, records, onRedrive, onValidate, onTest, busyId, fl
               <Badge tone={readinessTone(t.readiness.state)}>{readinessLabel(t.readiness.state)}</Badge>
               {t.readiness_facts.last_validated_at ? <span className="text-[var(--text-subtle)]">checked {relTime(t.readiness_facts.last_validated_at)}</span> : null}
               {t.readiness.state !== "ready" && t.readiness.reason ? <span className="text-[var(--text-subtle)]">· {t.readiness.reason}</span> : null}
+              {recommendedActionLabel(t.readiness.recommended_action) ? (
+                <span className="rounded-full border border-[var(--warning)] px-1.5 text-[10px] font-black text-[var(--warning)]" title={t.readiness.next_step ?? undefined}>→ {recommendedActionLabel(t.readiness.recommended_action)}</span>
+              ) : null}
               {t.consecutive_failures > 0 ? <span className="text-[var(--danger)]">⚠ {t.consecutive_failures}</span> : null}
               <span className="ml-auto flex items-center gap-1.5">
                 {flash[t.id] ? <span className="text-[var(--success)]">{flash[t.id]}</span> : null}

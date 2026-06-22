@@ -987,6 +987,18 @@ def operator_incident_targets_attention(request: Request) -> dict:
     return {"targets": incident_sync_service.targets_needing_attention()}
 
 
+@router.get("/incident-targets/attention/summary")
+def operator_incident_targets_attention_summary(request: Request) -> dict:
+    """Bounded, deterministic triage rollup over all targets: readiness rollup
+    (ready/attention/disabled/total), grouped attention reasons (by readiness state and
+    by recommended action), and the single oldest unresolved attention item. Summary
+    only — never a history dump."""
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    return incident_sync_service.attention_summary()
+
+
 @router.get("/incident-targets/{target_id}/capabilities")
 def operator_incident_target_capabilities(target_id: str, request: Request) -> dict:
     """The honest adapter capability set for a target (refresh / push_outward /

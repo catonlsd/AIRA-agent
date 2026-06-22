@@ -520,6 +520,27 @@ READY_ATTENTION_STATES = frozenset({
     READY_UNVERIFIED, READY_DEGRADED, READY_INVALID_CONFIG, READY_AUTH_FAILED,
     READY_TEST_FAILED, READY_STALE})
 
+# Deterministic, runbook-derived guidance per readiness state (Phase 4). `recommended_action`
+# is a stable code the console maps to a button + a runbook anchor; `next_step` is a short,
+# operator-safe sentence. NOT AI-generated — a fixed table over existing state.
+_READINESS_GUIDANCE: dict[str, dict[str, Optional[str]]] = {
+    READY_READY:          {"recommended_action": None, "next_step": "No action needed — last check succeeded."},
+    READY_UNVERIFIED:     {"recommended_action": "validate", "next_step": "Run preflight validation to verify config + connectivity."},
+    READY_STALE:          {"recommended_action": "validate", "next_step": "Re-run validation — evidence has aged out."},
+    READY_DEGRADED:       {"recommended_action": "validate", "next_step": "Re-run validation; if it keeps failing, check the endpoint/network."},
+    READY_AUTH_FAILED:    {"recommended_action": "rotate_secret", "next_step": "Rotate the signing secret, then revalidate."},
+    READY_INVALID_CONFIG: {"recommended_action": "fix_config", "next_step": "Correct the url/profile, then revalidate."},
+    READY_TEST_FAILED:    {"recommended_action": "test", "next_step": "Re-send a safe test once the endpoint recovers."},
+    READY_DISABLED:       {"recommended_action": "enable", "next_step": "Re-enable the target if it should be active."},
+}
+
+
+def readiness_guidance(state: Optional[str]) -> dict[str, Optional[str]]:
+    """The runbook step for a readiness state → {recommended_action, next_step}. Pure,
+    deterministic, table-driven — never AI advice."""
+    return dict(_READINESS_GUIDANCE.get(state or "", {"recommended_action": None, "next_step": None}))
+
+
 # The marker every synthetic test event carries, so receivers/logs never confuse it
 # with production incident traffic, and the vendor action is always a no-op.
 TEST_SIGNAL = "aira-x:preflight-test"
@@ -690,6 +711,33 @@ LINK_DETACHED = "detached"
 _LOCAL_OPEN = {"open", "acknowledged", "silenced"}
 _EXT_CLOSED = {EXT_RESOLVED, "closed", "done"}
 _EXT_OPEN = {EXT_OPEN, "triggered", EXT_ACKNOWLEDGED}
+
+# Deterministic, runbook-derived guidance per incident link state (Phase 4). A fixed
+# table — never AI advice. `apply_action` (computed from observed external/local state)
+# refines this when present; this is the fallback when no apply is on offer.
+_LINK_GUIDANCE: dict[str, dict[str, Optional[str]]] = {
+    LINK_LINKED:    {"recommended_action": None, "next_step": "Linked and in sync — no action needed."},
+    LINK_REFRESHED: {"recommended_action": None, "next_step": "Just refreshed — external state is current."},
+    LINK_NEVER:     {"recommended_action": None, "next_step": "Not linked to any external system."},
+    LINK_DETACHED:  {"recommended_action": "relink", "next_step": "Relink to a valid external reference if sync should resume."},
+    LINK_STALE:     {"recommended_action": "refresh", "next_step": "Refresh to recheck external state — last check has aged."},
+    LINK_MISSING:   {"recommended_action": "detach", "next_step": "External reference is gone — detach the dead link, or relink."},
+    LINK_DRIFTED:   {"recommended_action": "refresh", "next_step": "External and local disagree — refresh to confirm, then apply if local should follow."},
+}
+
+
+def link_guidance(link_status: Optional[str], apply_action: Optional[str] = None) -> dict[str, Optional[str]]:
+    """Runbook step for an incident link state → {recommended_action, next_step}. Pure
+    and deterministic. When the observed disagreement supports an `apply_action`, that
+    is the more specific recommendation."""
+    base = dict(_LINK_GUIDANCE.get(link_status or "", {"recommended_action": None, "next_step": None}))
+    if apply_action == "accept_resolved":
+        return {"recommended_action": "apply_resolved",
+                "next_step": "External is resolved while local is open — apply to recover the local incident, or refresh first."}
+    if apply_action == "accept_missing":
+        return {"recommended_action": "detach",
+                "next_step": "External reference is missing — detach the dead link."}
+    return base
 
 
 def _normalize_status(raw: Optional[str]) -> str:
@@ -1259,12 +1307,15 @@ class IncidentSyncService:
     @staticmethod
     def _readiness(row: ExternalIncidentTarget) -> dict[str, Any]:
         config_ok, config_reason = IncidentSyncService._validate_config(row)
-        return compute_readiness(
+        verdict = compute_readiness(
             enabled=bool(row.enabled), config_ok=config_ok, config_reason=config_reason,
             last_validated_at=row.last_validated_at, last_test_at=row.last_test_at,
             last_success_at=row.last_success_at, last_failure_at=row.last_failure_at,
             last_check_error=row.last_check_error, last_check_kind=row.last_check_kind,
             now=_now(), stale_seconds=int(getattr(settings, "incident_target_revalidate_seconds", 604800)))
+        # Attach the deterministic runbook step (recommended_action / next_step).
+        verdict.update(readiness_guidance(verdict["state"]))
+        return verdict
 
     @staticmethod
     def _readiness_facts(row: ExternalIncidentTarget) -> dict[str, Any]:
@@ -1415,7 +1466,9 @@ class IncidentSyncService:
                                          "can_apply": False, "apply_action": None,
                                          "can_push": False},
                              "available_actions": [],
-                             "support_level": "none", "suggestions": []}}
+                             "support_level": "none", "suggestions": [],
+                             "last_reconciliation": None,
+                             "recommended_action": None, "next_step": None}}
         try:
             local_incident = self._local_incident(incident_id)
             local_state = incident_state if incident_state is not None else (local_incident or {}).get("state")
@@ -1495,7 +1548,12 @@ class IncidentSyncService:
                 "available_actions": available_actions,
                 "support_level": support_level,
                 "suggestions": suggestions,
+                # Audit discoverability: the single most recent reconciliation action,
+                # surfaced without forcing the operator to expand the full trail.
+                "last_reconciliation": reconciliation[0] if reconciliation else None,
             }
+            # Deterministic runbook step for this link state (refined by apply_action).
+            summary.update(link_guidance(overall, apply_action))
             return {"linked": bool(active_links), "links": links, "records": records,
                     "reconciliation": reconciliation, "summary": summary}
         except Exception:
@@ -2258,10 +2316,16 @@ class IncidentSyncService:
             return counts
         return counts
 
+    @staticmethod
+    def _attention_since(row: ExternalIncidentTarget):
+        """The most relevant 'waiting since' timestamp for an attention item."""
+        return row.last_failure_at or row.last_validated_at or row.created_at
+
     def targets_needing_attention(self) -> list[dict[str, Any]]:
         """Operator triage: enabled targets whose readiness is NOT ready and NOT an
         intentional disable (stale / degraded / auth_failed / test_failed /
-        invalid_config / unverified). Curated; secrets never exposed."""
+        invalid_config / unverified). Curated; secrets never exposed. Each item carries
+        the flattened `attention_reason` + `recommended_action` for one-glance triage."""
         out: list[dict[str, Any]] = []
         try:
             with self._session_factory() as session:
@@ -2270,16 +2334,82 @@ class IncidentSyncService:
                 for row in rows:
                     readiness = self._readiness(row)
                     if readiness["state"] in READY_ATTENTION_STATES:
+                        since = self._attention_since(row)
                         out.append({
                             "id": row.id, "name": row.name, "kind": row.kind,
                             "profile": self._resolve_profile(row),
                             "enabled": bool(row.enabled),
                             "readiness": readiness,
                             "readiness_facts": self._readiness_facts(row),
+                            # Flattened for fast triage (also inside `readiness`).
+                            "attention_reason": readiness["reason"],
+                            "recommended_action": readiness.get("recommended_action"),
+                            "next_step": readiness.get("next_step"),
+                            "since": since.isoformat() if since else None,
                         })
         except Exception:
             return []
         return out
+
+    def attention_summary(self) -> dict[str, Any]:
+        """Bounded, deterministic triage rollup over ALL targets: readiness rollup,
+        grouped attention reasons (by state + by recommended action), and the single
+        oldest unresolved attention item. No history dump — just the summary."""
+        rollup = {"ready": 0, "attention": 0, "disabled": 0, "total": 0}
+        by_state: dict[str, int] = {}
+        by_action: dict[str, int] = {}
+        oldest: Optional[dict[str, Any]] = None
+        oldest_ts = None
+        try:
+            with self._session_factory() as session:
+                rows = session.query(ExternalIncidentTarget).all()
+                for row in rows:
+                    readiness = self._readiness(row)
+                    state = readiness["state"]
+                    rollup["total"] += 1
+                    if state == READY_DISABLED:
+                        rollup["disabled"] += 1
+                        continue
+                    if state in READY_ATTENTION_STATES:
+                        rollup["attention"] += 1
+                        by_state[state] = by_state.get(state, 0) + 1
+                        action = readiness.get("recommended_action")
+                        if action:
+                            by_action[action] = by_action.get(action, 0) + 1
+                        ts = self._attention_since(row)
+                        if ts is not None and (oldest_ts is None or ts < oldest_ts):
+                            oldest_ts = ts
+                            oldest = {"id": row.id, "name": row.name, "state": state,
+                                      "recommended_action": action,
+                                      "since": ts.isoformat() if ts else None}
+                    else:
+                        rollup["ready"] += 1
+        except Exception:
+            return {"rollup": rollup, "by_state": {}, "by_action": {}, "oldest": None}
+        return {"rollup": rollup, "by_state": by_state, "by_action": by_action, "oldest": oldest}
+
+    def _check_summary(self, target_id: str) -> dict[str, Any]:
+        """Audit DISCOVERABILITY (not duplication): the latest meaningful check event,
+        and the last validation that passed vs last that failed — derived from the
+        durable check-event trail, without dumping it."""
+        def clean(r):
+            return None if r is None else {"event": r.event, "outcome": r.outcome,
+                                           "actor": r.actor, "detail": r.detail,
+                                           "at": r.created_at.isoformat() if r.created_at else None}
+        try:
+            with self._session_factory() as session:
+                base = (session.query(IncidentTargetCheckEvent)
+                        .filter(IncidentTargetCheckEvent.target_id == target_id)
+                        .order_by(IncidentTargetCheckEvent.id.desc()))
+                latest = base.first()
+                val = base.filter(IncidentTargetCheckEvent.event.in_(("validate", "revalidate")))
+                last_ok = val.filter(IncidentTargetCheckEvent.outcome == READY_READY).first()
+                last_fail = val.filter(IncidentTargetCheckEvent.outcome != READY_READY).first()
+                return {"latest": clean(latest),
+                        "last_validation_ok": clean(last_ok),
+                        "last_validation_failed": clean(last_fail)}
+        except Exception:
+            return {"latest": None, "last_validation_ok": None, "last_validation_failed": None}
 
     def target_check_history(self, target_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
         """Curated readiness/lifecycle history for one target (newest first)."""
@@ -2316,6 +2446,7 @@ class IncidentSyncService:
                 "last_error": (failed[0].last_error if failed else None),
             })
             clean["check_history"] = self.target_check_history(target_id, limit=10)
+            clean["check_summary"] = self._check_summary(target_id)
             return clean
 
     def clear_all(self) -> None:

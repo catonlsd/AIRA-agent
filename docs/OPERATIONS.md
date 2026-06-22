@@ -1623,6 +1623,70 @@ incident business state, and validation/test never touch a real incident.
   field leaks into `/jobs/{id}`) and `frontend/lib/operator.test.mts` (`stale` in
   `readinessTone`/`readinessLabel`).
 
+### Operator runbooks & incident operations (Phase 4)
+
+Operating incident sync used to need tribal knowledge — an operator staring at a
+`degraded` target or a `drifted` incident had to *know* the recovery move. Phase 4
+turns that knowledge into **deterministic, table-driven metadata** (never AI advice)
+plus written runbooks, so the next step is on screen and recovery under pressure is a
+checklist, not a guess.
+
+**Derived metadata (deterministic — a fixed table over existing state).**
+- `readiness_guidance(state)` → `{recommended_action, next_step}` rides along on every
+  readiness object (so the console, attention list, and health view all carry it). The
+  action codes are stable: `validate` (unverified/stale/degraded), `rotate_secret`
+  (auth_failed), `fix_config` (invalid_config), `test` (test_failed), `enable`
+  (disabled). `ready` → no action.
+- `link_guidance(link_status, apply_action)` → `{recommended_action, next_step}` on an
+  incident's sync summary: `detach` (missing_external), `refresh` (stale/drifted),
+  `relink` (detached). When the observed disagreement supports an apply, that wins —
+  external-resolved/local-open → `apply_resolved`.
+- All guidance is **pure and unknown-safe**: an unrecognized state yields a null action,
+  never a crash or a fabricated suggestion.
+
+**Triage rollups (bounded, deterministic).**
+`attention_summary()` → `GET /operator/incident-targets/attention/summary` is a
+one-pass rollup over **all** targets — never a history dump:
+- `rollup` — `{ready, attention, disabled, total}` (the buckets always cover every
+  target).
+- `by_state` / `by_action` — grouped counts (how many auth failures? how many need a
+  secret rotation?).
+- `oldest` — the single longest-waiting attention item (by last-failure → last-validated
+  → created), so the most-stale problem is never buried.
+
+The console's External-sync panel renders a grouped rollup (hard failures first, each
+labeled with the action that clears it) and a `→ Rotate secret`-style next-step chip per
+unready target — all from already-loaded data, no extra round-trip.
+
+**Audit discoverability (surface, don't duplicate).**
+`target_health` gains a `check_summary` derived from the durable check trail:
+`latest` (most recent meaningful event), `last_validation_ok`, and
+`last_validation_failed` — so "when did this last pass, and when did it last fail?" is a
+glance, not a scroll through `check_history`. An incident's sync summary gains
+`last_reconciliation` (the single most recent reconciliation action) alongside the full
+`reconciliation` trail.
+
+**The runbooks.** Step-by-step recovery procedures for every operational task —
+target onboarding, validation / auth / readiness failures, secret rotation, drifted
+incidents, missing external references, relink, detach, external apply, external
+resolve/reopen/acknowledge, and recovery after accidental disablement — live in
+`docs/PRODUCTION_READINESS.md` (§8 Operator runbooks, §9 Troubleshooting matrix, §10
+Rollout guidance). Each maps the on-screen `recommended_action` to the exact operator
+move and its blast radius.
+
+- Guardrails preserved: **no automatic state mutation** (every recovery move stays a
+  deliberate, audited operator action), no weakening of operator-only separation (all
+  surfaces require the service key), no API breaks (every field is additive), and **no
+  change to the chat product**.
+- Pinned by `backend/tests/test_incident_sync.py` (guidance tables pure + unknown-safe;
+  readiness carries the action everywhere; auth-failure → rotate; attention items carry
+  flattened triage fields; `attention_summary` rollup/grouping/oldest incl. empty + the
+  oldest-is-earliest edge; `check_summary` separates last pass/fail; link guidance incl.
+  apply refinement; incident summary carries action + `last_reconciliation`; HTTP
+  summary endpoint with gating) and `frontend/lib/operator.test.mts`
+  (`recommendedActionLabel`, `readinessGuidanceAction`, `attentionRollupRows` ordering +
+  empty, `oldestAttentionLabel`).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

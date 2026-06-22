@@ -19,6 +19,10 @@ import {
   policySourceLabel,
   readinessLabel,
   readinessTone,
+  recommendedActionLabel,
+  readinessGuidanceAction,
+  attentionRollupRows,
+  oldestAttentionLabel,
   redriveBlockedReason,
   supportLevelLabel,
   syncStatusTone,
@@ -161,4 +165,51 @@ test("hiddenInboundFields lists only capable-but-policy-hidden fields", () => {
   // assignee: capable + hidden → listed. severity/updated_at: visible → not listed.
   // comment_count: not capable → not listed (nothing to hide).
   assert.deepEqual(hiddenInboundFields(link), ["assignee"]);
+});
+
+// ── Phase 4: operator-runbook metadata + triage rollups ───────────────────────
+
+test("recommendedActionLabel gives a short imperative per action; null passes through", () => {
+  assert.equal(recommendedActionLabel("rotate_secret"), "Rotate secret");
+  assert.equal(recommendedActionLabel("validate"), "Validate");
+  assert.equal(recommendedActionLabel("apply_resolved"), "Apply resolution");
+  assert.equal(recommendedActionLabel(null), null);
+  assert.equal(recommendedActionLabel(undefined), null);
+});
+
+test("readinessGuidanceAction mirrors the backend table deterministically", () => {
+  assert.equal(readinessGuidanceAction("ready"), null);
+  assert.equal(readinessGuidanceAction("unverified"), "validate");
+  assert.equal(readinessGuidanceAction("stale"), "validate");
+  assert.equal(readinessGuidanceAction("auth_failed"), "rotate_secret");
+  assert.equal(readinessGuidanceAction("invalid_config"), "fix_config");
+  assert.equal(readinessGuidanceAction("test_failed"), "test");
+  assert.equal(readinessGuidanceAction("disabled"), "enable");
+});
+
+test("attentionRollupRows orders hard failures first, with count/label/tone/action", () => {
+  const rows = attentionRollupRows({
+    by_state: { unverified: 2, auth_failed: 1, stale: 3 },
+  });
+  // Severity order: auth_failed (bad) before stale/unverified (warn).
+  assert.deepEqual(rows.map((r) => r.state), ["auth_failed", "stale", "unverified"]);
+  const auth = rows[0];
+  assert.equal(auth.count, 1);
+  assert.equal(auth.label, "Auth failed");
+  assert.equal(auth.tone, "bad");
+  assert.equal(auth.action, "Rotate secret");
+  // Zero-count states never appear.
+  assert.equal(rows.find((r) => r.state === "degraded"), undefined);
+});
+
+test("attentionRollupRows is empty when nothing needs attention", () => {
+  assert.deepEqual(attentionRollupRows({ by_state: {} }), []);
+});
+
+test("oldestAttentionLabel summarizes the longest-waiting item, or null", () => {
+  assert.equal(
+    oldestAttentionLabel({ oldest: { id: "t1", name: "pagerduty-prod", state: "auth_failed", recommended_action: "rotate_secret", since: "2026-06-01T00:00:00Z" } }),
+    "pagerduty-prod — Auth failed",
+  );
+  assert.equal(oldestAttentionLabel({ oldest: null }), null);
 });

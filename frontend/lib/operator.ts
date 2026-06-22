@@ -184,12 +184,43 @@ export type ReadinessState =
 
 export type TargetCheckEvent = { event: string; outcome: string; actor: string | null; detail: string | null; at: string | null };
 
+/** Deterministic, runbook-derived next action the operator should take. Maps to a
+ * console button + a runbook anchor. NOT AI advice — a fixed table over server state. */
+export type RecommendedAction =
+  | "validate" | "rotate_secret" | "fix_config" | "test" | "enable"
+  | "refresh" | "detach" | "relink" | "apply_resolved";
+
 export type AttentionTarget = {
   id: string; name: string; kind: string; profile: string; enabled: boolean;
   readiness: TargetReadiness; readiness_facts: ReadinessFacts;
+  // Flattened for one-glance triage (Phase 4).
+  attention_reason: string;
+  recommended_action: RecommendedAction | null;
+  next_step: string | null;
+  since: string | null;
 };
 
-export type TargetReadiness = { state: ReadinessState; source: string; reason: string };
+/** Bounded triage rollup over all targets (Phase 4) — readiness rollup, grouped
+ * attention reasons, and the single oldest unresolved item. Summary only. */
+export type AttentionSummary = {
+  rollup: { ready: number; attention: number; disabled: number; total: number };
+  by_state: Partial<Record<ReadinessState, number>>;
+  by_action: Partial<Record<RecommendedAction, number>>;
+  oldest: { id: string; name: string; state: ReadinessState; recommended_action: RecommendedAction | null; since: string | null } | null;
+};
+
+/** Audit summary derived from the durable check trail — surfaced, never duplicated. */
+export type CheckSummary = {
+  latest: TargetCheckEvent | null;
+  last_validation_ok: TargetCheckEvent | null;
+  last_validation_failed: TargetCheckEvent | null;
+};
+
+export type TargetReadiness = {
+  state: ReadinessState; source: string; reason: string;
+  recommended_action?: RecommendedAction | null;
+  next_step?: string | null;
+};
 
 export type ReadinessFacts = {
   last_validated_at: string | null;
@@ -222,6 +253,7 @@ export type IncidentTarget = {
   readiness: TargetReadiness;
   readiness_facts: ReadinessFacts;
   check_history?: TargetCheckEvent[];
+  check_summary?: CheckSummary;
   created_at: string | null;
 };
 
@@ -430,6 +462,60 @@ export function readinessLabel(state: ReadinessState): string {
     test_failed: "Test failed", disabled: "Disabled", stale: "Stale",
   };
   return labels[state] ?? state;
+}
+
+/** Short imperative label for a deterministic recommended action (pure; unit-tested).
+ * Drives the console's "what to do next" button text. Maps unknown codes to a safe
+ * generic so a future server action never renders blank. */
+export function recommendedActionLabel(action: RecommendedAction | null | undefined): string | null {
+  if (!action) return null;
+  const labels: Record<RecommendedAction, string> = {
+    validate: "Validate", rotate_secret: "Rotate secret", fix_config: "Fix config",
+    test: "Send test", enable: "Re-enable", refresh: "Refresh",
+    detach: "Detach", relink: "Relink", apply_resolved: "Apply resolution",
+  };
+  return labels[action] ?? "Review";
+}
+
+/** Bounded, human-readable triage rows from an AttentionSummary (pure; unit-tested):
+ * one row per readiness state, highest-severity first, each with its count, label,
+ * tone, and the action that clears it. Lets the console render a rollup without
+ * re-deriving severity or labels in JSX. */
+export function attentionRollupRows(
+  summary: Pick<AttentionSummary, "by_state">,
+): { state: ReadinessState; count: number; label: string; tone: Tone; action: string | null }[] {
+  // Most-actionable first so the operator's eye lands on hard failures before nags.
+  const order: ReadinessState[] = [
+    "auth_failed", "invalid_config", "test_failed", "degraded", "stale", "unverified",
+  ];
+  return order
+    .filter((state) => (summary.by_state[state] ?? 0) > 0)
+    .map((state) => ({
+      state,
+      count: summary.by_state[state] as number,
+      label: readinessLabel(state),
+      tone: readinessTone(state),
+      action: recommendedActionLabel(readinessGuidanceAction(state)),
+    }));
+}
+
+/** The deterministic recommended action for a readiness state — the frontend mirror
+ * of the backend table, so a rollup row can show its fix without a round-trip. */
+export function readinessGuidanceAction(state: ReadinessState): RecommendedAction | null {
+  const table: Record<ReadinessState, RecommendedAction | null> = {
+    ready: null, disabled: "enable", unverified: "validate", stale: "validate",
+    degraded: "validate", auth_failed: "rotate_secret", invalid_config: "fix_config",
+    test_failed: "test",
+  };
+  return table[state] ?? null;
+}
+
+/** One-line summary of the oldest unresolved attention item (pure; unit-tested), or
+ * null when nothing is waiting. Keeps the "longest-waiting" signal in one place. */
+export function oldestAttentionLabel(summary: Pick<AttentionSummary, "oldest">): string | null {
+  const o = summary.oldest;
+  if (!o) return null;
+  return `${o.name} — ${readinessLabel(o.state)}`;
 }
 
 /** Human label for where a policy decision came from (pure; unit-tested). Lets the
@@ -964,4 +1050,10 @@ export async function fetchTargetsNeedingAttention(): Promise<AttentionTarget[]>
   if (!res.ok) return [];
   const body = await res.json();
   return Array.isArray(body?.targets) ? body.targets : [];
+}
+
+export async function fetchAttentionSummary(): Promise<AttentionSummary | null> {
+  const res = await fetch(`${API_URL}/operator/incident-targets/attention/summary`, { cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return null;
+  return res.json();
 }
