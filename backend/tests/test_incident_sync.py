@@ -1803,3 +1803,149 @@ def test_attention_summary_over_http_with_gating(op, monkeypatch):
     acct = _account()
     auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
     assert client.get("/operator/incident-targets/attention/summary", headers=auth).status_code in (401, 403)
+
+
+# ── Phase 5: observability — bounded deterministic metrics, windows, SLI, alerts ──
+
+
+def test_metrics_pct_and_within_are_honest():
+    from app import incident_metrics as m
+    from datetime import datetime, timedelta
+    # Rate over zero decided samples is None (not a misleading 0%/100%).
+    assert m.pct(0, 0) is None
+    assert m.pct(3, 4) == 75.0 and m.pct(1, 3) == 33.3  # deterministic rounding
+    now = datetime(2026, 6, 22, 12, 0, 0)
+    assert m.within(now - timedelta(hours=1), now, m.WINDOWS["24h"]) is True
+    assert m.within(now - timedelta(hours=25), now, m.WINDOWS["24h"]) is False
+    assert m.within(None, now, m.WINDOWS["24h"]) is False
+    assert m.within(now + timedelta(hours=1), now, m.WINDOWS["24h"]) is False  # future excluded
+
+
+def test_metrics_window_rollup_is_bounded_and_nested():
+    from app import incident_metrics as m
+    from datetime import datetime, timedelta
+    now = datetime(2026, 6, 22, 12, 0, 0)
+    samples = [
+        (now - timedelta(hours=1), "pass"), (now - timedelta(hours=2), "fail"),
+        (now - timedelta(hours=5), "neutral"),                 # neutral excluded from pass_pct
+        (now - timedelta(days=3), "pass"),                     # in 7d/30d, not 24h
+        (now - timedelta(days=20), "fail"),                    # 30d only
+    ]
+    r = m.window_rollup(samples, now)
+    assert r["24h"] == {"pass": 1, "fail": 1, "neutral": 1, "total": 3, "pass_pct": 50.0}
+    assert r["7d"]["pass"] == 2 and r["7d"]["pass_pct"] == 66.7  # 2 pass / 3 decided
+    assert r["30d"]["total"] == 5 and r["30d"]["pass_pct"] == 50.0
+    # Empty input → zero counts, None rate (honest "no data").
+    empty = m.window_rollup([], now)
+    assert empty["24h"] == {"pass": 0, "fail": 0, "neutral": 0, "total": 0, "pass_pct": None}
+
+
+def test_metrics_categorize_and_classify():
+    from app import incident_metrics as m
+    assert m.recon_category("apply:accept_resolved") == "apply"
+    assert m.recon_category("external:external_resolve") == "external_action"
+    assert m.recon_category("refresh") == "refresh" and m.recon_category(None) == "unknown"
+    assert m.recon_class("ok") == "pass" and m.recon_class("missing") == "fail"
+    assert m.recon_class("skipped") == "neutral" and m.recon_class("unsupported") == "neutral"
+    assert m.validation_class("ready") == "pass" and m.validation_class("auth_failed") == "fail"
+    assert m.sync_class("synced") == "pass" and m.sync_class("failed") == "fail"
+    assert m.sync_class("pending") == "neutral"
+
+
+def test_metrics_candidate_alerts_threshold_and_severity():
+    from app import incident_metrics as m
+    # Below threshold → nothing.
+    assert m.candidate_alerts(auth_failures_by_target={"a": 2}, validation_failures_by_target={},
+                              drift_backlog=4, stale_count=2, recon_failures_24h=4) == []
+    # At threshold → warning; at 2x → critical. Critical sorts first, then by count desc.
+    alerts = m.candidate_alerts(
+        auth_failures_by_target={"pd": 6},                 # 6 >= 2*3 → critical
+        validation_failures_by_target={"pd": 6, "gen": 3},  # gen exactly at threshold → warning
+        drift_backlog=5, stale_count=3, recon_failures_24h=10)
+    codes = {a["code"] for a in alerts}
+    assert {"repeated_auth_failures", "repeated_validation_failures", "drift_backlog",
+            "stale_readiness", "reconciliation_failures"} <= codes
+    auth = next(a for a in alerts if a["code"] == "repeated_auth_failures")
+    assert auth["severity"] == "critical" and auth["subject"] == "pd" and auth["threshold"] == 3
+    gen = next(a for a in alerts if a["code"] == "repeated_validation_failures" and a["subject"] == "gen")
+    assert gen["severity"] == "warning"
+    # Critical-first ordering.
+    assert alerts[0]["severity"] == "critical"
+
+
+def test_metrics_readiness_distribution(monkeypatch):
+    ready = _make_ready(monkeypatch, name="good")  # validated → ready
+    incident_sync_service.create_target(name="unv", url="https://h.example.com/u", kind="pagerduty")
+    incident_sync_service.create_target(name="off", url="https://h.example.com/o", kind="pagerduty", enabled=False)
+    metrics = incident_sync_service.incident_metrics()
+    r = metrics["readiness"]
+    assert r["total"] == 3 and r["ready"] == 1 and r["disabled"] == 1 and r["attention"] == 1
+    assert r["distribution"]["ready"] == 1 and r["distribution"]["unverified"] == 1
+    assert r["distribution"]["disabled"] == 1
+    # SLO readiness % = ready / enabled (good + unv enabled = 2 → 50%).
+    assert metrics["slo"]["target_readiness_pct"] == 50.0
+
+
+def test_metrics_validation_rollup_and_slo(monkeypatch):
+    # One passing validation, then make it fail twice → 1 pass / 3 decided in 24h.
+    _stub_fetch(monkeypatch, ok=True)
+    t = incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    incident_sync_service.validate(t["id"])           # pass
+    _stub_fetch(monkeypatch, ok=False, snapshot=None, err="HTTP401")
+    incident_sync_service.validate(t["id"])           # fail (auth)
+    incident_sync_service.validate(t["id"])           # fail (auth)
+    metrics = incident_sync_service.incident_metrics()
+    v = metrics["windows"]["validation"]["24h"]
+    assert v["pass"] == 1 and v["fail"] == 2 and v["pass_pct"] == 33.3
+    assert metrics["slo"]["validation_pass_pct_24h"] == 33.3
+
+
+def test_metrics_reconciliation_refresh_and_drift_snapshot(capture_send, monkeypatch):
+    incident_sync_service.create_target(name="t", url="https://h.example.com/i")
+    incident_service.observe([_alert(job_id="drift-metric")])
+    inc = next(i for i in incident_service.list() if i["subject"] == "drift-metric")
+    _fetch_returning(monkeypatch, ok=True, exists=True, status="resolved")
+    incident_sync_service.refresh(inc["id"])           # logs refresh=ok + leaves link drifted
+    metrics = incident_sync_service.incident_metrics()
+    # Reconciliation + refresh rollups saw the successful refresh.
+    assert metrics["windows"]["reconciliation"]["24h"]["pass"] >= 1
+    assert metrics["windows"]["refresh"]["24h"]["pass"] >= 1
+    # Drift snapshot: backlog counts the drifted link with an age + oldest item.
+    drift = metrics["drift"]
+    assert drift["backlog"] >= 1 and drift["by_status"].get("drifted") == 1
+    assert drift["oldest"] and drift["oldest"]["link_status"] == "drifted"
+    assert drift["oldest"]["age_seconds"] >= 0
+
+
+def test_metrics_candidate_alerts_from_repeated_auth_failures(monkeypatch):
+    _stub_fetch(monkeypatch, ok=False, snapshot=None, err="HTTP401")
+    t = incident_sync_service.create_target(name="pd", url="https://h.example.com/pd", kind="pagerduty")
+    for _ in range(3):
+        incident_sync_service.validate(t["id"])        # 3 auth-failed validations in 24h
+    metrics = incident_sync_service.incident_metrics()
+    codes = {a["code"]: a for a in metrics["alerts"]}
+    assert "repeated_auth_failures" in codes and codes["repeated_auth_failures"]["subject"] == "pd"
+    assert codes["repeated_auth_failures"]["count"] == 3
+    # 3 failed validations also trips the validation-failure candidate.
+    assert "repeated_validation_failures" in codes
+
+
+def test_metrics_empty_is_well_formed():
+    metrics = incident_sync_service.incident_metrics()
+    assert metrics["readiness"]["total"] == 0
+    assert metrics["drift"]["backlog"] == 0 and metrics["alerts"] == []
+    assert metrics["slo"]["target_readiness_pct"] is None       # no targets → honest None
+    assert set(metrics["windows"].keys()) == {
+        "validation", "reconciliation", "refresh", "apply", "external_action", "sync"}
+    assert metrics["windows"]["validation"]["24h"]["pass_pct"] is None
+
+
+def test_metrics_over_http_with_gating(op, monkeypatch):
+    _make_ready(monkeypatch, name="good")
+    body = client.get("/operator/incident-sync/metrics", headers=OP).json()
+    assert body["readiness"]["ready"] == 1 and "generated_at" in body
+    assert "slo" in body and "alerts" in body and "drift" in body
+    # NOT parsed as a sync record id (distinct route), and operator-only.
+    acct = _account()
+    auth = {"Authorization": f"Bearer {make_account_token(acct['id'])}"}
+    assert client.get("/operator/incident-sync/metrics", headers=auth).status_code in (401, 403)

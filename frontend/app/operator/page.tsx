@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
+  Activity,
   AlertTriangle,
   BellOff,
   BellRing,
@@ -56,6 +57,7 @@ import {
   fetchIncidentSync,
   fetchIncidentSyncStatus,
   fetchIncidentTargets,
+  fetchIncidentMetrics,
   fetchIncidents,
   fetchLineage,
   fetchRoutingPreview,
@@ -77,6 +79,12 @@ import {
   readinessTone,
   recommendedActionLabel,
   attentionRollupRows,
+  readinessDashboardRows,
+  sloRows,
+  alertSeverityTone,
+  trendWindowLabel,
+  formatMetricPct,
+  formatAgeSeconds,
   redriveIncidentSyncContext,
   refreshIncidentSync,
   relinkIncident,
@@ -106,6 +114,8 @@ import {
   type IncidentSyncRecord,
   type IncidentSyncStatus,
   type IncidentTarget,
+  type IncidentMetrics,
+  type MetricCategory,
   type RoutingPreview,
   type Tone,
 } from "@/lib/operator";
@@ -166,6 +176,90 @@ function relTimeUntil(iso: string | null): string {
 
 // ── external incident sync (Incidents tab) — targets + recent attempts ────────
 const INC_BTN = "inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-strong)] transition hover:border-[var(--border-strong)] disabled:opacity-50";
+
+const METRIC_LABELS: Record<MetricCategory, string> = {
+  validation: "Validation", reconciliation: "Reconciliation", refresh: "Refresh",
+  apply: "Apply", external_action: "External action", sync: "Sync",
+};
+
+// Observability panel (Phase 5): bounded, deterministic operational metrics computed
+// server-side from existing audit/history. Observe-only — no actions live here.
+function MetricsPanel({ metrics, window }: { metrics: IncidentMetrics | null; window: "24h" | "7d" | "30d" }) {
+  if (!metrics) return null;
+  const { readiness, slo, drift, alerts } = metrics;
+  if (readiness.total === 0) return null;
+  const healthRows = readinessDashboardRows(readiness);
+  const indicators = sloRows(slo);
+  // Per-category pass rate for the selected trend window.
+  const windowRows = (Object.keys(METRIC_LABELS) as MetricCategory[]).map((cat) => {
+    const w = metrics.windows[cat]?.[window];
+    return { cat, label: METRIC_LABELS[cat], pass_pct: w?.pass_pct ?? null, total: w?.total ?? 0 };
+  });
+  return (
+    <section className="sarvam-card rounded-[1.5rem] p-5">
+      <div className="mb-3 flex items-baseline gap-2">
+        <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <Activity className="h-3.5 w-3.5" /> Sync observability
+        </p>
+        <span className="text-[11px] text-[var(--text-muted)]">· deterministic, computed from audit history</span>
+      </div>
+
+      {/* SLO indicators */}
+      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {indicators.map((s) => (
+          <div key={s.key} className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-[var(--text-subtle)]">{s.label}</p>
+            <p className={cn("text-lg font-black", TONE_TEXT[s.tone])}>{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Targets by state */}
+      <div className="mb-3 flex flex-wrap items-center gap-1.5" aria-label="Targets by state">
+        {healthRows.map((r) => (
+          <span key={r.key} className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 text-[10px]">
+            <Badge tone={r.tone}>{r.count}</Badge>
+            <span className="font-black text-[var(--text-strong)]">{r.label}</span>
+          </span>
+        ))}
+      </div>
+
+      {/* Trend window: per-category pass rate */}
+      <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px]">
+        <span className="font-black text-[var(--text-subtle)]">{trendWindowLabel(window)} pass rate:</span>
+        {windowRows.map((w) => (
+          <span key={w.cat} className="inline-flex items-center gap-1 text-[var(--text-muted)]" title={`${w.total} events`}>
+            {w.label} <span className="font-black text-[var(--text-strong)]">{formatMetricPct(w.pass_pct)}</span>
+          </span>
+        ))}
+      </div>
+
+      {/* Drift backlog */}
+      {drift.backlog > 0 ? (
+        <p className="mt-2 text-[11px] text-[var(--text-muted)]">
+          <span className="font-black text-[var(--warning)]">Drift backlog: {drift.backlog}</span>
+          {drift.oldest ? <span> · oldest {drift.oldest.link_status} on {drift.oldest.target}, {formatAgeSeconds(drift.oldest.age_seconds)}</span> : null}
+        </p>
+      ) : null}
+
+      {/* Candidate alerts (observations only — no actions, no paging) */}
+      {alerts.length > 0 ? (
+        <div className="mt-3 grid gap-1.5">
+          {alerts.map((a, i) => (
+            <div key={`${a.code}-${a.subject}-${i}`} className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1.5 text-[11px]">
+              <AlertTriangle className={cn("h-3.5 w-3.5", TONE_TEXT[alertSeverityTone(a.severity)])} />
+              <span className={cn("font-black uppercase tracking-wide", TONE_TEXT[alertSeverityTone(a.severity)])}>{a.severity}</span>
+              <span className="font-black text-[var(--text-strong)]">{a.subject}</span>
+              <span className="text-[var(--text-muted)]">{a.detail}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-[11px] text-[var(--text-subtle)]">No candidate alerts — all signals within thresholds.</p>
+      )}
+    </section>
+  );
+}
 
 function SyncPanel({ targets, records, onRedrive, onValidate, onTest, busyId, flash }: {
   targets: IncidentTarget[]; records: IncidentSyncRecord[];
@@ -610,6 +704,7 @@ export default function OperatorConsole() {
   const [syncTargets, setSyncTargets] = useState<IncidentTarget[]>([]);
   const [targetFlash, setTargetFlash] = useState<Record<string, string>>({});
   const [syncRecords, setSyncRecords] = useState<IncidentSyncRecord[]>([]);
+  const [metrics, setMetrics] = useState<IncidentMetrics | null>(null);
   const [analytics, setAnalytics] = useState<DeliveryAnalytics | null>(null);
   const [destinations, setDestinations] = useState<DestinationHealth[]>([]);
   const [deadLetters, setDeadLetters] = useState<DeadLetter[]>([]);
@@ -634,10 +729,12 @@ export default function OperatorConsole() {
   }, [filter]);
 
   const loadIncidents = useCallback(async () => {
-    const [inc, targets, records] = await Promise.all([fetchIncidents(), fetchIncidentTargets(), fetchIncidentSync({ limit: 30 })]);
+    const [inc, targets, records, m] = await Promise.all([
+      fetchIncidents(), fetchIncidentTargets(), fetchIncidentSync({ limit: 30 }), fetchIncidentMetrics()]);
     setIncidents(inc);
     setSyncTargets(targets);
     setSyncRecords(records);
+    setMetrics(m);
   }, []);
 
   useEffect(() => {
@@ -667,7 +764,7 @@ export default function OperatorConsole() {
     setOperatorNameState(null);
     setStatus("needs_key");
     setAnalytics(null); setDestinations([]); setDeadLetters([]); setDeliveries([]); setIncidents([]);
-    setSyncTargets([]); setSyncRecords([]);
+    setSyncTargets([]); setSyncRecords([]); setMetrics(null);
   }, []);
 
   const flashMsg = (msg: string) => { setFlash(msg); window.setTimeout(() => setFlash(""), 3000); };
@@ -982,6 +1079,7 @@ export default function OperatorConsole() {
       {/* ── Incidents ── */}
       {tab === "incidents" ? (
         <div className="grid gap-5">
+          <MetricsPanel metrics={metrics} window="24h" />
           <SyncPanel targets={syncTargets} records={syncRecords} onRedrive={(id) => void onRedriveSync(id)}
             onValidate={(id) => void onValidateTarget(id)} onTest={(id) => void onTestTarget(id)}
             busyId={busy} flash={targetFlash} />

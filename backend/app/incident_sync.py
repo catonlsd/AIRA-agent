@@ -39,6 +39,7 @@ from app.db.models import (
     IncidentSyncRecord,
     IncidentTargetCheckEvent,
 )
+from app import incident_metrics as metrics
 
 STATUS_PENDING = "pending"
 STATUS_SYNCED = "synced"
@@ -2387,6 +2388,144 @@ class IncidentSyncService:
         except Exception:
             return {"rollup": rollup, "by_state": {}, "by_action": {}, "oldest": None}
         return {"rollup": rollup, "by_state": by_state, "by_action": by_action, "oldest": oldest}
+
+    def _drift_snapshot(self, session, names: dict[str, Any], now: datetime) -> dict[str, Any]:
+        """Point-in-time drift backlog from active links: count, grouping by link
+        status, and the single oldest unresolved item with its age. Deterministic;
+        bounded to the 200 most recently-synced active links."""
+        backlog = 0
+        by_status: dict[str, int] = {}
+        oldest: Optional[dict[str, Any]] = None
+        oldest_age: Optional[float] = None
+        rows = (session.query(IncidentExternalLink)
+                .filter(IncidentExternalLink.detached_at.is_(None))
+                .order_by(IncidentExternalLink.last_synced_at.desc())
+                .limit(200).all())
+        resolved = [(r, self._local_state(r.incident_id)) for r in rows]
+        for row, local_state in resolved:
+            clean = self._clean_link(row, names, local_state=local_state, now=now)
+            status = clean["link_status"]
+            if status not in _ACTIONABLE:
+                continue
+            backlog += 1
+            by_status[status] = by_status.get(status, 0) + 1
+            ref_ts = row.last_checked_at or row.last_synced_at
+            age = (now - ref_ts).total_seconds() if ref_ts else None
+            if age is not None and (oldest_age is None or age > oldest_age):
+                oldest_age = age
+                oldest = {"incident_id": row.incident_id,
+                          "target": names.get(row.target_id, {}).get("name", row.target_id),
+                          "link_status": status, "age_seconds": int(age)}
+        return {"backlog": backlog, "by_status": by_status, "oldest": oldest}
+
+    def incident_metrics(self, *, now: Optional[datetime] = None) -> dict[str, Any]:
+        """Bounded, deterministic operational metrics for incident sync — computed on
+        READ from existing audit/history. No duplicate storage, no background
+        aggregation, no AI. Returns the point-in-time readiness distribution, windowed
+        (24h/7d/30d) validation / reconciliation / refresh / apply / external-action /
+        sync rollups, a drift snapshot, SLO percentages, and candidate-alert
+        observations. Observe-only: nothing here mutates, notifies, or enforces."""
+        now = now or _now()
+        cap = metrics.METRICS_EVENT_CAP
+        empty = {"generated_at": now.isoformat(), "readiness": {}, "windows": {},
+                 "drift": {"backlog": 0, "by_status": {}, "oldest": None},
+                 "slo": {}, "alerts": []}
+        try:
+            with self._session_factory() as session:
+                names = self._target_names(session)
+                targets = session.query(ExternalIncidentTarget).all()
+                distribution: dict[str, int] = {}
+                enabled = ready = attention = disabled = stale = auth_failed = 0
+                for row in targets:
+                    state = self._readiness(row)["state"]
+                    distribution[state] = distribution.get(state, 0) + 1
+                    if row.enabled:
+                        enabled += 1
+                    if state == READY_READY:
+                        ready += 1
+                    elif state == READY_DISABLED:
+                        disabled += 1
+                    else:
+                        attention += 1
+                    if state == READY_STALE:
+                        stale += 1
+                    if state == READY_AUTH_FAILED:
+                        auth_failed += 1
+                checks = (session.query(IncidentTargetCheckEvent)
+                          .order_by(IncidentTargetCheckEvent.id.desc()).limit(cap).all())
+                recon = (session.query(IncidentReconciliationEvent)
+                         .order_by(IncidentReconciliationEvent.id.desc()).limit(cap).all())
+                recs = (session.query(IncidentSyncRecord)
+                        .order_by(IncidentSyncRecord.created_at.desc()).limit(cap).all())
+                drift = self._drift_snapshot(session, names, now)
+
+            name_of = {tid: meta.get("name", tid) for tid, meta in names.items()}
+
+            # ── validation (per target check events) ──
+            val_samples: list[tuple[Any, str]] = []
+            auth_fail_by_target: dict[str, int] = {}
+            val_fail_by_target: dict[str, int] = {}
+            for e in checks:
+                if e.event not in metrics.VALIDATION_EVENTS:
+                    continue
+                cls = metrics.validation_class(e.outcome, READY_READY)
+                val_samples.append((e.created_at, cls))
+                if cls == "fail" and metrics.within(e.created_at, now, metrics.WINDOWS["24h"]):
+                    name = name_of.get(e.target_id, e.target_id)
+                    val_fail_by_target[name] = val_fail_by_target.get(name, 0) + 1
+                    if e.outcome == READY_AUTH_FAILED:
+                        auth_fail_by_target[name] = auth_fail_by_target.get(name, 0) + 1
+
+            # ── reconciliation (overall + per category) ──
+            recon_overall = metrics.window_rollup(
+                [(e.created_at, metrics.recon_class(e.outcome)) for e in recon], now)
+
+            def cat_rollup(category: str) -> dict[str, Any]:
+                return metrics.window_rollup(
+                    [(e.created_at, metrics.recon_class(e.outcome)) for e in recon
+                     if metrics.recon_category(e.action) == category], now)
+
+            recon_failures_24h = sum(
+                1 for e in recon if metrics.recon_class(e.outcome) == "fail"
+                and metrics.within(e.created_at, now, metrics.WINDOWS["24h"]))
+
+            # ── sync records ──
+            sync_rollup = metrics.window_rollup(
+                [(r.created_at, metrics.sync_class(r.status, synced=STATUS_SYNCED, failed=STATUS_FAILED))
+                 for r in recs], now)
+
+            validation_rollup = metrics.window_rollup(val_samples, now)
+            windows = {
+                "validation": validation_rollup,
+                "reconciliation": recon_overall,
+                "refresh": cat_rollup("refresh"),
+                "apply": cat_rollup("apply"),
+                "external_action": cat_rollup("external_action"),
+                "sync": sync_rollup,
+            }
+
+            readiness = {
+                "distribution": distribution, "total": len(targets), "enabled": enabled,
+                "ready": ready, "attention": attention, "disabled": disabled,
+                "stale": stale, "auth_failed": auth_failed,
+            }
+            # SLO snapshot — observe-only percentages (None when no data).
+            slo = {
+                "target_readiness_pct": metrics.pct(ready, enabled),
+                "validation_pass_pct_24h": validation_rollup["24h"]["pass_pct"],
+                "reconciliation_success_pct_24h": recon_overall["24h"]["pass_pct"],
+                "sync_success_pct_24h": sync_rollup["24h"]["pass_pct"],
+            }
+            alerts = metrics.candidate_alerts(
+                auth_failures_by_target=auth_fail_by_target,
+                validation_failures_by_target=val_fail_by_target,
+                drift_backlog=drift["backlog"], stale_count=stale,
+                recon_failures_24h=recon_failures_24h)
+
+            return {"generated_at": now.isoformat(), "readiness": readiness,
+                    "windows": windows, "drift": drift, "slo": slo, "alerts": alerts}
+        except Exception:
+            return empty
 
     def _check_summary(self, target_id: str) -> dict[str, Any]:
         """Audit DISCOVERABILITY (not duplication): the latest meaningful check event,

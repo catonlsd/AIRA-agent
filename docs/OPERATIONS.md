@@ -1687,6 +1687,61 @@ move and its blast radius.
   (`recommendedActionLabel`, `readinessGuidanceAction`, `attentionRollupRows` ordering +
   empty, `oldestAttentionLabel`).
 
+### Observability & operational intelligence (Phase 5)
+
+The runbooks (Phase 4) tell an operator what to do about *one* target or incident. Phase
+5 answers the fleet-level questions that previously required manual investigation —
+*"are validations passing? is drift growing? which targets keep failing auth?"* — with
+**bounded, deterministic metrics computed on read from existing audit/history**. No
+duplicate storage, no background aggregation, no AI, and nothing here ever mutates,
+enforces, or notifies. It is pure observability.
+
+**One endpoint:** `GET /operator/incident-sync/metrics` →
+`incident_sync_service.incident_metrics()`. Everything below is one read.
+
+- **Metrics foundation.** The pure module `app/incident_metrics.py` turns extracted
+  samples (timestamp + outcome class) into rollups — it holds no state and touches no
+  DB, so the math is unit-tested in isolation. `incident_metrics()` does the bounded
+  reads (capped at `METRICS_EVENT_CAP = 5000` most-recent rows per stream) and feeds
+  them in.
+- **Readiness distribution** (point-in-time): every readiness state counted, plus
+  `ready` / `attention` / `disabled` / `stale` / `auth_failed` rollups and `enabled` /
+  `total`. Derived from the same computed `_readiness` the console already trusts.
+- **Trend windows** (`24h` / `7d` / `30d`, fixed — no custom ranges, no warehouse): for
+  each of **validation**, **reconciliation**, **refresh**, **apply**,
+  **external_action**, and **sync**, a `{pass, fail, neutral, total, pass_pct}` rollup.
+  `pass_pct` is over *decided* (pass+fail) samples and is **`null` when nothing has
+  happened yet** — an honest "no data", never a misleading 0%/100%. Validation pass =
+  a `validate`/`revalidate` check event whose outcome is `ready`; reconciliation/refresh
+  /apply/external from the reconciliation-event trail (`ok` pass, `failed`/`missing`
+  fail, `skipped`/`unsupported` neutral); sync from `synced`/`failed` sync records.
+- **Drift snapshot:** active-link backlog count, grouping by link status
+  (drifted/missing/stale), and the single oldest unresolved item with its age in seconds.
+- **SLO signals** (observe-only percentages, `null` on no data): `target_readiness_pct`
+  (ready/enabled), `validation_pass_pct_24h`, `reconciliation_success_pct_24h`,
+  `sync_success_pct_24h`. Signals, never gates — AIRA-X never blocks on an SLO.
+- **Candidate alerts** (deterministic threshold observations — **no notification, no
+  paging, no email/Slack**): `repeated_auth_failures` / `repeated_validation_failures`
+  (per target, ≥3 in 24h), `drift_backlog` (≥5 unresolved), `stale_readiness` (≥3 stale),
+  `reconciliation_failures` (≥5 failed in 24h). Severity is deterministic — `critical`
+  at ≥2× the threshold, else `warning` — and the list is sorted critical-first. Each
+  alert is an *observation* the operator chooses to act on; nothing fires automatically.
+- **Console:** the Incidents tab renders a read-only "Sync observability" panel — SLO
+  tiles, targets-by-state chips, the 24h per-category pass rates, the drift backlog line,
+  and the candidate-alert list. No actions live in the panel (it's purely a dashboard);
+  remediation stays in the existing target/incident affordances.
+- Guardrails: every number is **explainable and reproducible** from existing rows (same
+  rows + same `now` → same output); operator-only (service-key gated); additive
+  (no API break); chat product untouched.
+- Pinned by `backend/tests/test_incident_sync.py` (pure `pct`/`within`/`window_rollup`/
+  categorize/classify + threshold/severity/sort for alerts; integration: readiness
+  distribution + SLO, validation rollup, reconciliation/refresh/drift snapshot, alerts
+  from repeated auth failures, empty-is-well-formed, HTTP endpoint with gating) and
+  `frontend/lib/operator.test.mts` (`formatMetricPct`, `sloTone` bands, `alertSeverityTone`,
+  `trendWindowLabel`, `formatAgeSeconds`, `readinessDashboardRows`, `sloRows`).
+- Metrics glossary, SLI definitions, the operational review checklist, and the
+  degradation interpretation guide live in `docs/PRODUCTION_READINESS.md` (§11–§14).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

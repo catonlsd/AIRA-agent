@@ -23,6 +23,13 @@ import {
   readinessGuidanceAction,
   attentionRollupRows,
   oldestAttentionLabel,
+  formatMetricPct,
+  sloTone,
+  alertSeverityTone,
+  trendWindowLabel,
+  formatAgeSeconds,
+  readinessDashboardRows,
+  sloRows,
   redriveBlockedReason,
   supportLevelLabel,
   syncStatusTone,
@@ -212,4 +219,70 @@ test("oldestAttentionLabel summarizes the longest-waiting item, or null", () => 
     "pagerduty-prod — Auth failed",
   );
   assert.equal(oldestAttentionLabel({ oldest: null }), null);
+});
+
+// ── Phase 5: observability formatting + dashboard helpers ─────────────────────
+
+test("formatMetricPct is honest about no-data (em dash, not 0%)", () => {
+  assert.equal(formatMetricPct(null), "—");
+  assert.equal(formatMetricPct(undefined), "—");
+  assert.equal(formatMetricPct(0), "0%");
+  assert.equal(formatMetricPct(99.5), "99.5%");
+});
+
+test("sloTone uses fixed deterministic bands; null is muted not alarming", () => {
+  assert.equal(sloTone(null), "muted");
+  assert.equal(sloTone(99), "good");
+  assert.equal(sloTone(100), "good");
+  assert.equal(sloTone(95), "warn");
+  assert.equal(sloTone(90), "warn");
+  assert.equal(sloTone(89.9), "bad");
+  assert.equal(sloTone(0), "bad");
+});
+
+test("alertSeverityTone maps severity to tone (observation only)", () => {
+  assert.equal(alertSeverityTone("critical"), "bad");
+  assert.equal(alertSeverityTone("warning"), "warn");
+});
+
+test("trendWindowLabel humanizes each bounded window", () => {
+  assert.equal(trendWindowLabel("24h"), "Last 24h");
+  assert.equal(trendWindowLabel("7d"), "Last 7d");
+  assert.equal(trendWindowLabel("30d"), "Last 30d");
+});
+
+test("formatAgeSeconds gives compact bounded units", () => {
+  assert.equal(formatAgeSeconds(null), "—");
+  assert.equal(formatAgeSeconds(-5), "—");
+  assert.equal(formatAgeSeconds(30), "just now");
+  assert.equal(formatAgeSeconds(300), "5m");
+  assert.equal(formatAgeSeconds(7200), "2h");
+  assert.equal(formatAgeSeconds(172800), "2d");
+});
+
+test("readinessDashboardRows renders every bucket with a deterministic tone", () => {
+  const rows = readinessDashboardRows({ ready: 3, attention: 2, stale: 1, auth_failed: 1, disabled: 4 });
+  assert.deepEqual(rows.map((r) => r.key), ["ready", "attention", "stale", "auth_failed", "disabled"]);
+  assert.equal(rows[0].tone, "good");        // ready
+  assert.equal(rows[3].tone, "bad");         // auth_failed > 0 → bad
+  // Zero-count attention/stale relax to muted (no false alarm).
+  const calm = readinessDashboardRows({ ready: 5, attention: 0, stale: 0, auth_failed: 0, disabled: 0 });
+  assert.equal(calm[1].tone, "muted");
+  assert.equal(calm[3].tone, "muted");
+});
+
+test("sloRows pairs each indicator with formatted value + tone, stable order", () => {
+  const rows = sloRows({
+    target_readiness_pct: 100, validation_pass_pct_24h: 92,
+    reconciliation_success_pct_24h: null, sync_success_pct_24h: 80,
+  });
+  assert.deepEqual(rows.map((r) => r.label), [
+    "Target readiness", "Validation pass (24h)", "Reconciliation (24h)", "Sync success (24h)",
+  ]);
+  assert.equal(rows[0].value, "100%");
+  assert.equal(rows[0].tone, "good");
+  assert.equal(rows[1].tone, "warn");
+  assert.equal(rows[2].value, "—");          // null → no data
+  assert.equal(rows[2].tone, "muted");
+  assert.equal(rows[3].tone, "bad");
 });

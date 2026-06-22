@@ -216,6 +216,54 @@ export type CheckSummary = {
   last_validation_failed: TargetCheckEvent | null;
 };
 
+/** Observability (Phase 5) — bounded, deterministic operational metrics computed on
+ * read from existing audit/history. Observe-only; no AI, no enforcement. */
+export type TrendWindowKey = "24h" | "7d" | "30d";
+
+/** One window's pass/fail/neutral counts + the pass rate over decided samples
+ * (null when nothing has happened yet — honest "no data", not a misleading 0%). */
+export type MetricWindow = { pass: number; fail: number; neutral: number; total: number; pass_pct: number | null };
+export type WindowSet = Record<TrendWindowKey, MetricWindow>;
+
+export type MetricCategory = "validation" | "reconciliation" | "refresh" | "apply" | "external_action" | "sync";
+
+export type ReadinessMetrics = {
+  distribution: Partial<Record<ReadinessState, number>>;
+  total: number; enabled: number; ready: number; attention: number; disabled: number;
+  stale: number; auth_failed: number;
+};
+
+export type DriftSnapshot = {
+  backlog: number;
+  by_status: Partial<Record<LinkStatus, number>>;
+  oldest: { incident_id: string; target: string; link_status: LinkStatus; age_seconds: number } | null;
+};
+
+export type SloSnapshot = {
+  target_readiness_pct: number | null;
+  validation_pass_pct_24h: number | null;
+  reconciliation_success_pct_24h: number | null;
+  sync_success_pct_24h: number | null;
+};
+
+export type CandidateAlertCode =
+  | "repeated_auth_failures" | "repeated_validation_failures"
+  | "drift_backlog" | "stale_readiness" | "reconciliation_failures";
+
+export type CandidateAlert = {
+  code: CandidateAlertCode; severity: "warning" | "critical";
+  subject: string; count: number; threshold: number; detail: string;
+};
+
+export type IncidentMetrics = {
+  generated_at: string;
+  readiness: ReadinessMetrics;
+  windows: Record<MetricCategory, WindowSet>;
+  drift: DriftSnapshot;
+  slo: SloSnapshot;
+  alerts: CandidateAlert[];
+};
+
 export type TargetReadiness = {
   state: ReadinessState; source: string; reason: string;
   recommended_action?: RecommendedAction | null;
@@ -516,6 +564,74 @@ export function oldestAttentionLabel(summary: Pick<AttentionSummary, "oldest">):
   const o = summary.oldest;
   if (!o) return null;
   return `${o.name} — ${readinessLabel(o.state)}`;
+}
+
+// ── Phase 5: observability formatting + dashboard helpers (pure; unit-tested) ──
+
+/** Format a percentage metric, honest about "no data": a null rate (zero decided
+ * samples) renders as an em dash, never a misleading 0%/100%. */
+export function formatMetricPct(pct: number | null | undefined): string {
+  return pct === null || pct === undefined ? "—" : `${pct}%`;
+}
+
+/** Deterministic SLO tone from a pass percentage. Fixed bands (no smoothing): ≥99 good,
+ * ≥90 warn, below bad; null (no data yet) is muted, not alarming. */
+export function sloTone(pct: number | null | undefined): Tone {
+  if (pct === null || pct === undefined) return "muted";
+  if (pct >= 99) return "good";
+  if (pct >= 90) return "warn";
+  return "bad";
+}
+
+/** Tone for a candidate alert's severity (pure). Observation only — no paging. */
+export function alertSeverityTone(severity: CandidateAlert["severity"]): Tone {
+  return severity === "critical" ? "bad" : "warn";
+}
+
+/** Human label for a trend window key (pure). */
+export function trendWindowLabel(key: TrendWindowKey): string {
+  const labels: Record<TrendWindowKey, string> = { "24h": "Last 24h", "7d": "Last 7d", "30d": "Last 30d" };
+  return labels[key] ?? key;
+}
+
+/** Compact, deterministic age label from seconds ("just now" / "5m" / "3h" / "2d").
+ * Used for the oldest drift item; bounded units, no locale dependence. */
+export function formatAgeSeconds(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || seconds < 0) return "—";
+  if (seconds < 60) return "just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+  return `${Math.floor(seconds / 86400)}d`;
+}
+
+/** Ordered dashboard rows from the readiness metrics (pure; unit-tested): one row per
+ * health bucket with its count, label, and tone — so the console renders a deterministic
+ * "targets by state" summary without re-deriving tones in JSX. Zero-count rows are kept
+ * (a dashboard shows "0 auth failures" as a positive signal). */
+export function readinessDashboardRows(
+  readiness: Pick<ReadinessMetrics, "ready" | "attention" | "stale" | "auth_failed" | "disabled">,
+): { key: string; label: string; count: number; tone: Tone }[] {
+  return [
+    { key: "ready", label: "Ready", count: readiness.ready, tone: "good" },
+    { key: "attention", label: "Need attention", count: readiness.attention, tone: readiness.attention > 0 ? "warn" : "muted" },
+    { key: "stale", label: "Stale", count: readiness.stale, tone: readiness.stale > 0 ? "warn" : "muted" },
+    { key: "auth_failed", label: "Auth failed", count: readiness.auth_failed, tone: readiness.auth_failed > 0 ? "bad" : "muted" },
+    { key: "disabled", label: "Disabled", count: readiness.disabled, tone: "muted" },
+  ];
+}
+
+/** SLO rows for the dashboard (pure; unit-tested): label + value + tone for each
+ * indicator, in a stable order. Observe-only — these are signals, never gates. */
+export function sloRows(slo: SloSnapshot): { key: string; label: string; value: string; tone: Tone }[] {
+  const rows: { key: keyof SloSnapshot; label: string }[] = [
+    { key: "target_readiness_pct", label: "Target readiness" },
+    { key: "validation_pass_pct_24h", label: "Validation pass (24h)" },
+    { key: "reconciliation_success_pct_24h", label: "Reconciliation (24h)" },
+    { key: "sync_success_pct_24h", label: "Sync success (24h)" },
+  ];
+  return rows.map(({ key, label }) => ({
+    key, label, value: formatMetricPct(slo[key]), tone: sloTone(slo[key]),
+  }));
 }
 
 /** Human label for where a policy decision came from (pure; unit-tested). Lets the
@@ -1008,6 +1124,12 @@ export async function fetchIncidentTargetProfiles(): Promise<IncidentAdapterProf
   if (!res.ok) return [];
   const body = await res.json();
   return Array.isArray(body?.profiles) ? body.profiles : [];
+}
+
+export async function fetchIncidentMetrics(): Promise<IncidentMetrics | null> {
+  const res = await fetch(`${API_URL}/operator/incident-sync/metrics`, { cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return null;
+  return res.json();
 }
 
 export async function fetchTargetProfile(targetId: string): Promise<TargetProfileView | null> {

@@ -240,3 +240,93 @@ never deletes config, history, or links — re-enabling is non-destructive.
    handles a bounded batch automatically.
 5. **Keep recovery deliberate.** Apply/relink/detach are operator decisions with an
    audited trail and an explicit blast radius — there is intentionally no "auto-heal."
+
+---
+
+## 11. Metrics glossary (incident-sync observability)
+
+All metrics are served by `GET /operator/incident-sync/metrics`, **computed on read**
+from existing audit/history — no duplicate storage, no background jobs. Same rows + same
+clock → same numbers.
+
+| Metric | Where it comes from | Meaning |
+|---|---|---|
+| `readiness.distribution` | computed readiness of every target | count per readiness state (point-in-time) |
+| `readiness.ready / attention / disabled` | same | fleet rollup: trusted vs needs-work vs intentionally off |
+| `readiness.stale / auth_failed` | same | targets aged out of trust / rejecting credentials right now |
+| `windows.validation.<w>` | `validate`/`revalidate` check events | pass/fail/neutral + pass rate per window (`ready` = pass) |
+| `windows.reconciliation.<w>` | reconciliation events (all actions) | repair-action outcomes per window |
+| `windows.refresh / apply / external_action.<w>` | reconciliation events by category | outcomes for that action class |
+| `windows.sync.<w>` | sync records | outbound export success/failure per window |
+| `drift.backlog` | active (non-detached) links | count of drifted/missing/stale links now |
+| `drift.oldest.age_seconds` | oldest actionable link | how long the longest-standing drift has gone unresolved |
+| `alerts[]` | thresholds over the above | deterministic candidate observations (see §13) |
+
+**Windows** are fixed: `24h` = 86 400s, `7d` = 604 800s, `30d` = 2 592 000s. Reads are
+bounded to the `5000` most-recent rows per stream.
+
+**`pass_pct` semantics:** numerator = `pass`, denominator = `pass + fail` (neutral
+excluded). **`null` means zero decided samples** — render it as "—", never as 0% or 100%.
+
+---
+
+## 12. SLI / SLO definitions
+
+These are **service-level *indicators*** — observed, never enforced. AIRA-X has no code
+path that blocks, throttles, or pages on them.
+
+| Indicator | Definition | Healthy band (console tone) |
+|---|---|---|
+| **Target readiness %** | `ready / enabled` targets | ≥99 good · ≥90 warn · <90 bad |
+| **Validation pass % (24h)** | `ready` validations / decided validations, 24h | same bands |
+| **Reconciliation success % (24h)** | `ok` / (ok+fail) reconciliation actions, 24h | same bands |
+| **Sync success % (24h)** | `synced` / (synced+failed) records, 24h | same bands |
+
+Tone bands are deterministic constants in `frontend/lib/operator.ts` (`sloTone`). A
+`null` indicator (no data yet) renders muted, not alarming. Pick your own internal
+targets per environment; the platform only *shows* the number.
+
+---
+
+## 13. Operational review checklist
+
+A bounded, repeatable pass (e.g. start of shift / weekly review). Everything here is one
+`GET /operator/incident-sync/metrics` plus the Incidents-tab "Sync observability" panel.
+
+- [ ] **Readiness rollup** — is `attention` trending up vs the team's baseline?
+- [ ] **SLOs** — any of the four indicators in the `warn`/`bad` band? Note which.
+- [ ] **Candidate alerts** — triage `critical` first. Each maps to a runbook (§8):
+      `repeated_auth_failures` → §8.5, `repeated_validation_failures` → §8.2,
+      `drift_backlog` → §8.6/§8.7, `stale_readiness` → §8.4.
+- [ ] **Drift backlog** — is the count and the `oldest` age growing across reviews?
+- [ ] **Trend windows** — compare `24h` vs `7d` vs `30d` pass rates: is a metric
+      *degrading* (24h worse than 30d) or *recovering* (24h better)?
+- [ ] **Sweep health** — is the scheduled sweep running (pending syncs flushing, stale
+      targets revalidating)? A rising `stale_readiness` alert often means it isn't.
+
+---
+
+## 14. Degradation interpretation guide
+
+How to read what the metrics are telling you — deterministic patterns, not guesses.
+
+| Pattern you observe | Most likely meaning | Where to act |
+|---|---|---|
+| `validation_pass_pct_24h` ≫ below `7d`/`30d` | a target (or its endpoint) just started failing | §8.2 / §8.3; check `windows.validation` per-target via attention rollup |
+| `repeated_auth_failures` on one target | secret/credential expired or rotated upstream | §8.5 rotate → revalidate |
+| `drift_backlog` rising across reviews, `oldest` age growing | external systems changing state faster than refresh/apply clears them | §8.6 refresh then apply; confirm the sweep cadence |
+| `stale_readiness` climbing | the scheduled sweep isn't revalidating (or the window is too short) | check sweep schedule; §8.4 |
+| `reconciliation_failures` ≥ threshold | refresh/relink hitting an unreachable or changed external API | inspect the targets in the failed events; §8.2 |
+| `sync_success_pct_24h` dropping, `validation` healthy | outbound delivery problem (network/endpoint), not config | check sync records' `last_error`; redrive (§8.x) |
+| All SLOs `null` | no activity in window — not a failure, just quiet | none; confirm targets are enabled if you expected traffic |
+
+**Trend, don't snapshot.** A single bad number is noise; the same metric worse in `24h`
+than in `30d` is a real regression. The three windows exist precisely so degradation is
+*observable over time* without an analytics warehouse.
+
+**Point-in-time vs trend.** `drift_backlog` and `stale_readiness` are current counts —
+true historical trending of a point-in-time count would need periodic snapshots, which
+we deliberately do **not** store (no duplicate storage). Instead, candidate alerts fire
+on the *current* backlog, and the event-rate windows (validation/reconciliation/sync)
+give you the time-series signal. Compare backlog counts across your own review cadence to
+see growth.

@@ -725,6 +725,19 @@ def operator_incident_sync_drift(request: Request, limit: int = 50) -> dict:
     return {"links": incident_sync_service.drifted(limit=limit)}
 
 
+@router.get("/incident-sync/metrics")
+def operator_incident_sync_metrics(request: Request) -> dict:
+    """Bounded, deterministic observability for incident sync — readiness distribution,
+    windowed (24h/7d/30d) validation/reconciliation/refresh/apply/external-action/sync
+    rollups, a drift snapshot, SLO percentages, and candidate-alert observations. All
+    computed on read from existing audit/history. Observe-only; declared before
+    `/{record_id}` so "metrics" is not parsed as a record id."""
+    _require_operator(request)
+    from app.incident_sync import incident_sync_service
+
+    return incident_sync_service.incident_metrics()
+
+
 @router.get("/incident-sync/{record_id}")
 def operator_get_incident_sync(record_id: str, request: Request) -> dict:
     _require_operator(request)
