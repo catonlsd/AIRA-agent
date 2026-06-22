@@ -58,6 +58,10 @@ import {
   fetchIncidentSyncStatus,
   fetchIncidentTargets,
   fetchIncidentMetrics,
+  fetchDemoStatus,
+  seedDemo,
+  resetDemo,
+  demoSeedSummary,
   fetchIncidents,
   fetchLineage,
   fetchRoutingPreview,
@@ -116,6 +120,7 @@ import {
   type IncidentTarget,
   type IncidentMetrics,
   type MetricCategory,
+  type DemoStatus,
   type RoutingPreview,
   type Tone,
 } from "@/lib/operator";
@@ -256,6 +261,55 @@ function MetricsPanel({ metrics, window }: { metrics: IncidentMetrics | null; wi
         </div>
       ) : (
         <p className="mt-2 text-[11px] text-[var(--text-subtle)]">No candidate alerts — all signals within thresholds.</p>
+      )}
+    </section>
+  );
+}
+
+// Demo seed (Phase 6): one-click deterministic showcase data + a guided walkthrough.
+// Operator-only; namespaced; never touches real data or the chat product.
+function DemoPanel({ demo, busy, onSeed, onReset }: {
+  demo: DemoStatus | null; busy: boolean;
+  onSeed: () => void; onReset: () => void;
+}) {
+  if (!demo || !demo.enabled) return null;
+  return (
+    <section className="sarvam-card rounded-[1.5rem] border border-dashed border-[var(--border-strong)] p-5">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <LayoutGrid className="h-3.5 w-3.5" /> Demo data
+        </p>
+        <span className="text-[11px] text-[var(--text-muted)]">
+          · deterministic showcase in the <code>{demo.namespace}</code> namespace · never touches real data
+        </span>
+        <span className="ml-auto flex items-center gap-2">
+          <button type="button" disabled={busy} onClick={onSeed} className={INC_BTN}>
+            <Zap className="h-3 w-3" /> {demo.present ? "Re-seed" : "Seed demo data"}
+          </button>
+          {demo.present ? (
+            <button type="button" disabled={busy} onClick={onReset} className={INC_BTN}>
+              <Unlink className="h-3 w-3" /> Reset
+            </button>
+          ) : null}
+        </span>
+      </div>
+      {demo.present && demo.tour.length > 0 ? (
+        <ol className="mt-2 grid gap-1.5">
+          {demo.tour.map((s) => (
+            <li key={s.step} className="flex gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1.5 text-[11px]">
+              <span className="font-black text-[var(--accent)]">{s.step}</span>
+              <span>
+                <span className="font-black text-[var(--text-strong)]">{s.area}</span>
+                <span className="text-[var(--text-subtle)]"> — {s.look_at}</span>
+                <span className="block text-[var(--text-muted)]">{s.shows}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+          Populate targets across every readiness state, drifted/missing incidents, a live SLO dashboard, and a candidate alert — for demos & evaluation.
+        </p>
       )}
     </section>
   );
@@ -705,6 +759,7 @@ export default function OperatorConsole() {
   const [targetFlash, setTargetFlash] = useState<Record<string, string>>({});
   const [syncRecords, setSyncRecords] = useState<IncidentSyncRecord[]>([]);
   const [metrics, setMetrics] = useState<IncidentMetrics | null>(null);
+  const [demo, setDemo] = useState<DemoStatus | null>(null);
   const [analytics, setAnalytics] = useState<DeliveryAnalytics | null>(null);
   const [destinations, setDestinations] = useState<DestinationHealth[]>([]);
   const [deadLetters, setDeadLetters] = useState<DeadLetter[]>([]);
@@ -729,12 +784,13 @@ export default function OperatorConsole() {
   }, [filter]);
 
   const loadIncidents = useCallback(async () => {
-    const [inc, targets, records, m] = await Promise.all([
-      fetchIncidents(), fetchIncidentTargets(), fetchIncidentSync({ limit: 30 }), fetchIncidentMetrics()]);
+    const [inc, targets, records, m, d] = await Promise.all([
+      fetchIncidents(), fetchIncidentTargets(), fetchIncidentSync({ limit: 30 }), fetchIncidentMetrics(), fetchDemoStatus()]);
     setIncidents(inc);
     setSyncTargets(targets);
     setSyncRecords(records);
     setMetrics(m);
+    setDemo(d);
   }, []);
 
   useEffect(() => {
@@ -764,7 +820,7 @@ export default function OperatorConsole() {
     setOperatorNameState(null);
     setStatus("needs_key");
     setAnalytics(null); setDestinations([]); setDeadLetters([]); setDeliveries([]); setIncidents([]);
-    setSyncTargets([]); setSyncRecords([]); setMetrics(null);
+    setSyncTargets([]); setSyncRecords([]); setMetrics(null); setDemo(null);
   }, []);
 
   const flashMsg = (msg: string) => { setFlash(msg); window.setTimeout(() => setFlash(""), 3000); };
@@ -801,6 +857,23 @@ export default function OperatorConsole() {
     try {
       const res = await redriveIncidentSync(id);
       flashMsg(res.ok ? "Sync redriven." : res.message || "Could not redrive sync.");
+      await loadIncidents();
+    } finally { setBusy(null); }
+  }, [loadIncidents]);
+
+  const onSeedDemo = useCallback(async () => {
+    setBusy("demo");
+    try {
+      const m = await seedDemo();
+      flashMsg(m ? demoSeedSummary(m) : "Could not seed demo data.");
+      await loadIncidents();
+    } finally { setBusy(null); }
+  }, [loadIncidents]);
+
+  const onResetDemo = useCallback(async () => {
+    setBusy("demo");
+    try {
+      flashMsg((await resetDemo()) ? "Demo data cleared." : "Could not reset demo data.");
       await loadIncidents();
     } finally { setBusy(null); }
   }, [loadIncidents]);
@@ -1079,6 +1152,7 @@ export default function OperatorConsole() {
       {/* ── Incidents ── */}
       {tab === "incidents" ? (
         <div className="grid gap-5">
+          <DemoPanel demo={demo} busy={busy === "demo"} onSeed={() => void onSeedDemo()} onReset={() => void onResetDemo()} />
           <MetricsPanel metrics={metrics} window="24h" />
           <SyncPanel targets={syncTargets} records={syncRecords} onRedrive={(id) => void onRedriveSync(id)}
             onValidate={(id) => void onValidateTarget(id)} onTest={(id) => void onTestTarget(id)}

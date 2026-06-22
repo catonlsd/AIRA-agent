@@ -1742,6 +1742,58 @@ enforces, or notifies. It is pure observability.
 - Metrics glossary, SLI definitions, the operational review checklist, and the
   degradation interpretation guide live in `docs/PRODUCTION_READINESS.md` (§11–§14).
 
+### Demo seed & guided walkthrough (Phase 6 — demonstrability)
+
+A fresh clone has an empty database, so the operator console, the observability
+dashboard, and the drift/recovery flows have nothing to show — the platform's strongest
+capabilities are invisible to a recruiter, evaluator, or customer on first run. Phase 6
+makes AIRA-X **instantly demonstrable**: one operator-gated call populates a realistic,
+deterministic incident-sync scenario that lights up every Phase 1–5 capability at once,
+plus a guided walkthrough that tells the viewer exactly what to look at.
+
+**Instant demo (operator):**
+```bash
+# with the operator service key configured (AIRA_API_KEY)
+curl -s -X POST localhost:8000/operator/demo/seed   -H "X-API-Key: $AIRA_API_KEY"
+curl -s     localhost:8000/operator/demo/status -H "X-API-Key: $AIRA_API_KEY"   # tour + counts
+curl -s -X POST localhost:8000/operator/demo/reset  -H "X-API-Key: $AIRA_API_KEY"
+```
+…or, in the operator console → **Incidents** tab → **Demo data** card → **Seed demo
+data** (one click), which then renders the walkthrough inline.
+
+**What it seeds (deterministic):**
+- **6 targets across every readiness state** — `ready` ×2, `stale`, `unverified`,
+  `auth_failed`, `disabled` — and adapter variety (PagerDuty/Opsgenie rich, Generic,
+  Jira outbound-only). States are set from **honest evidence** (the existing
+  `compute_readiness` derives them) — the demo never fakes a state.
+- **5 incidents spanning the link verdicts** — healthy linked, **drifted** (external
+  resolved / local open → offers Refresh + Apply), **missing_external**, **stale**, and a
+  recovered/aligned one. Drift backlog = 3.
+- **Audit history across the trend windows** — check events, reconciliation events, and
+  sync records dated across 24h/7d/30d so the **observability dashboard** shows real
+  SLOs (readiness 40%, validation 33%, reconciliation/sync 67%), trend pass rates, and a
+  live **`repeated_auth_failures` candidate alert**.
+
+**Safety (every existing guarantee preserved):**
+- **Namespaced & non-destructive.** All demo data lives in the `demo.aira-x.local` target
+  namespace and the `demo:` incident-signal namespace. Seed/reset touch **only** those
+  rows — real operator data and the chat product are never affected (a real target +
+  incident provably survive a `reset`).
+- **Deterministic & idempotent.** Re-seeding yields the same shape without duplicating;
+  same seed → same readiness distribution, drift backlog, and alerts.
+- **No network, no side effects.** Rows are inserted directly; nothing calls a real
+  adapter transport or the live sweep.
+- **Operator-only + opt-out.** Routes are service-key gated and additionally guarded by
+  `demo_seed_enabled` (default true; set false in production — `/demo/status` still works
+  read-only and reports `enabled: false`).
+- Routes: `POST /operator/demo/seed`, `POST /operator/demo/reset`,
+  `GET /operator/demo/status` (the seed/status responses carry the guided `tour`).
+- Pinned by `backend/tests/test_demo_seed.py` (deterministic scenario shape + readiness
+  distribution + drift backlog + alert; attention/drift-recovery; secrets never returned;
+  idempotency; **reset removes only the demo namespace, real data survives**; status
+  presence; HTTP gating; feature-flag disable) and `frontend/lib/operator.test.mts`
+  (`demoSeedSummary`).
+
 ## Memory model (session + preference)
 
 Memory is intentional, scoped, and bounded — not indiscriminate recall:

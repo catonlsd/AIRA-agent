@@ -213,6 +213,10 @@ class Settings(BaseSettings):
     incident_target_revalidate_seconds: int = 604800  # 7 days
     # Max targets a single scheduled revalidation sweep will recheck. >= 1.
     incident_revalidate_max_per_sweep: int = 10
+    # Operator-only demo seed (Phase 6): populate a deterministic incident-sync
+    # showcase in the `demo.aira-x.local` namespace so the platform is instantly
+    # demonstrable. Operator-gated regardless; set False to disable in production.
+    demo_seed_enabled: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

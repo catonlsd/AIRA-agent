@@ -1053,3 +1053,45 @@ def operator_incident_target_profile(target_id: str, request: Request) -> dict:
     if profile is None:
         raise HTTPException(status_code=404, detail="Target not found.")
     return profile
+
+
+# ── demo seed (Phase 6) — operator-only, namespaced, deterministic ────────────
+
+def _require_demo(request: Request) -> None:
+    """Operator-gated AND feature-flagged. The demo lives in an isolated namespace and
+    never touches real data, but writes are still operator-only + opt-out-able."""
+    _require_operator(request)
+    from app import demo_seed
+    if not demo_seed.is_enabled():
+        raise HTTPException(status_code=403, detail="Demo seed is disabled (set demo_seed_enabled).")
+
+
+@router.get("/demo/status")
+def operator_demo_status(request: Request) -> dict:
+    """Whether the deterministic incident-sync demo is currently present, plus counts
+    and the guided walkthrough. Read-only; operator-only."""
+    _require_operator(request)
+    from app import demo_seed
+
+    return demo_seed.status()
+
+
+@router.post("/demo/seed")
+def operator_demo_seed(request: Request) -> dict:
+    """Populate a deterministic, namespaced incident-sync showcase (targets across every
+    readiness state, linked/drifted/missing/stale incidents, populated SLO/trend
+    dashboard, a live candidate alert). Idempotent; touches only the demo namespace."""
+    _require_demo(request)
+    from app import demo_seed
+
+    return demo_seed.seed()
+
+
+@router.post("/demo/reset")
+def operator_demo_reset(request: Request) -> dict:
+    """Remove ONLY the demo namespace and everything referencing it. Real operator data
+    and the chat product are never affected."""
+    _require_demo(request)
+    from app import demo_seed
+
+    return {"removed": demo_seed.reset()}

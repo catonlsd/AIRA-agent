@@ -264,6 +264,20 @@ export type IncidentMetrics = {
   alerts: CandidateAlert[];
 };
 
+/** Demo seed (Phase 6) — operator-only, deterministic, namespaced showcase data. */
+export type DemoTourStep = { step: string; area: string; look_at: string; shows: string };
+export type DemoStatus = {
+  present: boolean; enabled: boolean; namespace: string;
+  counts: { targets: number; incidents: number };
+  tour: DemoTourStep[];
+};
+export type DemoManifest = {
+  demo: boolean; namespace: string;
+  counts: { targets: number; incidents: number; links: number;
+            check_events: number; reconciliation_events: number; sync_records: number };
+  tour: DemoTourStep[]; note: string;
+};
+
 export type TargetReadiness = {
   state: ReadinessState; source: string; reason: string;
   recommended_action?: RecommendedAction | null;
@@ -632,6 +646,14 @@ export function sloRows(slo: SloSnapshot): { key: string; label: string; value: 
   return rows.map(({ key, label }) => ({
     key, label, value: formatMetricPct(slo[key]), tone: sloTone(slo[key]),
   }));
+}
+
+/** One-line summary of what a demo seed produced (pure; unit-tested), for a toast/banner
+ * after seeding. Deterministic, derived only from the manifest counts. */
+export function demoSeedSummary(manifest: Pick<DemoManifest, "counts">): string {
+  const c = manifest.counts;
+  return `Seeded ${c.targets} targets, ${c.incidents} incidents, ${c.links} links, ` +
+    `${c.check_events + c.reconciliation_events + c.sync_records} events.`;
 }
 
 /** Human label for where a policy decision came from (pure; unit-tested). Lets the
@@ -1130,6 +1152,23 @@ export async function fetchIncidentMetrics(): Promise<IncidentMetrics | null> {
   const res = await fetch(`${API_URL}/operator/incident-sync/metrics`, { cache: "no-store", headers: opHeaders() });
   if (!res.ok) return null;
   return res.json();
+}
+
+export async function fetchDemoStatus(): Promise<DemoStatus | null> {
+  const res = await fetch(`${API_URL}/operator/demo/status`, { cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function seedDemo(): Promise<DemoManifest | null> {
+  const res = await fetch(`${API_URL}/operator/demo/seed`, { method: "POST", cache: "no-store", headers: opHeaders() });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function resetDemo(): Promise<boolean> {
+  const res = await fetch(`${API_URL}/operator/demo/reset`, { method: "POST", cache: "no-store", headers: opHeaders() });
+  return res.ok;
 }
 
 export async function fetchTargetProfile(targetId: string): Promise<TargetProfileView | null> {

@@ -30,6 +30,7 @@ import {
   formatAgeSeconds,
   readinessDashboardRows,
   sloRows,
+  demoSeedSummary,
   redriveBlockedReason,
   supportLevelLabel,
   syncStatusTone,
@@ -285,4 +286,11 @@ test("sloRows pairs each indicator with formatted value + tone, stable order", (
   assert.equal(rows[2].value, "—");          // null → no data
   assert.equal(rows[2].tone, "muted");
   assert.equal(rows[3].tone, "bad");
+});
+
+test("demoSeedSummary summarizes manifest counts deterministically", () => {
+  const summary = demoSeedSummary({
+    counts: { targets: 6, incidents: 5, links: 5, check_events: 11, reconciliation_events: 8, sync_records: 6 },
+  });
+  assert.equal(summary, "Seeded 6 targets, 5 incidents, 5 links, 25 events.");
 });
