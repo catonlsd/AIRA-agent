@@ -19,8 +19,9 @@ test("operator: connect, validate a target to Ready, then safe test-send", async
   // Incidents tab hosts the External-sync panel with the targets.
   await page.getByRole("button", { name: "Incidents" }).click();
   await expect(page.getByText("PagerDuty (prod)")).toBeVisible();
-  // Starts Unverified.
-  await expect(page.getByText("Unverified")).toBeVisible();
+  // Starts Unverified. "Unverified" also appears in the Phase-4 attention rollup chip,
+  // so scope to the target row's readiness badge (last occurrence in the panel).
+  await expect(page.getByText("Unverified").last()).toBeVisible();
 
   // Validate → readiness flips to Ready.
   await page.getByRole("button", { name: "Validate" }).click();

@@ -118,6 +118,17 @@ export async function mockOperator(page: Page, opts: {
   await page.route(`${API}/operator/incidents`, (r) => json(r, { incidents }));
   await page.route(`${API}/operator/incident-targets`, (r) => json(r, { targets }));
   await page.route(`${API}/operator/incident-sync**`, (r) => json(r, { records: [] }));
+  // Observability (Phase 5) + demo status (Phase 6) — loadIncidents fetches these.
+  // Registered AFTER the broad `incident-sync**` route so it wins (routes are LIFO).
+  // Empty-but-valid shape: readiness.total = 0 makes the panel render nothing.
+  await page.route(`${API}/operator/incident-sync/metrics`, (r) => json(r, {
+    generated_at: "2026-06-20T00:00:00Z",
+    readiness: { distribution: {}, total: 0, enabled: 0, ready: 0, attention: 0, disabled: 0, stale: 0, auth_failed: 0 },
+    windows: {}, drift: { backlog: 0, by_status: {}, oldest: null }, slo: {}, alerts: [],
+  }));
+  await page.route(`${API}/operator/demo/status`, (r) => json(r, {
+    present: false, enabled: false, namespace: "demo.aira-x.local", counts: { targets: 0, incidents: 0 }, tour: [],
+  }));
 
   // Per-incident sync status + refresh.
   await page.route(`${API}/operator/incidents/*/sync`, (r) => json(r, seedSyncStatus("inc-1")));
