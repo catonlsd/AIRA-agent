@@ -39,6 +39,10 @@ jobs:
       - name: Verify documentation & repository professionalization
         env:
           EMBEDDING_PROVIDER: hashing
+          # Hermetic: the suite stubs the LLM, so this dummy key is never used for a
+          # real call — it only satisfies the deliberate fail-fast in config.py that
+          # requires a provider key for the default LLM_PROVIDER=groq.
+          GROQ_API_KEY: ci-dummy-not-used
         run: >
           python -m pytest -q -p no:randomly
           tests/test_docs_packaging.py
