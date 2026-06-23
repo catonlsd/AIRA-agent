@@ -131,16 +131,25 @@ model, deployment topology — in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Screenshots
 
-> Add captures to `docs/screenshots/` and replace the placeholders below. Suggested set
-> (each is reachable in &lt;1 min after **Seed demo data**):
+Every view below is reachable in **under a minute** after one click of **Seed demo data**
+(`POST /operator/demo/seed`). The capture is deterministic, so each shot matches the
+numbers in the docs. Exact shot list + conventions:
+**[docs/screenshots/CAPTURE_PLAN.md](docs/screenshots/CAPTURE_PLAN.md)**.
 
-| View | Path | Shows |
+| View | Asset path | Shows |
 |---|---|---|
-| Operator console — readiness | `docs/screenshots/operator-readiness.png` | targets across every readiness state + recommended actions |
-| Sync observability | `docs/screenshots/observability.png` | SLO tiles, 24h–30d trend pass rates, drift backlog, candidate alert |
-| Drift recovery | `docs/screenshots/drift-recovery.png` | a drifted incident offering Refresh + Apply |
-| Demo walkthrough | `docs/screenshots/demo-tour.png` | the seeded guided tour |
-| Chat product | `docs/screenshots/chat.png` | streamed answer + artifact card |
+| Chat — streamed answer | `docs/screenshots/chat/streamed-answer.png` | the core product: a streamed SSE answer resolves |
+| Chat — artifact | `docs/screenshots/chat/artifact-card.png` | artifact card + working download link |
+| Operator console | `docs/screenshots/operator/console-overview.png` | the service-key-gated operator surface |
+| Readiness states | `docs/screenshots/operator/readiness-states.png` | 6 targets across every readiness state + recommended actions |
+| Observability / SLOs | `docs/screenshots/observability/slo-panel.png` | SLO tiles, 24h–30d trend pass rates, drift backlog, candidate alert |
+| Drift recovery | `docs/screenshots/operator/drift-recovery.png` | a drifted incident offering Refresh + Apply (no auto-heal) |
+| Incident sync detail | `docs/screenshots/operator/incident-sync-detail.png` | incident ↔ external linkage + durable audit records |
+| Demo walkthrough | `docs/screenshots/demo/seed-tour.png` | the seeded guided tour |
+
+> Asset paths are **stable**; captures populate them (the `.png` binaries aren't committed
+> by default — see [docs/screenshots/README.md](docs/screenshots/README.md)). Once present,
+> swap a row for `![alt](path)` to render it inline.
 
 ---
 
