@@ -62,12 +62,85 @@ stills look right.
 
 ---
 
-## After capture
+## Shooting script (click-by-click, ~10 minutes)
 
-1. Drop each `.png` at its path above (they are git-ignored as binaries unless you choose
-   to commit them — see `README.md` in this folder).
-2. The root `README.md` → **Screenshots** table already references these stable paths;
-   once the files exist they render inline (swap the table rows for `![alt](path)` embeds
-   if you want full-width images).
-3. Re-run `python -m pytest backend/tests/test_docs_packaging.py -q` to confirm docs
-   integrity.
+Do these in order in one session so the demo seed is fresh and the theme is consistent.
+
+**Set the stage (once):**
+1. Both servers running; seed applied (Prerequisites above).
+2. Open `http://localhost:3000`, toggle to **dark mode** (theme switch, top of the app).
+3. Set the window so the app content is **1440px** wide; hide bookmarks/extra tabs.
+
+**The 8 shots** (the bracketed values are the deterministic seed output — use them to
+confirm you're on the right state before you click capture):
+
+1. **`chat/streamed-answer.png`** — `/chat` → type *"What can you help me with?"* → Enter →
+   wait for the streamed answer to finish → capture the **answer card** (crop to the
+   conversation, not the whole window).
+2. **`chat/artifact-card.png`** — `/chat` → type *"Build me a quarterly review deck"* →
+   wait for the **artifact card** with a Download link → capture the card.
+   *(If local execution isn't configured to emit an artifact, skip this one — see Missing
+   gaps in the report.)*
+3. **`operator/console-overview.png`** — `/operator` → enter the service key → **Connect** →
+   **clear the key field afterward** → capture the connected **Delivery console** header +
+   top panels.
+4. **`operator/readiness-states.png`** — **Incidents** tab → the **External sync** panel →
+   capture the panel showing [PagerDuty Prod = Ready, Opsgenie EU = Ready, PagerDuty
+   Staging = Stale, Generic Webhook = Unverified, PagerDuty Legacy = Auth failed, Jira
+   Bridge = Disabled], each with its recommended-action chip.
+5. **`observability/slo-panel.png`** — **Incidents** tab → the **Sync observability** panel
+   (top) → capture [SLO tiles ≈ readiness 40% / validation 33% / reconciliation 67% / sync
+   67%, 24h trend pass-rates, **Drift backlog: 3**, a `repeated_auth_failures` candidate
+   alert on PagerDuty Legacy].
+6. **`operator/drift-recovery.png`** — **Incidents** tab → expand the **ingest-worker**
+   incident → **History** → capture the **drifted** linkage line offering **Refresh** +
+   **Apply** (the "no auto-heal" story).
+7. **`operator/incident-sync-detail.png`** — **Incidents** tab → expand the **payments-api**
+   incident → capture the sync detail: **Externally linked** (PD-4821) + Open link + the
+   synced record + reconciliation summary.
+8. **`demo/seed-tour.png`** — **Incidents** tab → the **Demo data** card → capture the
+   5-step guided tour rendered inline.
+
+## Pre-commit checklist (every shot)
+
+- [ ] **Dark mode** on; same viewport/zoom across the whole set.
+- [ ] **No secrets**: the service-key field is empty/dots; no real API key anywhere in frame.
+- [ ] **No local-only URLs**: crop out the browser address bar (`localhost:3000`). On-page
+      links to `demo.aira-x.local` are fine — that's the synthetic seed namespace.
+- [ ] **Matches the seed values** in brackets above (deterministic; recapture if not).
+- [ ] Saved at the exact path/filename from the shot list; ≥1280px wide.
+
+## Final README wiring (one paste, after the 8 PNGs are in)
+
+Replace the table under `## Screenshots` in the root `README.md` with this block so the
+images render inline:
+
+```markdown
+| | |
+|---|---|
+| **Operator readiness** — every state + recommended action | **Sync observability** — SLOs, trends, drift, alert |
+| ![Operator readiness](docs/screenshots/operator/readiness-states.png) | ![Sync observability](docs/screenshots/observability/slo-panel.png) |
+| **Drift recovery** — explicit, audited (no auto-heal) | **Incident sync detail** — linkage + audit |
+| ![Drift recovery](docs/screenshots/operator/drift-recovery.png) | ![Incident sync detail](docs/screenshots/operator/incident-sync-detail.png) |
+| **Demo seed tour** — one click, deterministic | **Chat** — streamed answer |
+| ![Demo tour](docs/screenshots/demo/seed-tour.png) | ![Chat](docs/screenshots/chat/streamed-answer.png) |
+
+> Captured on the deterministic demo seed (`POST /operator/demo/seed`). Full set +
+> conventions: [docs/screenshots/](docs/screenshots/).
+```
+
+Then `git add docs/screenshots/**/*.png README.md` and commit. (Binaries: keep them
+committed for the portfolio — they're small synthetic-data PNGs.)
+
+## Demo GIF (optional, highest-impact)
+
+Record a 30–45s clip of shots 4 → 5 → 6 (readiness → observability → expand ingest-worker
+→ Refresh/Apply). Use any screen recorder; export ≤ 5 MB; save as
+`demo/demo-walkthrough.gif`. Embed at the very top of the README, above the badges.
+
+## After capture — verify
+
+```bash
+python -m pytest backend/tests/test_docs_packaging.py backend/tests/test_repo_professionalization.py -q -p no:randomly
+# Confirm every referenced PNG now exists and the README renders on GitHub.
+```

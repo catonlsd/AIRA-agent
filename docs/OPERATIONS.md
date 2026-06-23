@@ -9,6 +9,12 @@ Deployment targets (Render/Railway/VPS/Docker) live in [DEPLOYMENT.md](DEPLOYMEN
 > **[ENGINEERING_DECISIONS.md](ENGINEERING_DECISIONS.md)**; resume-ready metrics in
 > **[PLATFORM_SUMMARY.md](PLATFORM_SUMMARY.md)**. This guide is the deep operational
 > reference once you're running it.
+>
+> **Portfolio visuals (Milestone C):** the README's screenshot slots are stable paths
+> backed by a foolproof, deterministic shooting script in
+> **[screenshots/CAPTURE_PLAN.md](screenshots/CAPTURE_PLAN.md)** (8 shots on the demo
+> seed, ~10 min, with a pre-commit safety checklist and the exact README embed block).
+> The honest presentation gaps are tracked in **[PORTFOLIO_AUDIT.md](PORTFOLIO_AUDIT.md)**.
 
 ## Required configuration
 
