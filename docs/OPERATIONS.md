@@ -3,6 +3,13 @@
 The day-to-day reference for running, validating, and observing AIRA-X.
 Deployment targets (Render/Railway/VPS/Docker) live in [DEPLOYMENT.md](DEPLOYMENT.md).
 
+> **New here?** Start with the **[root README](../README.md)** for the platform overview,
+> then **[ARCHITECTURE.md](ARCHITECTURE.md)** for the flows and **[DEMO_WALKTHROUGH.md](DEMO_WALKTHROUGH.md)**
+> for a 7-minute hands-on evaluation. The reasoning behind the design is in
+> **[ENGINEERING_DECISIONS.md](ENGINEERING_DECISIONS.md)**; resume-ready metrics in
+> **[PLATFORM_SUMMARY.md](PLATFORM_SUMMARY.md)**. This guide is the deep operational
+> reference once you're running it.
+
 ## Required configuration
 
 Backend (`backend/.env`, full reference in `backend/.env.example`):
@@ -1793,6 +1800,38 @@ data** (one click), which then renders the walkthrough inline.
   idempotency; **reset removes only the demo namespace, real data survives**; status
   presence; HTTP gating; feature-flag disable) and `frontend/lib/operator.test.mts`
   (`demoSeedSummary`).
+
+### Portfolio & commercial packaging (Phase 7)
+
+Documentation-only — **no business capability changed**. Turns AIRA-X from "an impressive
+codebase you have to read" into a repo a recruiter, staff engineer, CTO, or customer can
+understand in minutes without a guided explanation:
+
+- **Root `README.md`** rewritten to present both surfaces (user product + operator-grade
+  incident-sync/observability platform): overview, why-it-exists, architecture summary
+  (Mermaid), feature matrix, screenshots placeholders, operator/incident-sync/
+  observability/demo overviews, quickstart, local dev, production deployment, testing,
+  architecture principles, roadmap, and a documentation map. Headline metrics up top.
+- **`docs/ARCHITECTURE.md`** — system boundaries, component map, and Mermaid diagrams for
+  the request / sync / operator / observability flows, deployment topology, plus the
+  trust / security / audit models.
+- **`docs/ENGINEERING_DECISIONS.md`** — rationale (decision → why → consequence) for the
+  load-bearing choices: local-state-is-truth, explicit recovery, capability/policy/profile
+  separation, the profile system, the computed readiness model, deterministic metrics, the
+  demo namespace, and why inbound sync never mutates local state.
+- **`docs/DEMO_WALKTHROUGH.md`** — a deterministic 5–10 min evaluation path (seed →
+  readiness → observability → drift recovery → audit → operator separation), matching the
+  seeded scenario exactly.
+- **`docs/PLATFORM_SUMMARY.md`** — resume-ready metrics + highlights (test counts,
+  adapters, operator/observability features, architecture highlights).
+- **`docs/screenshots/`** — capture guide + placeholders referenced from the README.
+- Pinned by `backend/tests/test_docs_packaging.py` (required docs exist + key sections
+  present; README covers every platform surface; ARCHITECTURE has Mermaid + the named
+  flows; **every adapter kind in the live registry is documented**; PLATFORM_SUMMARY's
+  adapter/profile/operator-route counts match the running system; ENGINEERING_DECISIONS
+  covers every required topic; DEMO_WALKTHROUGH covers every evaluation step) and
+  `frontend/lib/operator.test.mts` (unchanged). No feature work; all prior guarantees
+  preserved.
 
 ## Memory model (session + preference)
 
