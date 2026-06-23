@@ -1,4 +1,8 @@
-name: CI
+name: Fast check
+
+# The day-to-day wall: backend tests + frontend type-check/tests/lint/build.
+# Two independent jobs run in parallel. Deterministic (no random test ordering,
+# hermetic embeddings, no provider keys). Runs on every push and PR.
 
 on:
   push:
@@ -6,7 +10,7 @@ on:
     branches: [main]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: fast-check-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -30,16 +34,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run the full backend suite (regression wall included)
+      - name: Run the full backend suite (deterministic, regression wall included)
         env:
-          # Hermetic suite: no provider keys; keyword embeddings avoid model
-          # downloads in CI. Any test regression fails the build.
+          # Hermetic: no provider keys; keyword embeddings avoid model downloads.
+          # Single pytest process — the test DB is shared SQLite, so we never run
+          # two suites concurrently. `-p no:randomly` pins ordering.
           EMBEDDING_PROVIDER: hashing
           AIRA_TRACE_LOG: ./storage/test-traces.jsonl
-        run: python -m pytest -q
+        run: python -m pytest -q -p no:randomly
 
   frontend:
-    name: Frontend type-check, lint, build
+    name: Frontend type-check, tests, lint, build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -57,7 +62,10 @@ jobs:
         run: npm ci
 
       - name: Type-check
-        run: npx tsc --noEmit
+        run: ./node_modules/.bin/tsc --noEmit
+
+      - name: Unit tests (pure logic)
+        run: node --test "lib/**/*.test.mts"
 
       - name: Lint
         run: npm run lint

@@ -44,17 +44,30 @@ cd frontend && npm install && npm run dev                     # http://localhost
   LLM provider configured). Returns 503 with a per-check breakdown when not.
   Point orchestrator readiness probes here, liveness probes at `/health`.
 
-## CI (GitHub Actions: `.github/workflows/ci.yml`)
+## CI (GitHub Actions — three focused, parallel workflows)
 
-Runs on every push and on PRs to `main`:
+Replaces the former monolithic `ci.yml` with three deterministic workflows so feedback is
+fast and each status check is meaningful:
 
-- **Backend**: Python 3.12 (pip cached) → full pytest suite (320+ tests,
-  hermetic — no API keys; `EMBEDDING_PROVIDER=hashing` avoids model downloads).
-  This includes the regression wall protecting routed modes, approval/resume,
-  evidence-gated completion, and the SSE lifecycle.
-- **Frontend**: Node 22 (npm cached) → `tsc --noEmit` → `eslint` → production build.
+- **`fast-check.yml`** (every push + PRs to `main`) — two parallel jobs:
+  - **Backend**: Python 3.12 (pip cached) → full pytest suite, deterministic
+    (`-p no:randomly`), hermetic (no API keys; `EMBEDDING_PROVIDER=hashing`). Single
+    process — the test DB is shared SQLite, so suites never run concurrently. This is the
+    regression wall (routed modes, approval/resume, incident-sync lifecycle, observability
+    math, operator gating).
+  - **Frontend**: Node 22 (npm cached) → `tsc --noEmit` → `node --test "lib/**/*.test.mts"`
+    → `eslint` → production build.
+- **`e2e.yml`** (PRs to `main` + manual dispatch) — installs Chromium and runs the hermetic
+  Playwright suite (`CI=1`: retries + HTML report; report uploaded on failure). Kept off
+  every push to save browser minutes.
+- **`docs.yml`** (every push + PRs) — a fast, distinct gate running the packaging +
+  professionalization tests (`tests/test_docs_packaging.py`,
+  `tests/test_repo_professionalization.py`): the docs, OSS governance, CI, and release
+  files must exist, cover required sections, and (for docs) keep counts in sync with the
+  live registry.
 
-Any test regression, type error, lint error, or build failure fails the run.
+Any test regression, type error, lint error, build failure, or doc/packaging drift fails
+the relevant run.
 
 ## Logs and traces
 
@@ -1832,6 +1845,35 @@ understand in minutes without a guided explanation:
   covers every required topic; DEMO_WALKTHROUGH covers every evaluation step) and
   `frontend/lib/operator.test.mts` (unchanged). No feature work; all prior guarantees
   preserved.
+
+### Production delivery & OSS professionalization (Phase 8)
+
+Process / infrastructure only — **no product, API, DB, UI, or incident-sync behavior
+changed.** Makes the repository look and behave like a platform maintained by a mature
+engineering org:
+
+- **OSS governance:** `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `CONTRIBUTING.md`
+  (scope, invariants, setup, the test gates, branch strategy, release pointer),
+  `SECURITY.md` (responsible disclosure via GitHub Security Advisories + supported
+  versions), `LICENSE` (MIT). GitHub issue templates (bug / feature, + a `config.yml`
+  routing security to private advisories) and a PR template that checks the platform
+  invariants.
+- **CI/CD:** the monolithic `ci.yml` is replaced by three focused, parallel workflows —
+  `fast-check` (backend + frontend), `e2e` (Playwright), `docs` (packaging +
+  professionalization gates). See the **CI** section above.
+- **Release management:** `docs/RELEASE_PROCESS.md` (SemVer, release + rollback checklists,
+  Keep-a-Changelog process) and `CHANGELOG.md` seeded with `v0.1.0` (the Phase 1–7
+  milestone) and an `[Unreleased]` section for this phase.
+- **Deployment blueprint:** `docs/DEPLOYMENT_BLUEPRINT.md` — single-VM → docker-compose →
+  future-Kubernetes tiers, each covering backend / frontend / worker / database / secrets.
+- **Portfolio assets:** `docs/PORTFOLIO_GUIDE.md` (role-based reading orders, a 5-min demo
+  script, architecture talking points, interview discussion points) and
+  `docs/RESUME_BULLETS.md` (resume / LinkedIn / GitHub-summary bullets).
+- Pinned by `backend/tests/test_repo_professionalization.py` (12 tests: OSS files +
+  templates exist; CONTRIBUTING covers workflow/release; SECURITY covers disclosure; the
+  three workflows exist and run the real gates; `ci.yml` is gone; release/changelog,
+  deployment-blueprint tiers+components, and portfolio assets all present) — the same
+  "process can't silently disappear" philosophy as Phase 7.
 
 ## Memory model (session + preference)
 

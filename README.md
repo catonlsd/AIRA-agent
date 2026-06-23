@@ -1,5 +1,10 @@
 # AIRA-X
 
+[![Fast check](https://github.com/catonlsd/AIRA-agent/actions/workflows/fast-check.yml/badge.svg)](https://github.com/catonlsd/AIRA-agent/actions/workflows/fast-check.yml)
+[![E2E](https://github.com/catonlsd/AIRA-agent/actions/workflows/e2e.yml/badge.svg)](https://github.com/catonlsd/AIRA-agent/actions/workflows/e2e.yml)
+[![Docs & packaging](https://github.com/catonlsd/AIRA-agent/actions/workflows/docs.yml/badge.svg)](https://github.com/catonlsd/AIRA-agent/actions/workflows/docs.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 **AIRA-X is two production-grade surfaces behind one codebase:**
 
 1. **A conversational AI assistant** — one supervisor orchestrates chat, web research,
@@ -333,4 +338,8 @@ notification channel layered *on top of* (never inside) the candidate-alert obse
 | **[docs/OPERATIONS.md](docs/OPERATIONS.md)** | Full operational guide (every milestone) |
 | **[docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md)** | Persistence, runbooks, SLIs, troubleshooting |
 | **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** | Hosting recipes |
+| **[docs/DEPLOYMENT_BLUEPRINT.md](docs/DEPLOYMENT_BLUEPRINT.md)** | Single-VM → compose → Kubernetes deployment tiers |
+| **[docs/RELEASE_PROCESS.md](docs/RELEASE_PROCESS.md)** · **[CHANGELOG.md](CHANGELOG.md)** | Versioning, release/rollback, change history |
+| **[docs/PORTFOLIO_GUIDE.md](docs/PORTFOLIO_GUIDE.md)** · **[docs/RESUME_BULLETS.md](docs/RESUME_BULLETS.md)** | Role-based reading orders, demo script, resume bullets |
+| **[CONTRIBUTING.md](CONTRIBUTING.md)** · **[SECURITY.md](SECURITY.md)** · **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** | Contribution workflow, disclosure, conduct |
 | **[HOW_TO_USE.md](HOW_TO_USE.md)** | User-product walkthrough |
