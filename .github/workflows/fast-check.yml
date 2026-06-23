@@ -36,10 +36,13 @@ jobs:
 
       - name: Run the full backend suite (deterministic, regression wall included)
         env:
-          # Hermetic: no provider keys; keyword embeddings avoid model downloads.
-          # Single pytest process — the test DB is shared SQLite, so we never run
-          # two suites concurrently. `-p no:randomly` pins ordering.
+          # Hermetic: the suite stubs the LLM, so the dummy GROQ_API_KEY is never used
+          # for a real call — it only satisfies config.py's deliberate fail-fast for the
+          # default LLM_PROVIDER=groq. Keyword embeddings avoid model downloads. Single
+          # pytest process — the test DB is shared SQLite, so we never run two suites
+          # concurrently. `-p no:randomly` pins ordering.
           EMBEDDING_PROVIDER: hashing
+          GROQ_API_KEY: ci-dummy-not-used
           AIRA_TRACE_LOG: ./storage/test-traces.jsonl
         run: python -m pytest -q -p no:randomly
 
