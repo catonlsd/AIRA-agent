@@ -30,7 +30,15 @@ os.environ.setdefault("AIRA_EMBEDDING_PROVIDER", "hashing")
 os.environ.setdefault("AIRA_CHROMA_DIR", str(Path(tempfile.gettempdir()) / "aira_x_test_chroma"))
 
 import app.core.llm as llm_module
+from app.db.database import init_db
 from app.routes.aira_x import AiraXRunRequest, run_aira_x
+
+# Create the full schema up front. In production the app lifespan calls init_db(), but
+# TestClient(app) (used without a `with` block) never triggers the lifespan, and the
+# lazy per-service create_all() can miss late-registered models (e.g. Document) on a
+# FRESH database — causing "no such table: documents" only on a clean CI checkout.
+# Idempotent: a no-op when the tables already exist (local persistent DB).
+init_db()
 
 
 _STUB_LLM_RESPONSE = "Hello! I am AIRA-X, your AI assistant. How can I help you today?"
