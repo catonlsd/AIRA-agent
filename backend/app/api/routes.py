@@ -1,7 +1,7 @@
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -370,10 +370,24 @@ def build_contextual_query(question: str, history: list[dict]) -> str:
 @router.post("/upload")
 def upload_documents(
     files: list[UploadFile] = File(...),
+    session_id: str | None = Form(default=None),
     db: Session = Depends(get_db),
+    http_request: Request = None,
 ) -> dict:
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded.")
+
+    # Account-first ownership: ingested chunks are scoped to the authenticated
+    # account when present, otherwise the session (matches the chat's ctx.owner).
+    # Uploading into a workspace mutates shared content -> requires edit rights.
+    from app.auth import resolve_scope
+    from app.authz import PERM_EDIT, can
+
+    scope = resolve_scope(http_request, session_id)
+    decision = can(scope, PERM_EDIT)
+    if not decision:
+        raise HTTPException(status_code=403, detail=decision.reason)
+    owner = scope.owner_key or None
 
     uploaded = []
     vector_store = VectorStore()
@@ -412,6 +426,7 @@ def upload_documents(
                 file_type=suffix.replace(".", ""),
                 path=str(stored_path),
                 chunk_count=len(chunks),
+                owner=owner,  # scope the document row like its vector chunks
             )
 
             db.add(document)
@@ -446,7 +461,38 @@ def upload_documents(
                 vector_ids.append(vector_id)
 
             vector_store.add_chunks(texts, metadatas, vector_ids)
+
+            # Dual-write into the ChromaDB-backed store that powers the
+            # supervisor's document-first Q&A. Best-effort: the legacy store
+            # above remains the source of truth for /assistant until parity is
+            # verified, so a Chroma failure must not fail the upload.
+            try:
+                from app.services.document_qa_service import get_document_qa_service
+
+                # Scope ingested chunks to the resolved owner (account when
+                # authenticated, else session) so document-first retrieval stays
+                # within the same scope the chat turn uses.
+                get_document_qa_service().ingest(
+                    document_id=document.id,
+                    document_name=document.original_filename,
+                    pages=pages,
+                    owner=owner,
+                )
+            except Exception:
+                pass
+
             db.commit()
+
+            # Meaningful, scope-owned activity event (user-facing; best-effort).
+            try:
+                from app.activity import DOCUMENT_UPLOADED, activity_service
+
+                activity_service.record(
+                    owner, DOCUMENT_UPLOADED, f"Uploaded {document.original_filename}",
+                    actor_id=scope.account_id, resource_type="document", resource_id=str(document.id),
+                )
+            except Exception:
+                pass
 
             uploaded.append(
                 {

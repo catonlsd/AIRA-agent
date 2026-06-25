@@ -13,6 +13,12 @@ backend/.env
 frontend/.env
 frontend/.env.local
 
+# Playwright E2E artifacts (browsers live in the user cache, not the repo)
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/.cache/
+
 # Backend local storage & runtime data
 backend/storage/*.db
 backend/storage/*.log
@@ -50,3 +56,15 @@ Thumbs.db
 
 # Legacy path (kept for clarity if file still exists locally)
 backend/storage/workflow_runs.json
+
+# Turn traces
+backend/storage/traces.jsonl
+
+# TS build info
+*.tsbuildinfo
+
+# Chroma vector store
+backend/storage/chroma/
+
+# AIRA-X plan-executor output (generated projects)
+backend/generated/

@@ -9,12 +9,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   const isLandingPage = pathname === "/";
+  // The operator console is OPERATOR-ONLY and renders without the product nav, so
+  // it stays clearly separate from the normal user product (never linked in Nav).
+  const isOperator = pathname === "/operator" || pathname.startsWith("/operator/");
 
   const shellClassName = cn(
     "aira-shell aira-production-theme soft-grid min-h-screen text-[var(--text)]"
   );
 
-  if (isLandingPage) {
+  if (isLandingPage || isOperator) {
     return <div className={shellClassName}>{children}</div>;
   }
 

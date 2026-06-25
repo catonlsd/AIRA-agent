@@ -4,6 +4,7 @@ import { CheckCircle2 } from "lucide-react";
 import {
   formatInlineText,
   isMultiTaskAnswer,
+  normaliseMarkdown,
   parseListItems,
   parseMultiTaskAnswer,
   parseStructuredSections,
@@ -22,6 +23,8 @@ type AssistantAnswerContentProps = {
   className?: string;
 };
 
+// ─── Inline text (handles **bold**) ──────────────────────────────────────────
+
 function InlineText({ text }: { text: string }) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
 
@@ -35,12 +38,13 @@ function InlineText({ text }: { text: string }) {
             </strong>
           );
         }
-
         return <span key={index}>{part}</span>;
       })}
     </>
   );
 }
+
+// ─── Code / output block ──────────────────────────────────────────────────────
 
 function AnswerCodeBlock({
   value,
@@ -63,44 +67,163 @@ function AnswerCodeBlock({
   );
 }
 
+// ─── Bullet list ──────────────────────────────────────────────────────────────
+
 function BulletList({ items }: { items: string[] }) {
   return (
     <ul className="space-y-2 pl-1">
       {items.map((item, index) => (
-        <li
-          key={index}
-          className="flex gap-2 text-sm leading-6 text-[var(--text)]"
-        >
+        <li key={index} className="flex gap-2 text-sm leading-6 text-[var(--text)]">
           <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" />
-          <span>
-            <InlineText text={item} />
-          </span>
+          <span><InlineText text={cleanInline(item)} /></span>
         </li>
       ))}
     </ul>
   );
 }
 
-function ParagraphBlock({ text }: { text: string }) {
-  const paragraphs = splitParagraphs(text);
+// ─── Ordered list ─────────────────────────────────────────────────────────────
 
-  if (paragraphs.length === 0) {
-    return null;
+function OrderedList({ items }: { items: string[] }) {
+  return (
+    <ol className="space-y-2 pl-1">
+      {items.map((item, index) => (
+        <li key={index} className="flex gap-2.5 text-sm leading-6 text-[var(--text)]">
+          <span className="mt-px min-w-[1.15rem] shrink-0 text-right font-bold text-[var(--accent)]">
+            {index + 1}.
+          </span>
+          <span><InlineText text={cleanInline(item)} /></span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// ─── Rich answer (paragraphs + bullet / numbered lists + light headings) ──────
+// Plain conversational answers can mix prose with Markdown lists. The structured-
+// section renderer only handles titled execution sections, so for everyday chat
+// we parse the text into blocks here and render real lists instead of flattening
+// everything into one run-on paragraph.
+
+type AnswerBlock =
+  | { type: "p"; text: string }
+  | { type: "h"; text: string }
+  | { type: "ul"; items: string[] }
+  | { type: "ol"; items: string[] };
+
+/** Strip single-* / single-_ italics but keep **bold** for InlineText. */
+function cleanInline(text: string): string {
+  return text
+    .replace(/(?<!\*)\*(?!\*)([^*\n]+?)\*(?!\*)/g, "$1")
+    .replace(/(?<!_)_(?!_)([^_\n]+?)_(?!_)/g, "$1")
+    .trim();
+}
+
+function parseAnswerBlocks(text: string): AnswerBlock[] {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const blocks: AnswerBlock[] = [];
+
+  let para: string[] = [];
+  let list: string[] = [];
+  let listType: "ul" | "ol" = "ul";
+
+  const flushPara = () => {
+    if (para.length) {
+      blocks.push({ type: "p", text: para.join(" ").trim() });
+      para = [];
+    }
+  };
+  const flushList = () => {
+    if (list.length) {
+      blocks.push({ type: listType, items: list });
+      list = [];
+    }
+  };
+
+  for (const raw of lines) {
+    const line = raw.trim();
+
+    if (!line) {
+      flushPara();
+      flushList();
+      continue;
+    }
+
+    const heading = line.match(/^#{1,6}\s+(.+)$/);
+    const ulItem = line.match(/^[-*•]\s+(.+)$/);
+    const olItem = line.match(/^\d+[.)]\s+(.+)$/);
+
+    if (heading) {
+      flushPara();
+      flushList();
+      blocks.push({ type: "h", text: heading[1].trim() });
+    } else if (ulItem) {
+      flushPara();
+      if (list.length && listType !== "ul") flushList();
+      listType = "ul";
+      list.push(ulItem[1].trim());
+    } else if (olItem) {
+      flushPara();
+      if (list.length && listType !== "ol") flushList();
+      listType = "ol";
+      list.push(olItem[1].trim());
+    } else {
+      flushList();
+      para.push(line);
+    }
+  }
+
+  flushPara();
+  flushList();
+  return blocks;
+}
+
+function RichAnswer({ text }: { text: string }) {
+  const blocks = parseAnswerBlocks(text);
+
+  if (blocks.length === 0) return null;
+  // Nothing list-like or heading-like → fall back to the simple paragraph block.
+  if (blocks.every((b) => b.type === "p")) {
+    return <ParagraphBlock text={text} />;
   }
 
   return (
     <div className="space-y-3">
+      {blocks.map((block, index) => {
+        if (block.type === "h") {
+          return (
+            <p key={index} className="text-sm font-black text-[var(--text-strong)]">
+              <InlineText text={cleanInline(block.text)} />
+            </p>
+          );
+        }
+        if (block.type === "ul") return <BulletList key={index} items={block.items} />;
+        if (block.type === "ol") return <OrderedList key={index} items={block.items} />;
+        return <ParagraphBlock key={index} text={block.text} />;
+      })}
+    </div>
+  );
+}
+
+// ─── Paragraph block ──────────────────────────────────────────────────────────
+
+function ParagraphBlock({ text }: { text: string }) {
+  const paragraphs = splitParagraphs(text);
+
+  if (paragraphs.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
       {paragraphs.map((paragraph, index) => (
-        <p
-          key={index}
-          className="text-sm leading-7 text-[var(--text)]"
-        >
+        <p key={index} className="text-sm leading-7 text-[var(--text)]">
           <InlineText text={formatInlineText(paragraph)} />
         </p>
       ))}
     </div>
   );
 }
+
+// ─── Section block ────────────────────────────────────────────────────────────
 
 function SectionBlock({ section }: { section: AnswerSection }) {
   if (!section.title) {
@@ -136,10 +259,10 @@ function SectionBlock({ section }: { section: AnswerSection }) {
   );
 }
 
+// ─── Structured technical sections ───────────────────────────────────────────
+
 function StructuredTechnicalSections({ sections }: { sections: AnswerSection[] }) {
-  if (sections.length === 0) {
-    return null;
-  }
+  if (sections.length === 0) return null;
 
   return (
     <TechnicalDetailsPanel className="mt-3">
@@ -149,11 +272,11 @@ function StructuredTechnicalSections({ sections }: { sections: AnswerSection[] }
             key={`${section.title}-${index}`}
             className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3"
           >
-            {section.title ? (
+            {section.title && (
               <p className="text-[10px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
                 {section.title}
               </p>
-            ) : null}
+            )}
             <div className={section.title ? "mt-2" : undefined}>
               {sectionUsesList(section.title, section.content) ? (
                 <BulletList items={parseListItems(section.content)} />
@@ -169,6 +292,8 @@ function StructuredTechnicalSections({ sections }: { sections: AnswerSection[] }
     </TechnicalDetailsPanel>
   );
 }
+
+// ─── Structured answer ────────────────────────────────────────────────────────
 
 function StructuredAnswer({ answer }: { answer: string }) {
   const sections = parseStructuredSections(answer);
@@ -189,10 +314,10 @@ function StructuredAnswer({ answer }: { answer: string }) {
   );
 }
 
+// ─── Multi-task sub-components ────────────────────────────────────────────────
+
 function MultiTaskIntro({ intro }: { intro: string }) {
-  if (!intro.trim()) {
-    return null;
-  }
+  if (!intro.trim()) return null;
 
   return (
     <div className="rounded-xl border border-[color-mix(in_srgb,var(--accent)_24%,transparent)] bg-[var(--accent-soft)] px-4 py-3">
@@ -207,22 +332,15 @@ function MultiTaskBody({ body }: { body: string }) {
   return <StructuredAnswer answer={body} />;
 }
 
-function MultiTaskCard({
-  task,
-}: {
-  task: ParsedMultiTask["tasks"][number];
-}) {
+function MultiTaskCard({ task }: { task: ParsedMultiTask["tasks"][number] }) {
   return (
     <article className="rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
       <div className="mb-3 flex items-start gap-3">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] text-xs font-black text-[var(--accent)]">
           {task.index}
         </div>
-
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-black text-[var(--text-strong)]">
-            {task.title}
-          </p>
+          <p className="text-sm font-black text-[var(--text-strong)]">{task.title}</p>
         </div>
       </div>
 
@@ -234,9 +352,7 @@ function MultiTaskCard({
 }
 
 function MultiTaskSummary({ summary }: { summary: string }) {
-  if (!summary.trim()) {
-    return null;
-  }
+  if (!summary.trim()) return null;
 
   const items = parseListItems(summary);
   const hasList = items.length > 0;
@@ -247,7 +363,6 @@ function MultiTaskSummary({ summary }: { summary: string }) {
         <CheckCircle2 className="h-3.5 w-3.5" />
         Summary
       </div>
-
       {hasList ? (
         <BulletList items={items} />
       ) : (
@@ -263,23 +378,28 @@ function MultiTaskAnswer({ parsed }: { parsed: ParsedMultiTask }) {
   return (
     <div className="space-y-4">
       <MultiTaskIntro intro={parsed.intro} />
-
       <div className="space-y-3">
         {parsed.tasks.map((task) => (
           <MultiTaskCard key={task.index} task={task} />
         ))}
       </div>
-
       <MultiTaskSummary summary={parsed.summary} />
     </div>
   );
 }
 
+// ─── Main export ──────────────────────────────────────────────────────────────
+
 export function AssistantAnswerContent({
   answer,
   className,
 }: AssistantAnswerContentProps) {
-  const cleaned = stripTrailingSources(answer);
+  // Strip trailing source blocks once. `cleaned` (markdown flattened) is used
+  // only to DETECT multi-task / titled-section execution answers. The everyday
+  // chat fallback renders from `base` so real Markdown lists, numbered lists,
+  // and light headings survive into proper list elements.
+  const base = stripTrailingSources(answer);
+  const cleaned = normaliseMarkdown(base);
 
   if (isMultiTaskAnswer(cleaned)) {
     const parsed = parseMultiTaskAnswer(cleaned);
@@ -305,7 +425,7 @@ export function AssistantAnswerContent({
 
   return (
     <div className={cn("assistant-answer", className)}>
-      <ParagraphBlock text={cleaned} />
+      <RichAnswer text={base} />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -285,6 +286,23 @@ export default function DocumentsPage() {
   const [summary, setSummary] = useState<SummaryState | null>(null);
   const [summarizingId, setSummarizingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const summaryRef = useRef<HTMLElement | null>(null);
+  // Set when a summary has just been generated, so the effect below scrolls to it.
+  const scrollToSummaryRef = useRef(false);
+
+  // After a fresh summary renders, smooth-scroll it into view so users don't
+  // have to hunt for it below the fold. Honors prefers-reduced-motion.
+  useEffect(() => {
+    if (!summary || !scrollToSummaryRef.current) return;
+    scrollToSummaryRef.current = false;
+    const reduced =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    summaryRef.current?.scrollIntoView({
+      behavior: reduced ? "auto" : "smooth",
+      block: "start",
+    });
+  }, [summary]);
 
   const loadDocuments = useCallback(
     async (options?: { showLoading?: boolean }) => {
@@ -390,7 +408,13 @@ export default function DocumentsPage() {
         citations: result.citations,
       });
 
-      setStatus("");
+      scrollToSummaryRef.current = true;
+      setStatus("✅ Summary generated successfully.");
+      // Clear the success note once the user has been taken to the summary.
+      setTimeout(
+        () => setStatus((current) => (current.startsWith("✅") ? "" : current)),
+        4000
+      );
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to summarize document.";
@@ -403,6 +427,33 @@ export default function DocumentsPage() {
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-7xl flex-col gap-6">
+      {/* One-shot entrance glow for a freshly generated summary (subtle, ~1.6s). */}
+      <style>{`
+        @keyframes summaryGlowPulse {
+          0% {
+            opacity: 0;
+            transform: translateY(10px);
+            box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+          }
+          25% {
+            opacity: 1;
+            transform: translateY(0);
+          }
+          70% {
+            box-shadow: 0 0 0 10px transparent, 0 0 28px color-mix(in srgb, var(--accent) 18%, transparent);
+          }
+          100% {
+            box-shadow: 0 0 0 0 transparent;
+          }
+        }
+        .summary-glow {
+          animation: summaryGlowPulse 1.6s ease-out 1;
+          border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .summary-glow { animation: none; }
+        }
+      `}</style>
       <section className="sarvam-card fade-up relative overflow-hidden rounded-[2rem] p-6">
         <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-[var(--accent-glow)] blur-3xl" />
         <div className="pointer-events-none absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-[var(--secondary-glow)] blur-3xl" />
@@ -459,7 +510,9 @@ export default function DocumentsPage() {
             status.toLowerCase().includes("failed") ||
               status.toLowerCase().includes("error")
               ? "border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] text-[var(--danger)]"
-              : "border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)]"
+              : status.startsWith("✅")
+                ? "border-[color-mix(in_srgb,var(--success)_34%,transparent)] bg-[var(--success-soft)] text-[var(--success)]"
+                : "border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)]"
           )}
         >
           {status}
@@ -598,7 +651,11 @@ export default function DocumentsPage() {
           )}
 
           {summary && (
-            <section className="sarvam-card fade-up rounded-[1.75rem] p-5">
+            <section
+              ref={summaryRef}
+              key={`${summary.documentId}-${summary.text.length}`}
+              className="sarvam-card summary-glow scroll-mt-20 rounded-[1.75rem] p-5"
+            >
               <SectionHeader
                 icon={<Sparkles className="h-4 w-4" />}
                 title="Document Summary"

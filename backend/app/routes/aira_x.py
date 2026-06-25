@@ -1,12 +1,24 @@
-import asyncio
+﻿import asyncio
+import json
 from uuid import uuid4
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from graph.aira_workflow import AiraXWorkflow
+from app.turn_classifier import (
+    DOCUMENT_QA_MODE,
+    SELF_MEMORY_MODE,
+    WEB_RESEARCH_MODE,
+)
+from app.assistant_supervisor import AssistantSupervisor
+from app.auth import resolve_scope
+from app.context_builder import build_turn_context
+from app.services.trace_service import TraceService
+
+from graph.langgraph_aira_workflow import LangGraphAiraXWorkflow
 from tools.tool_registry import ToolRegistry
 from tools.tool_router import ToolRouter
 from agents.agent_registry import AgentRegistry
@@ -24,6 +36,11 @@ _SAFE_BULK_DELETE_STATUSES = {"completed", "failed", "rejected"}
 
 class AiraXRunRequest(BaseModel):
     goal: str
+    session_id: str | None = None
+    # Recent {role, content} turns supplied by the client for conversation memory.
+    history: list[dict] | None = None
+    # Names of documents uploaded this session — signals document-first routing.
+    uploaded_file_names: list[str] | None = None
 
 
 class AiraXApproveRequest(BaseModel):
@@ -174,9 +191,9 @@ def _recover_stale_approval_processing_state(
     recovered_at = _utc_now_iso()
 
     recovery_message = (
-        "Approval processing became stale before completion. "
-        "AIRA-X stopped this workflow to prevent duplicate execution. "
-        "Review the workflow state before running the action again."
+        "AIRA-X recovered a stale approval-processing state. "
+        "No action was executed during the stale lock, so the workflow is now "
+        "marked as failed and safe to inspect or delete."
     )
 
     current_step = next(
@@ -184,12 +201,14 @@ def _recover_stale_approval_processing_state(
         None,
     )
 
-    if current_step:
+    if current_step and current_step.status in {"blocked", "pending", "running"}:
         current_step.status = "failed"
-        current_step.error = recovery_message
+
+        if not current_step.error:
+            current_step.error = recovery_message
 
     state.status = "failed"
-    state.decision = "approval_processing_stale"
+    state.decision = "approval_processing_stale_recovered"
     state.final_answer = recovery_message
 
     state.memory["approval_in_progress"] = False
@@ -402,6 +421,231 @@ def _cleanup_staged_changes_after_rejection(state):
     return cleanup_result
 
 
+def _dedupe_dict_list(items: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    unique_items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        marker = json.dumps(item, sort_keys=True, default=str)
+        if marker in seen:
+            continue
+
+        seen.add(marker)
+        unique_items.append(item)
+
+    return unique_items
+
+
+def _memory_dicts(memory: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    value = memory.get(key, [])
+
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+
+    if isinstance(value, dict):
+        return [value]
+
+    return []
+
+
+def _collect_sources_from_workflow(workflow: dict[str, Any]) -> list[dict[str, Any]]:
+    memory = workflow.get("memory", {})
+
+    sources: list[dict[str, Any]] = []
+    sources.extend(_memory_dicts(memory, "sources"))
+    sources.extend(_memory_dicts(memory, "document_sources"))
+    sources.extend(_memory_dicts(memory, "web_sources"))
+    sources.extend(_memory_dicts(memory, "citations"))
+    sources.extend(_memory_dicts(workflow, "sources"))
+
+    return _dedupe_dict_list(sources)
+
+
+def _collect_artifacts_from_workflow(workflow: dict[str, Any]) -> list[dict[str, Any]]:
+    memory = workflow.get("memory", {})
+
+    artifacts: list[dict[str, Any]] = []
+    artifacts.extend(_memory_dicts(memory, "artifacts"))
+    artifacts.extend(_memory_dicts(memory, "generated_artifacts"))
+    artifacts.extend(_memory_dicts(workflow, "artifacts"))
+
+    return _dedupe_dict_list(artifacts)
+
+
+def _build_approval_summary_from_workflow(workflow: dict[str, Any]) -> dict[str, Any] | None:
+    pending_action = workflow.get("pending_action")
+    approval_context = workflow.get("approval_context") or {}
+    approval_resolution = workflow.get("approval_resolution") or {}
+    requires_approval = workflow.get("requires_approval", False)
+    approval_in_progress = workflow.get("approval_in_progress", False)
+
+    if not any(
+        [
+            pending_action,
+            approval_context,
+            approval_resolution,
+            requires_approval,
+            approval_in_progress,
+        ]
+    ):
+        return None
+
+    summary_message = None
+
+    if requires_approval:
+        summary_message = workflow.get("final_answer") or "Approval is required before execution."
+    elif approval_in_progress:
+        summary_message = "This approval request is currently being processed."
+    elif approval_resolution.get("status") == "approved":
+        summary_message = "The approval-gated action was approved."
+    elif approval_resolution.get("status") == "rejected":
+        summary_message = "The approval-gated action was rejected."
+    elif approval_resolution.get("status") == "stale_processing_recovered":
+        summary_message = (
+            "A stale approval-processing state was recovered safely and the workflow was stopped."
+        )
+
+    return {
+        "required": requires_approval,
+        "in_progress": approval_in_progress,
+        "pending_action": pending_action,
+        "status": approval_resolution.get("status"),
+        "action": approval_resolution.get("action") or pending_action,
+        "context_type": approval_context.get("type"),
+        "tool_name": approval_context.get("tool_name"),
+        "tool_action": approval_context.get("tool_action"),
+        "message": summary_message,
+    }
+
+
+def _build_clean_single_run_response(workflow: dict[str, Any]) -> dict[str, Any]:
+    sources = _collect_sources_from_workflow(workflow)
+    artifacts = _collect_artifacts_from_workflow(workflow)
+    approval_summary = _build_approval_summary_from_workflow(workflow)
+
+    cleaned = dict(workflow)
+    # Top-level mode means the ROUTED INTENT, never the prompt shape. Raw
+    # workflow dicts reaching this normalizer are tool-execution runs — either
+    # an approval resume or a plain execution turn. Prompt shape lives in meta.
+    if isinstance(workflow.get("mode"), str) and workflow["mode"]:
+        mode = workflow["mode"]
+    elif workflow.get("approval_resolution") or workflow.get("approval_in_progress"):
+        mode = "approval_resume"
+    else:
+        mode = "execution"
+    cleaned["mode"] = mode
+    cleaned["message"] = workflow.get("final_answer")
+    cleaned["sources"] = sources
+    cleaned["artifacts"] = artifacts
+    cleaned["approval_summary"] = approval_summary
+    cleaned["meta"] = {
+        "is_multi_question": False,
+        "prompt_shape": "single",
+        "question_count": 1,
+        "has_sources": bool(sources),
+        "has_artifacts": bool(artifacts),
+        "requires_approval": workflow.get("requires_approval", False),
+    }
+
+    return cleaned
+
+
+def _normalize_multi_question_response(result: dict[str, Any]) -> dict[str, Any]:
+    sub_answers = result.get("sub_answers", [])
+
+    cleaned_sub_answers: list[dict[str, Any]] = []
+
+    for item in sub_answers:
+        raw_result = item.get("raw_result", {}) if isinstance(item, dict) else {}
+
+        if not isinstance(raw_result, dict):
+            raw_result = {}
+
+        child_sources = item.get("sources") if isinstance(item.get("sources"), list) else []
+        child_artifacts = item.get("artifacts") if isinstance(item.get("artifacts"), list) else []
+        child_approval = item.get("approval_summary")
+
+        if child_approval is None:
+            child_approval = item.get("approval")
+
+        if not child_sources and raw_result:
+            child_sources = _collect_sources_from_workflow(raw_result)
+
+        if not child_artifacts and raw_result:
+            child_artifacts = _collect_artifacts_from_workflow(raw_result)
+
+        if child_approval is None and raw_result:
+            child_approval = _build_approval_summary_from_workflow(raw_result)
+
+        cleaned_sub_answers.append(
+            {
+                "question_number": item.get("question_number"),
+                "original_question_number": item.get("original_question_number"),
+                "question": item.get("question"),
+                "run_id": item.get("run_id"),
+                "status": item.get("status"),
+                "decision": item.get("decision"),
+                "answer": item.get("answer"),
+                "message": item.get("message") or item.get("answer"),
+                "sources": child_sources,
+                "artifacts": child_artifacts,
+                "approval_summary": child_approval,
+            }
+        )
+
+    top_sources = _dedupe_dict_list(
+        source
+        for child in cleaned_sub_answers
+        for source in child.get("sources", [])
+        if isinstance(source, dict)
+    )
+
+    top_artifacts = _dedupe_dict_list(
+        artifact
+        for child in cleaned_sub_answers
+        for artifact in child.get("artifacts", [])
+        if isinstance(artifact, dict)
+    )
+
+    top_approval_summary = [
+        {
+            "question_number": child["question_number"],
+            "question": child["question"],
+            "run_id": child.get("run_id"),
+            "approval_summary": child["approval_summary"],
+        }
+        for child in cleaned_sub_answers
+        if child.get("approval_summary") is not None
+    ] or None
+
+    return {
+        "run_id": result.get("run_id"),
+        "status": result.get("status"),
+        "decision": result.get("decision"),
+        "mode": "multi_question",
+        "message": result.get("message") or result.get("final_answer"),
+        "final_answer": result.get("final_answer") or result.get("message"),
+        "sources": top_sources,
+        "artifacts": top_artifacts,
+        "approval_summary": top_approval_summary,
+        "sub_answers": cleaned_sub_answers,
+        "meta": result.get("meta", {}),
+    }
+
+
+def _normalize_run_response(result: dict[str, Any]) -> dict[str, Any]:
+    if result.get("meta", {}).get("is_multi_question") is True or result.get("sub_answers"):
+        return _normalize_multi_question_response(result)
+
+    if isinstance(result.get("mode"), str) and "message" in result and "final_answer" in result:
+        return result
+
+    return _build_clean_single_run_response(result)
+
+
 @router.get("/overview")
 async def get_aira_x_overview():
     _recover_stale_approval_processing_runs()
@@ -419,17 +663,151 @@ async def get_aira_x_overview():
         "workflow_metrics": workflow_metrics,
     }
 
+def _build_self_memory_response(goal: str, classification) -> dict[str, Any]:
+    message = (
+        "I only know what you share with me in this conversation or what I’m explicitly allowed "
+        "to remember. I don’t know personal details about you unless you’ve provided them."
+    )
+
+    return {
+        "run_id": str(uuid4()),
+        "status": "completed",
+        "decision": "self_memory_completed",
+        "mode": SELF_MEMORY_MODE,
+        "message": message,
+        "final_answer": message,
+        "sources": [],
+        "artifacts": [],
+        "approval_summary": None,
+        "meta": {
+            "is_multi_question": False,
+            "question_count": 1,
+            "has_sources": False,
+            "has_artifacts": False,
+            "requires_approval": False,
+            "turn_classification": {
+                "mode": classification.mode,
+                "reason": classification.reason,
+                "confidence": classification.confidence,
+            },
+        },
+    }
+
+
+def _build_document_qa_placeholder_response(goal: str, classification) -> dict[str, Any]:
+    message = (
+        "I understood this as a document-based question. The next step is to route it through "
+        "document-first analysis so AIRA-X answers from uploaded files before using broader research."
+    )
+
+    return {
+        "run_id": str(uuid4()),
+        "status": "completed",
+        "decision": "document_qa_routed",
+        "mode": DOCUMENT_QA_MODE,
+        "message": message,
+        "final_answer": message,
+        "sources": [],
+        "artifacts": [],
+        "approval_summary": None,
+        "meta": {
+            "is_multi_question": False,
+            "question_count": 1,
+            "has_sources": False,
+            "has_artifacts": False,
+            "requires_approval": False,
+            "turn_classification": {
+                "mode": classification.mode,
+                "reason": classification.reason,
+                "confidence": classification.confidence,
+            },
+        },
+    }
+
+
+def _build_web_research_placeholder_response(goal: str, classification) -> dict[str, Any]:
+    message = (
+        "I understood this as a research request. The next step is to connect it to the dedicated "
+        "research flow so AIRA-X can gather and synthesize external information cleanly."
+    )
+
+    return {
+        "run_id": str(uuid4()),
+        "status": "completed",
+        "decision": "web_research_routed",
+        "mode": WEB_RESEARCH_MODE,
+        "message": message,
+        "final_answer": message,
+        "sources": [],
+        "artifacts": [],
+        "approval_summary": None,
+        "meta": {
+            "is_multi_question": False,
+            "question_count": 1,
+            "has_sources": False,
+            "has_artifacts": False,
+            "requires_approval": False,
+            "turn_classification": {
+                "mode": classification.mode,
+                "reason": classification.reason,
+                "confidence": classification.confidence,
+            },
+        },
+    }
+
 
 @router.post("/run")
-async def run_aira_x(request: AiraXRunRequest):
-    run_id = str(uuid4())
+async def run_aira_x(request: AiraXRunRequest, http_request: Request = None):
+    """Thin adapter: build context, hand the turn to the supervisor, return one
+    normalized response. Routing/answering logic lives in the supervisor."""
+    ctx = build_turn_context(
+        request.goal,
+        session_id=request.session_id,
+        scope=resolve_scope(http_request, request.session_id),
+        history=request.history,
+        uploaded_file_names=request.uploaded_file_names,
+    )
+    response = await AssistantSupervisor().run_turn(ctx)
+    return response.model_dump()
 
-    workflow = AiraXWorkflow()
-    state = await workflow.run(request.goal, run_id=run_id)
 
-    WorkflowStore.save(state)
+@router.get("/traces")
+async def get_aira_x_traces(limit: int = 50):
+    """Recent per-turn traces (route, latency, source type, status, events)."""
+    records = TraceService().recent(limit=limit)
+    return {"trace_count": len(records), "traces": records}
 
-    return serialize_state(state)
+
+def _format_sse(event: dict[str, Any]) -> str:
+    event_type = event.get("type", "message")
+    data = json.dumps(event.get("data"), default=str)
+    return f"event: {event_type}\ndata: {data}\n\n"
+
+
+@router.post("/stream")
+async def stream_aira_x(request: AiraXRunRequest, http_request: Request = None):
+    """Stream a turn as Server-Sent Events: trace, token, source, final, error.
+
+    Mirrors /run but emits incremental events. /run remains the non-streaming
+    endpoint."""
+    ctx = build_turn_context(
+        request.goal,
+        session_id=request.session_id,
+        scope=resolve_scope(http_request, request.session_id),
+        history=request.history,
+        uploaded_file_names=request.uploaded_file_names,
+    )
+    supervisor = AssistantSupervisor()
+
+    async def event_source():
+        async for event in supervisor.stream_turn(ctx):
+            yield _format_sse(event)
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/approve")
@@ -519,7 +897,7 @@ async def approve_aira_x_action(request: AiraXApproveRequest):
         state.decision = "retry_prepared"
         state.final_answer = None
 
-        workflow = AiraXWorkflow()
+        workflow = LangGraphAiraXWorkflow()
 
         try:
             resumed_state = await workflow.resume(state)

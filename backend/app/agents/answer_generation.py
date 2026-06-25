@@ -27,7 +27,6 @@ class AnswerGenerationAgent:
                 f"Page: {chunk.page or 'Not available'}\n"
                 f"Content:\n{chunk.text}"
             )
-
             citations.append(
                 Citation(
                     source_type="Document",
@@ -46,7 +45,6 @@ class AnswerGenerationAgent:
                 f"URL: {result.url}\n"
                 f"Content:\n{result.summary}"
             )
-
             citations.append(
                 Citation(
                     source_type="Web",
@@ -56,6 +54,10 @@ class AnswerGenerationAgent:
                 )
             )
 
+        # If no sources were retrieved at all, fall back to the LLM's own knowledge.
+        # This handles general questions, weather queries without a web result,
+        # conversational follow-ups, etc. — never show the "sources don't contain"
+        # message for queries that weren't about uploaded documents.
         if not document_sources and not web_sources:
             return self._general_answer(question, history, preferences)
 
@@ -74,6 +76,8 @@ class AnswerGenerationAgent:
         history: list[dict],
         preferences: dict,
     ) -> AgentAnswer:
+        # Only show the document-specific message when the user actually asked
+        # about an uploaded document and we have nothing.
         if self._looks_like_document_request(question):
             return AgentAnswer(
                 answer=(
@@ -87,22 +91,30 @@ class AnswerGenerationAgent:
             )
 
         system = """
-You are AIRA, a polished AI research and general assistant.
+You are AIRA-X, a polished AI research and general assistant.
 
 You can answer normal everyday questions, explain concepts, help with learning,
-coding, project planning, writing, research, and document-focused work.
+coding, project planning, writing, research, weather, current events, and document work.
 
 Rules:
-1. Answer naturally and directly.
-2. Do not claim you used uploaded documents unless document sources are provided.
-3. Do not mention missing sources for general questions.
-4. Do not include a Sources section for general answers.
-5. Do not fabricate citations.
-6. Keep the tone friendly, clear, and professional.
-7. For simple greetings or small talk, reply briefly and warmly.
-8. For educational or technical questions, give a helpful structured answer.
-9. If the question needs current/live information, say that web search should be enabled.
-10. Avoid saying "the provided sources do not contain enough information" unless the user specifically asked about uploaded documents.
+1. Answer naturally, directly, and helpfully using your own knowledge.
+2. For weather questions, provide a general helpful answer based on typical
+   patterns for the location/season if you cannot get live data, and note that
+   live forecasts may vary. Never say sources are missing for weather queries.
+3. Do not claim you used uploaded documents unless document sources are provided.
+4. Do not mention missing sources for general or everyday questions.
+5. Do not include a Sources section for general answers.
+6. Do not fabricate citations.
+7. Keep the tone friendly, clear, and professional.
+8. For simple greetings or small talk, reply briefly and warmly.
+9. For educational or technical questions, give a helpful structured answer.
+10. NEVER say "The provided sources do not contain enough information" for
+    general knowledge, weather, or everyday questions. That message is only
+    for cases where the user explicitly asked about an uploaded document and
+    nothing was found.
+11. If the question genuinely requires live real-time data you cannot access
+    (e.g. exact current stock price, live sports score), acknowledge that
+    clearly and offer what general context you can.
 """
 
         prompt = f"""
@@ -115,13 +127,13 @@ Recent conversation summary:
 User preferences:
 {preferences if preferences else "No saved preferences."}
 
-Write the final answer now.
+Write the final answer now. Be direct and helpful.
 """
 
         text = self.llm.generate(system, prompt).strip()
 
         if not text:
-            text = "I’m ready to help. Could you tell me what you want to work on?"
+            text = "I'm ready to help. Could you tell me what you want to work on?"
 
         return AgentAnswer(
             answer=text,
@@ -139,9 +151,9 @@ Write the final answer now.
         preferences: dict,
     ) -> AgentAnswer:
         system = """
-You are AIRA, an AI Research Assistant.
+You are AIRA-X, an AI Research Assistant.
 
-Your job is to answer using only the provided document sources and web sources.
+Your job is to answer using the provided document sources and web sources.
 
 Rules:
 1. Give a clear, direct, professional answer.
@@ -149,16 +161,23 @@ Rules:
 3. Do not mention chunk numbers, chunk IDs, raw retrieval data, JSON, or internal metadata.
 4. Do not use inline labels like [D1], [D2], [W1], or [W2].
 5. Do not say "based on the context" repeatedly.
-6. If the provided sources do not support the answer, say:
-   "The provided sources do not contain enough information to answer this confidently."
-7. At the end, include a clean Sources section only when sources are actually used.
-8. For document sources, use this format:
-   - Document name — Page X
-9. For web sources, use this format:
-   - Page/article title — URL
-10. Only include sources that are actually relevant to the answer.
-11. If the answer comes from web sources only, do not list document sources.
-12. If the uploaded documents do not contain the answer, do not mention them in Sources.
+6. If web sources are provided and they contain relevant information, use them
+   to answer fully and accurately. Prefer web sources for live/current data.
+7. If the provided sources genuinely do not contain useful information AND the
+   question is about an uploaded document, say:
+   "I could not find relevant information in the uploaded documents for this query."
+   NEVER use the phrase "The provided sources do not contain enough information
+   to answer this confidently" — it sounds like an error message.
+8. If the sources are about documents but the question is general (weather, facts,
+   etc.), answer from your own knowledge and note that web results were limited.
+9. At the end, include a clean Sources section only when sources are actually used.
+10. For document sources, use this format:
+    - Document name — Page X
+11. For web sources, use this format:
+    - Page/article title — URL
+12. Only include sources that are actually relevant to the answer.
+13. If the answer comes from web sources only, do not list document sources.
+14. If the uploaded documents do not contain the answer, do not mention them in Sources.
 """
 
         prompt = f"""
@@ -177,7 +196,7 @@ Document sources:
 Web sources:
 {chr(10).join(web_sources) if web_sources else "No web sources provided."}
 
-Write the final answer now.
+Write the final answer now. Be direct and helpful.
 """
 
         text = self.llm.generate(system, prompt).strip()
@@ -200,34 +219,28 @@ Write the final answer now.
         lower = question.lower()
 
         document_terms = [
-            "uploaded document",
-            "uploaded file",
-            "my document",
-            "my file",
-            "the document",
-            "this document",
-            "the pdf",
-            "this pdf",
-            "summarize document",
-            "summarize the document",
-            "summarize my document",
-            "summarize uploaded",
-            "according to the document",
-            "based on the document",
-            "from the document",
-            "from my file",
-            "in the pdf",
-            "knowledge base",
+            "uploaded document", "uploaded file",
+            "my document", "my file",
+            "the document", "this document",
+            "the pdf", "this pdf",
+            "summarize document", "summarize the document",
+            "summarize my document", "summarize uploaded",
+            "according to the document", "based on the document",
+            "from the document", "from my file",
+            "in the pdf", "knowledge base",
         ]
 
         return any(term in lower for term in document_terms)
 
     def _is_unsupported_source_answer(self, answer: str) -> bool:
-        unsupported_message = (
-            "the provided sources do not contain enough information to answer this confidently"
-        )
-
-        return unsupported_message in answer.lower()
+        # Detect the old unhelpful message in case the LLM still generates it
+        # so we can strip citations from it.
+        unsupported_phrases = [
+            "the provided sources do not contain enough information",
+            "i could not find relevant information in the uploaded documents",
+        ]
+        lower = answer.lower()
+        return any(phrase in lower for phrase in unsupported_phrases)
 
     def _filter_relevant_citations(
         self,
@@ -252,17 +265,14 @@ Write the final answer now.
         relevant: list[Citation] = []
 
         for citation in citations:
-            searchable_text = " ".join(
-                [
-                    citation.title or "",
-                    citation.snippet or "",
-                    citation.url or "",
-                ]
-            )
+            searchable_text = " ".join([
+                citation.title or "",
+                citation.snippet or "",
+                citation.url or "",
+            ])
 
             citation_words = self._important_words(searchable_text)
             overlap = answer_words.intersection(citation_words)
-
             min_required_overlap = 2 if citation.source_type.lower() == "web" else 3
 
             if len(overlap) >= min_required_overlap:
@@ -272,49 +282,14 @@ Write the final answer now.
 
     def _important_words(self, text: str) -> set[str]:
         stopwords = {
-            "about",
-            "after",
-            "again",
-            "against",
-            "also",
-            "answer",
-            "because",
-            "before",
-            "being",
-            "between",
-            "could",
-            "country",
-            "document",
-            "during",
-            "first",
-            "from",
-            "have",
-            "into",
-            "more",
-            "most",
-            "only",
-            "other",
-            "page",
-            "provided",
-            "question",
-            "research",
-            "section",
-            "should",
-            "source",
-            "sources",
-            "their",
-            "there",
-            "these",
-            "they",
-            "this",
-            "those",
-            "through",
-            "using",
-            "which",
-            "while",
-            "with",
-            "would",
-            "your",
+            "about", "after", "again", "against", "also", "answer",
+            "because", "before", "being", "between", "could", "country",
+            "document", "during", "first", "from", "have", "into",
+            "more", "most", "only", "other", "page", "provided",
+            "question", "research", "section", "should", "source",
+            "sources", "their", "there", "these", "they", "this",
+            "those", "through", "using", "which", "while", "with",
+            "would", "your",
         }
 
         words = re.findall(r"[a-zA-Z][a-zA-Z0-9\-]{3,}", text.lower())

@@ -1,8 +1,7 @@
-from datetime import datetime
 from typing import Dict, Any
 
 from agents.base_agent import BaseAgent
-from schemas.aira_state import AiraXState
+from schemas.aira_state import AiraXState, utc_now_iso
 from tools.tool_router import ToolRouter
 from tools.tool_registry import ToolRegistry
 from agents.safety.safety_agent import SafetyAgent
@@ -147,7 +146,7 @@ class ExecutionAgent(BaseAgent):
         output = {
             "step_id": current_step.id,
             "agent": self.name,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now_iso(),
             "tool_used": current_step.tool_name,
             "tool_action": current_step.tool_action,
             "tool_policy": tool_policy,
