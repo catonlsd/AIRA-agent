@@ -40,6 +40,7 @@ import {
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TONE_DOT, TONE_TEXT, Badge, Stat, INC_BTN, PANEL, SECTION_LABEL } from "@/components/ui";
 import {
   ackIncident,
   assignIncident,
@@ -125,36 +126,8 @@ import {
   type Tone,
 } from "@/lib/operator";
 
-const TONE_DOT: Record<Tone, string> = {
-  good: "bg-[var(--success)]",
-  warn: "bg-[var(--warning)]",
-  bad: "bg-[var(--danger)]",
-  muted: "bg-[var(--text-subtle)]",
-};
-const TONE_TEXT: Record<Tone, string> = {
-  good: "text-[var(--success)]",
-  warn: "text-[var(--warning)]",
-  bad: "text-[var(--danger)]",
-  muted: "text-[var(--text-subtle)]",
-};
-
-function Badge({ tone, children }: { tone: Tone; children: ReactNode }) {
-  return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wide", TONE_TEXT[tone])}>
-      <span className={cn("h-1.5 w-1.5 rounded-full", TONE_DOT[tone])} aria-hidden="true" />
-      {children}
-    </span>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2">
-      <p className="text-lg font-black text-[var(--text-strong)]">{value}</p>
-      <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-subtle)]">{label}</p>
-    </div>
-  );
-}
+// Status colors (TONE_DOT/TONE_TEXT), Badge, and Stat now come from the shared
+// design system (@/components/ui) — see the import above. No visual change.
 
 function relTime(iso: string | null): string {
   if (!iso) return "";
@@ -180,7 +153,7 @@ function relTimeUntil(iso: string | null): string {
 }
 
 // ── external incident sync (Incidents tab) — targets + recent attempts ────────
-const INC_BTN = "inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-strong)] transition hover:border-[var(--border-strong)] disabled:opacity-50";
+// INC_BTN now comes from @/components/ui (shared button base).
 
 const METRIC_LABELS: Record<MetricCategory, string> = {
   validation: "Validation", reconciliation: "Reconciliation", refresh: "Refresh",
@@ -201,9 +174,9 @@ function MetricsPanel({ metrics, window }: { metrics: IncidentMetrics | null; wi
     return { cat, label: METRIC_LABELS[cat], pass_pct: w?.pass_pct ?? null, total: w?.total ?? 0 };
   });
   return (
-    <section className="sarvam-card rounded-[1.5rem] p-5">
+    <section className={PANEL}>
       <div className="mb-3 flex items-baseline gap-2">
-        <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">
+        <p className={SECTION_LABEL}>
           <Activity className="h-3.5 w-3.5" /> Sync observability
         </p>
         <span className="text-[11px] text-[var(--text-muted)]">· deterministic, computed from audit history</span>
@@ -276,7 +249,7 @@ function DemoPanel({ demo, busy, onSeed, onReset }: {
   return (
     <section className="sarvam-card rounded-[1.5rem] border border-dashed border-[var(--border-strong)] p-5">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">
+        <p className={SECTION_LABEL}>
           <LayoutGrid className="h-3.5 w-3.5" /> Demo data
         </p>
         <span className="text-[11px] text-[var(--text-muted)]">
@@ -330,9 +303,9 @@ function SyncPanel({ targets, records, onRedrive, onValidate, onTest, busyId, fl
   }, {});
   const rollup = attentionRollupRows({ by_state: byState });
   return (
-    <section className="sarvam-card rounded-[1.5rem] p-5">
+    <section className={PANEL}>
       <div className="mb-3 flex items-baseline gap-2">
-        <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">
+        <p className={SECTION_LABEL}>
           <Share2 className="h-3.5 w-3.5" /> External sync
         </p>
         <span className="text-[11px] text-[var(--text-muted)]">· outbound incident export</span>
@@ -1017,7 +990,7 @@ export default function OperatorConsole() {
       {tab === "overview" ? (
         <div className="grid gap-5">
           {analytics ? (
-            <section className="sarvam-card rounded-[1.5rem] p-5">
+            <section className={PANEL}>
               <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">Delivery summary · last {analytics.window_minutes}m</p>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
                 <Stat label="Attempted" value={analytics.totals.attempted} />
@@ -1035,7 +1008,7 @@ export default function OperatorConsole() {
             </section>
           ) : null}
 
-          <section className="sarvam-card rounded-[1.5rem] p-5">
+          <section className={PANEL}>
             <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">Destinations</p>
             {destinations.length === 0 ? (
               <p className="text-sm text-[var(--text-muted)]">No destinations configured.</p>
@@ -1174,7 +1147,7 @@ export default function OperatorConsole() {
                 const rows = incidents.filter((i) => i.state === state);
                 if (rows.length === 0) return null;
                 return (
-                  <section key={state} className="sarvam-card rounded-[1.5rem] p-5">
+                  <section key={state} className={PANEL}>
                     <div className="mb-3 flex items-baseline gap-2">
                       <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">{title}</p>
                       <span className="text-[11px] text-[var(--text-muted)]">· {hint}</span>
@@ -1195,7 +1168,7 @@ export default function OperatorConsole() {
 
       {/* ── History ── */}
       {tab === "history" ? (
-        <section className="sarvam-card rounded-[1.5rem] p-5">
+        <section className={PANEL}>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">Delivery history</p>
             <div className="ml-auto flex flex-wrap items-center gap-1.5">
@@ -1246,7 +1219,7 @@ export default function OperatorConsole() {
 
       {/* ── Recovery (dead-letters) ── */}
       {tab === "recovery" ? (
-        <section className="sarvam-card rounded-[1.5rem] p-5">
+        <section className={PANEL}>
           <p className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">
             <AlertTriangle className="h-3.5 w-3.5 text-[var(--warning)]" /> Dead-letter recovery
           </p>
