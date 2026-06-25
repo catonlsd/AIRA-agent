@@ -542,6 +542,7 @@ html[data-theme="light"] .soft-grid::after {
   position: relative;
   z-index: 1;
   overflow: hidden;
+  font-variant-numeric: tabular-nums;
   border: 1px solid var(--border);
   background: var(--surface);
   box-shadow: var(--shadow-card);
@@ -581,7 +582,7 @@ html[data-theme="dark"] .aira-card::before {
     transparent 68%,
     color-mix(in srgb, var(--secondary) 12%, transparent)
   );
-  opacity: 0.34;
+  opacity: 0.16;
   border-radius: inherit;
 }
 
@@ -589,7 +590,6 @@ html[data-theme="dark"] .aira-card::before {
 .aira-card:hover {
   border-color: var(--border-strong);
   box-shadow: var(--shadow-hover);
-  transform: translateY(-2px);
 }
 
 html[data-theme="dark"] .sarvam-card:hover,

@@ -203,7 +203,7 @@ function MetricsPanel({ metrics, window }: { metrics: IncidentMetrics | null; wi
   return (
     <section className="sarvam-card rounded-[1.5rem] p-5">
       <div className="mb-3 flex items-baseline gap-2">
-        <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+        <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">
           <Activity className="h-3.5 w-3.5" /> Sync observability
         </p>
         <span className="text-[11px] text-[var(--text-muted)]">· deterministic, computed from audit history</span>
@@ -213,7 +213,7 @@ function MetricsPanel({ metrics, window }: { metrics: IncidentMetrics | null; wi
       <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {indicators.map((s) => (
           <div key={s.key} className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-[var(--text-subtle)]">{s.label}</p>
+            <p className="text-[11px] uppercase tracking-wide text-[var(--text-subtle)]">{s.label}</p>
             <p className={cn("text-lg font-black", TONE_TEXT[s.tone])}>{s.value}</p>
           </div>
         ))}
@@ -222,7 +222,7 @@ function MetricsPanel({ metrics, window }: { metrics: IncidentMetrics | null; wi
       {/* Targets by state */}
       <div className="mb-3 flex flex-wrap items-center gap-1.5" aria-label="Targets by state">
         {healthRows.map((r) => (
-          <span key={r.key} className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 text-[10px]">
+          <span key={r.key} className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 text-[11px]">
             <Badge tone={r.tone}>{r.count}</Badge>
             <span className="font-black text-[var(--text-strong)]">{r.label}</span>
           </span>
@@ -276,7 +276,7 @@ function DemoPanel({ demo, busy, onSeed, onReset }: {
   return (
     <section className="sarvam-card rounded-[1.5rem] border border-dashed border-[var(--border-strong)] p-5">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+        <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">
           <LayoutGrid className="h-3.5 w-3.5" /> Demo data
         </p>
         <span className="text-[11px] text-[var(--text-muted)]">
@@ -332,18 +332,18 @@ function SyncPanel({ targets, records, onRedrive, onValidate, onTest, busyId, fl
   return (
     <section className="sarvam-card rounded-[1.5rem] p-5">
       <div className="mb-3 flex items-baseline gap-2">
-        <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+        <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">
           <Share2 className="h-3.5 w-3.5" /> External sync
         </p>
         <span className="text-[11px] text-[var(--text-muted)]">· outbound incident export</span>
-        {attention.length > 0 ? <span className="rounded-full border border-[var(--warning)] px-1.5 text-[10px] font-black text-[var(--warning)]">{attention.length} need{attention.length === 1 ? "s" : ""} attention</span> : null}
-        {failed.length > 0 ? <span className="ml-auto rounded-full bg-[var(--danger)] px-1.5 text-[10px] font-black text-white">{failed.length} failed</span> : null}
+        {attention.length > 0 ? <span className="rounded-full border border-[var(--warning)] px-1.5 text-[11px] font-black text-[var(--warning)]">{attention.length} need{attention.length === 1 ? "s" : ""} attention</span> : null}
+        {failed.length > 0 ? <span className="ml-auto rounded-full bg-[var(--danger)] px-1.5 text-[11px] font-black text-white">{failed.length} failed</span> : null}
       </div>
 
       {rollup.length > 0 ? (
         <div className="mb-3 flex flex-wrap items-center gap-1.5" aria-label="Attention rollup">
           {rollup.map((r) => (
-            <span key={r.state} className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 text-[10px]">
+            <span key={r.state} className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 text-[11px]">
               <Badge tone={r.tone}>{r.count}</Badge>
               <span className="font-black text-[var(--text-strong)]">{r.label}</span>
               {r.action ? <span className="text-[var(--text-subtle)]">→ {r.action}</span> : null}
@@ -359,12 +359,12 @@ function SyncPanel({ targets, records, onRedrive, onValidate, onTest, busyId, fl
               <span className={cn("h-1.5 w-1.5 rounded-full", t.enabled ? "bg-[var(--success)]" : "bg-[var(--text-subtle)]")} aria-hidden="true" />
               <span className={cn("font-black", t.enabled ? "text-[var(--text-strong)]" : "text-[var(--text-subtle)] line-through")}>{t.name}</span>
               <span className="text-[var(--text-subtle)]">· {t.kind}</span>
-              {t.profile && t.profile !== t.kind ? <span className="rounded-full border border-[var(--border)] px-1.5 text-[10px] uppercase tracking-wide text-[var(--text-subtle)]">{t.profile}</span> : null}
+              {t.profile && t.profile !== t.kind ? <span className="rounded-full border border-[var(--border)] px-1.5 text-[11px] uppercase tracking-wide text-[var(--text-subtle)]">{t.profile}</span> : null}
               <Badge tone={readinessTone(t.readiness.state)}>{readinessLabel(t.readiness.state)}</Badge>
               {t.readiness_facts.last_validated_at ? <span className="text-[var(--text-subtle)]">checked {relTime(t.readiness_facts.last_validated_at)}</span> : null}
               {t.readiness.state !== "ready" && t.readiness.reason ? <span className="text-[var(--text-subtle)]">· {t.readiness.reason}</span> : null}
               {recommendedActionLabel(t.readiness.recommended_action) ? (
-                <span className="rounded-full border border-[var(--warning)] px-1.5 text-[10px] font-black text-[var(--warning)]" title={t.readiness.next_step ?? undefined}>→ {recommendedActionLabel(t.readiness.recommended_action)}</span>
+                <span className="rounded-full border border-[var(--warning)] px-1.5 text-[11px] font-black text-[var(--warning)]" title={t.readiness.next_step ?? undefined}>→ {recommendedActionLabel(t.readiness.recommended_action)}</span>
               ) : null}
               {t.consecutive_failures > 0 ? <span className="text-[var(--danger)]">⚠ {t.consecutive_failures}</span> : null}
               <span className="ml-auto flex items-center gap-1.5">
@@ -581,7 +581,7 @@ function IncidentRow({ inc, operatorName, onChanged }: {
 
       {expanded ? (
         <div className="mt-2 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-          <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
             <History className="h-3 w-3" /> Action trail
           </p>
           {history === null ? (
@@ -603,7 +603,7 @@ function IncidentRow({ inc, operatorName, onChanged }: {
 
           {syncLine ? (
             <div className="mt-2.5 border-t border-[var(--border)] pt-2">
-              <p className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              <p className="mb-1 flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
                 <Share2 className="h-3 w-3" /> External sync
                 {sync ? <span className="ml-1 rounded-full border border-[var(--border)] px-1.5 py-0.5 text-[9px] font-bold normal-case tracking-normal text-[var(--text-muted)]">{supportLevelLabel(sync.summary.support_level)}</span> : null}
               </p>
@@ -620,7 +620,7 @@ function IncidentRow({ inc, operatorName, onChanged }: {
               ) : null}
 
               {link && (link.external_assignee || link.external_severity || link.external_comment_count != null) ? (
-                <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-[var(--text-subtle)]">
+                <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-[var(--text-subtle)]">
                   {link.external_assignee ? <span>external owner: {link.external_assignee}</span> : null}
                   {link.external_severity ? <span>severity: {link.external_severity}</span> : null}
                   {link.external_comment_count != null ? <span>{link.external_comment_count} note{link.external_comment_count === 1 ? "" : "s"}</span> : null}
@@ -629,19 +629,19 @@ function IncidentRow({ inc, operatorName, onChanged }: {
               ) : null}
 
               {link && hiddenInboundFields(link).length > 0 ? (
-                <p className="mb-1.5 text-[10px] text-[var(--text-subtle)]">
+                <p className="mb-1.5 text-[11px] text-[var(--text-subtle)]">
                   Hidden by target policy: {hiddenInboundFields(link).join(", ")}
                 </p>
               ) : null}
               {link && !link.suggestions_allowed ? (
-                <p className="mb-1.5 text-[10px] text-[var(--text-subtle)]">Suggestions disabled for this target.</p>
+                <p className="mb-1.5 text-[11px] text-[var(--text-subtle)]">Suggestions disabled for this target.</p>
               ) : null}
 
               <div className="flex flex-wrap items-center gap-2 text-[11px]">
                 <Badge tone={syncLine.tone}>{syncLine.label}</Badge>
                 {link?.target_name ? <span className="text-[var(--text-muted)]">{link.target_name}{link.target_kind ? ` · ${link.target_kind}` : ""}</span> : null}
                 {link?.profile && link.profile !== link.target_kind ? (
-                  <span className="rounded-full border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--text-subtle)]">{link.profile}</span>
+                  <span className="rounded-full border border-[var(--border)] px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-[var(--text-subtle)]">{link.profile}</span>
                 ) : null}
                 {link?.external_ref ? <span className="text-[var(--text-subtle)]">ref {link.external_ref}</span> : null}
                 {link?.external_url ? (
@@ -690,7 +690,7 @@ function IncidentRow({ inc, operatorName, onChanged }: {
                 ))}
               </div>
               {actions?.can_apply && actions.apply_action ? (
-                <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
+                <p className="mt-1 text-[11px] text-[var(--text-subtle)]">
                   {applyActionLabel(actions.apply_action)}
                   {" · "}
                   <span className="font-bold">{actionEffectLabel(actions.apply_action === "accept_resolved" ? "local" : "linkage")}</span>
@@ -705,7 +705,7 @@ function IncidentRow({ inc, operatorName, onChanged }: {
                 </div>
               ) : null}
 
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-[var(--text-subtle)]">
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-[var(--text-subtle)]">
                 {sync?.summary.reason ? <span>{sync.summary.reason}</span> : null}
                 {link?.external_status ? <span>external: {link.external_status}</span> : null}
                 {sync?.summary.last_synced_at ? <span>synced {relTime(sync.summary.last_synced_at)}</span> : null}
@@ -728,7 +728,7 @@ function IncidentRow({ inc, operatorName, onChanged }: {
 function LineageChain({ lineage }: { lineage: DeliveryLineage }) {
   return (
     <div className="mt-2 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-      <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
+      <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
         <GitBranch className="h-3 w-3" /> Redrive lineage · {lineage.attempts.length} attempt{lineage.attempts.length === 1 ? "" : "s"}
       </p>
       <div className="grid gap-1">
@@ -1007,8 +1007,8 @@ export default function OperatorConsole() {
             className={cn("inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-black transition",
               tab === t.id ? "bg-[var(--accent)] text-[var(--accent-contrast,#fff)]" : "border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:text-[var(--text-strong)]")}>
             <t.icon className="h-3.5 w-3.5" /> {t.label}
-            {t.id === "recovery" && deadLetters.length > 0 ? <span className="ml-0.5 rounded-full bg-[var(--danger)] px-1.5 text-[10px] text-white">{deadLetters.length}</span> : null}
-            {t.id === "incidents" && t.badge ? <span className="ml-0.5 rounded-full bg-[var(--danger)] px-1.5 text-[10px] text-white">{t.badge}</span> : null}
+            {t.id === "recovery" && deadLetters.length > 0 ? <span className="ml-0.5 rounded-full bg-[var(--danger)] px-1.5 text-[11px] text-white">{deadLetters.length}</span> : null}
+            {t.id === "incidents" && t.badge ? <span className="ml-0.5 rounded-full bg-[var(--danger)] px-1.5 text-[11px] text-white">{t.badge}</span> : null}
           </button>
         ))}
       </div>
@@ -1018,7 +1018,7 @@ export default function OperatorConsole() {
         <div className="grid gap-5">
           {analytics ? (
             <section className="sarvam-card rounded-[1.5rem] p-5">
-              <p className="mb-3 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Delivery summary · last {analytics.window_minutes}m</p>
+              <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">Delivery summary · last {analytics.window_minutes}m</p>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
                 <Stat label="Attempted" value={analytics.totals.attempted} />
                 <Stat label="Delivered" value={analytics.totals.delivered} />
@@ -1036,7 +1036,7 @@ export default function OperatorConsole() {
           ) : null}
 
           <section className="sarvam-card rounded-[1.5rem] p-5">
-            <p className="mb-3 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Destinations</p>
+            <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">Destinations</p>
             {destinations.length === 0 ? (
               <p className="text-sm text-[var(--text-muted)]">No destinations configured.</p>
             ) : (
@@ -1047,9 +1047,9 @@ export default function OperatorConsole() {
                       <div className="min-w-0">
                         <p className="truncate text-sm font-black text-[var(--text-strong)]">
                           {d.name || "Destination"}
-                          <span className="ml-2 rounded-md border border-[var(--border)] bg-[var(--surface-muted)] px-1.5 py-0.5 text-[10px] font-black uppercase text-[var(--text-subtle)]">{d.kind}</span>
-                          {d.is_escalation ? <span className="ml-1.5 text-[10px] font-black uppercase text-[var(--secondary)]">escalation</span> : null}
-                          {!d.enabled ? <span className="ml-1.5 text-[10px] font-black uppercase text-[var(--text-subtle)]">disabled</span> : null}
+                          <span className="ml-2 rounded-md border border-[var(--border)] bg-[var(--surface-muted)] px-1.5 py-0.5 text-[11px] font-black uppercase text-[var(--text-subtle)]">{d.kind}</span>
+                          {d.is_escalation ? <span className="ml-1.5 text-[11px] font-black uppercase text-[var(--secondary)]">escalation</span> : null}
+                          {!d.enabled ? <span className="ml-1.5 text-[11px] font-black uppercase text-[var(--text-subtle)]">disabled</span> : null}
                         </p>
                         <p className="mt-0.5 truncate text-xs text-[var(--text-muted)]">{d.reason}</p>
                       </div>
@@ -1117,14 +1117,14 @@ export default function OperatorConsole() {
                           </button>
                           <button type="button" onClick={() => setEditing(null)}
                             className="rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1 text-[11px] font-black text-[var(--text-muted)]">Cancel</button>
-                          <span className="text-[10px] text-[var(--text-subtle)]">Secrets are not editable here.</span>
+                          <span className="text-[11px] text-[var(--text-subtle)]">Secrets are not editable here.</span>
                         </div>
                       </div>
                     ) : null}
 
                     {preview[d.destination_id] ? (
                       <div className="mt-3 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-                        <p className="mb-1.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-subtle)]">Routing decisions (live alerts)</p>
+                        <p className="mb-1.5 text-[11px] font-black uppercase tracking-wide text-[var(--text-subtle)]">Routing decisions (live alerts)</p>
                         {preview[d.destination_id]!.decisions.length === 0 ? (
                           <p className="text-xs text-[var(--text-muted)]">No current alerts for this destination.</p>
                         ) : (
@@ -1176,7 +1176,7 @@ export default function OperatorConsole() {
                 return (
                   <section key={state} className="sarvam-card rounded-[1.5rem] p-5">
                     <div className="mb-3 flex items-baseline gap-2">
-                      <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">{title}</p>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">{title}</p>
                       <span className="text-[11px] text-[var(--text-muted)]">· {hint}</span>
                       <span className="ml-auto text-[11px] font-black text-[var(--text-muted)]">{rows.length}</span>
                     </div>
@@ -1197,7 +1197,7 @@ export default function OperatorConsole() {
       {tab === "history" ? (
         <section className="sarvam-card rounded-[1.5rem] p-5">
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Delivery history</p>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">Delivery history</p>
             <div className="ml-auto flex flex-wrap items-center gap-1.5">
               {["", "failed", "pending", "delivered"].map((s) => (
                 <button key={s || "all"} type="button" onClick={() => setFilter((f) => ({ ...f, status: s }))}
@@ -1247,7 +1247,7 @@ export default function OperatorConsole() {
       {/* ── Recovery (dead-letters) ── */}
       {tab === "recovery" ? (
         <section className="sarvam-card rounded-[1.5rem] p-5">
-          <p className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">
             <AlertTriangle className="h-3.5 w-3.5 text-[var(--warning)]" /> Dead-letter recovery
           </p>
           {deadLetters.length === 0 ? (
