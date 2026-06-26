@@ -12,12 +12,16 @@ export const toneDot: Record<Tone, string> = {
   warn: "bg-[var(--warning)]",
   bad: "bg-[var(--danger)]",
   muted: "bg-[var(--text-subtle)]",
+  info: "bg-[var(--info)]",
+  alert: "bg-[var(--alert)]",
 };
 export const toneText: Record<Tone, string> = {
   good: "text-[var(--success)]",
   warn: "text-[var(--warning)]",
   bad: "text-[var(--danger)]",
   muted: "text-[var(--text-subtle)]",
+  info: "text-[var(--info)]",
+  alert: "text-[var(--alert)]",
 };
 /** Back-compat aliases (the names the operator console already uses). */
 export const TONE_DOT = toneDot;

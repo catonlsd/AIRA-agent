@@ -104,13 +104,13 @@ test("incidentSyncSummary states each linkage honestly, drift first", () => {
   assert.equal(incidentSyncSummary({ ...base, synced: true, linked: true, recovered_after_redrive: true }).label, "Recovered after redrive");
   // Reconciliation verdicts take priority over plain outbound health.
   assert.equal(incidentSyncSummary({ ...base, linked: true, link_status: "missing_external" }).label, "External incident missing");
-  assert.equal(incidentSyncSummary({ ...base, linked: true, link_status: "drifted", reason: "external resolved but incident still open" }).tone, "bad");
+  assert.equal(incidentSyncSummary({ ...base, linked: true, link_status: "drifted", reason: "external resolved but incident still open" }).tone, "alert");
   assert.equal(incidentSyncSummary({ ...base, linked: true, link_status: "stale" }).label, "External link stale");
   assert.deepEqual(incidentSyncSummary({ ...base, link_status: "detached" }), { label: "Link detached", tone: "muted" });
 });
 
 test("linkStatusTone maps each reconciliation status to a tone", () => {
-  assert.equal(linkStatusTone("drifted"), "bad");
+  assert.equal(linkStatusTone("drifted"), "alert");
   assert.equal(linkStatusTone("missing_external"), "bad");
   assert.equal(linkStatusTone("stale"), "warn");
   assert.equal(linkStatusTone("linked"), "good");
@@ -147,7 +147,7 @@ test("policyOverrideLabel distinguishes default from explicit allow/deny", () =>
 
 test("readinessTone + readinessLabel are honest about verification state", () => {
   assert.equal(readinessTone("ready"), "good");
-  assert.equal(readinessTone("unverified"), "warn");
+  assert.equal(readinessTone("unverified"), "info");
   assert.equal(readinessTone("degraded"), "warn");
   assert.equal(readinessTone("stale"), "warn");
   assert.equal(readinessTone("auth_failed"), "bad");

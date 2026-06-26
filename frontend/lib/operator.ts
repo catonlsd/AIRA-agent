@@ -512,7 +512,8 @@ export function policyOverrideLabel(override: boolean | null): string {
  * "merely configured" (unverified) vs actually checked. */
 export function readinessTone(state: ReadinessState): Tone {
   if (state === "ready") return "good";
-  if (state === "degraded" || state === "unverified" || state === "stale") return "warn";
+  if (state === "unverified") return "info"; // configured but never checked — distinct from "aging"
+  if (state === "degraded" || state === "stale") return "warn";
   if (state === "invalid_config" || state === "auth_failed" || state === "test_failed") return "bad";
   return "muted"; // disabled
 }
@@ -693,7 +694,8 @@ export function supportLevelLabel(level: SupportLevel): string {
 
 /** Tone for a reconciliation link status (pure; unit-tested). */
 export function linkStatusTone(status: LinkStatus): Tone {
-  if (status === "missing_external" || status === "drifted") return "bad";
+  if (status === "missing_external") return "bad";
+  if (status === "drifted") return "alert"; // external diverged — distinct from "gone"
   if (status === "stale") return "warn";
   if (status === "linked" || status === "refreshed") return "good";
   return "muted"; // never_linked / detached
@@ -706,7 +708,7 @@ export function incidentSyncSummary(s: IncidentSyncStatus["summary"]): { label: 
   if (s.link_status === "detached") return { label: "Link detached", tone: "muted" };
   // Reconciliation verdicts (require a real link / refresh) come first.
   if (s.link_status === "missing_external") return { label: "External incident missing", tone: "bad" };
-  if (s.link_status === "drifted") return { label: s.reason || "Drifted from external", tone: "bad" };
+  if (s.link_status === "drifted") return { label: s.reason || "Drifted from external", tone: "alert" };
   if (s.link_status === "stale") return { label: "External link stale", tone: "warn" };
   if (s.last_error && s.behind) return { label: `Last sync failed: ${s.last_error}`, tone: "bad" };
   if (s.recovered_after_redrive) return { label: "Recovered after redrive", tone: "good" };
@@ -734,7 +736,7 @@ export function incidentEventLabel(action: string): string {
   return labels[action] ?? action;
 }
 
-export type Tone = "good" | "warn" | "bad" | "muted";
+export type Tone = "good" | "warn" | "bad" | "muted" | "info" | "alert";
 
 // ── pure helpers (unit-tested) ───────────────────────────────────────────────
 

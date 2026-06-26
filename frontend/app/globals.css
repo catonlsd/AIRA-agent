@@ -27,22 +27,22 @@
   --surface-strong: rgba(11, 18, 32, 0.96);
 
   --text: #cbd5e1;
-  --text-strong: #f8fafc;
+  --text-strong: #e8edf5;
   --text-muted: #94a3b8;
   --text-subtle: #64748b;
 
-  --border: rgba(255, 255, 255, 0.13);
+  --border: rgba(255, 255, 255, 0.085);
   --border-strong: rgba(16, 185, 129, 0.38);
 
   --accent: #10b981;
   --accent-strong: #059669;
   --accent-soft: rgba(16, 185, 129, 0.13);
   --accent-foreground: #022c22;
-  --accent-glow: rgba(16, 185, 129, 0.18);
+  --accent-glow: rgba(16, 185, 129, 0.10);
 
   --secondary: #2dd4bf;
   --secondary-soft: rgba(45, 212, 191, 0.10);
-  --secondary-glow: rgba(45, 212, 191, 0.13);
+  --secondary-glow: rgba(45, 212, 191, 0.08);
 
   --success: #10b981;
   --success-soft: rgba(16, 185, 129, 0.10);
@@ -50,6 +50,10 @@
   --warning-soft: rgba(245, 158, 11, 0.10);
   --danger: #ef4444;
   --danger-soft: rgba(239, 68, 68, 0.10);
+  --info: #38bdf8;
+  --info-soft: rgba(56, 189, 248, 0.12);
+  --alert: #fb923c;
+  --alert-soft: rgba(251, 146, 60, 0.12);
 
   --shadow-sm:
     0 2px 8px rgba(0, 0, 0, 0.28),
@@ -60,13 +64,14 @@
     0 0 0 1px rgba(255, 255, 255, 0.035);
 
   --shadow-card:
-    0 24px 78px rgba(0, 0, 0, 0.46),
-    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.30),
+    0 10px 30px -14px rgba(0, 0, 0, 0.58);
 
   --shadow-hover:
-    0 28px 90px rgba(0, 0, 0, 0.54),
-    0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent),
-    0 0 34px color-mix(in srgb, var(--accent) 12%, transparent);
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 14px 36px -16px rgba(0, 0, 0, 0.62);
 
   --shadow-glow:
     0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent),
@@ -115,22 +120,22 @@ html[data-theme="dark"] {
   --surface-strong: rgba(11, 18, 32, 0.96);
 
   --text: #cbd5e1;
-  --text-strong: #f8fafc;
+  --text-strong: #e8edf5;
   --text-muted: #94a3b8;
   --text-subtle: #64748b;
 
-  --border: rgba(255, 255, 255, 0.13);
+  --border: rgba(255, 255, 255, 0.085);
   --border-strong: rgba(16, 185, 129, 0.38);
 
   --accent: #10b981;
   --accent-strong: #059669;
   --accent-soft: rgba(16, 185, 129, 0.13);
   --accent-foreground: #022c22;
-  --accent-glow: rgba(16, 185, 129, 0.18);
+  --accent-glow: rgba(16, 185, 129, 0.10);
 
   --secondary: #2dd4bf;
   --secondary-soft: rgba(45, 212, 191, 0.10);
-  --secondary-glow: rgba(45, 212, 191, 0.13);
+  --secondary-glow: rgba(45, 212, 191, 0.08);
 
   --success: #10b981;
   --success-soft: rgba(16, 185, 129, 0.10);
@@ -144,13 +149,14 @@ html[data-theme="dark"] {
     0 0 0 1px rgba(255, 255, 255, 0.035);
 
   --shadow-card:
-    0 24px 78px rgba(0, 0, 0, 0.46),
-    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.30),
+    0 10px 30px -14px rgba(0, 0, 0, 0.58);
 
   --shadow-hover:
-    0 28px 90px rgba(0, 0, 0, 0.54),
-    0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent),
-    0 0 34px color-mix(in srgb, var(--accent) 12%, transparent);
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 14px 36px -16px rgba(0, 0, 0, 0.62);
 
   --grid-line: rgba(255, 255, 255, 0.022);
   --page-vignette: rgba(0, 0, 0, 0.70);
@@ -187,11 +193,11 @@ html[data-theme="dark"][data-aira-mode="aira-x"] {
   --accent: #2dd4bf;
   --accent-strong: #14b8a6;
   --accent-soft: rgba(45, 212, 191, 0.12);
-  --accent-glow: rgba(45, 212, 191, 0.18);
+  --accent-glow: rgba(45, 212, 191, 0.10);
 
   --secondary: #10b981;
   --secondary-soft: rgba(16, 185, 129, 0.11);
-  --secondary-glow: rgba(16, 185, 129, 0.16);
+  --secondary-glow: rgba(16, 185, 129, 0.09);
 
   --border-strong: rgba(16, 185, 129, 0.38);
 }
@@ -563,9 +569,10 @@ html[data-theme="dark"] .aira-card {
     color-mix(in srgb, var(--surface) 96%, black 4%)
   );
   box-shadow:
-    0 20px 70px rgba(0, 0, 0, 0.46),
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.018);
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 12px 32px -16px rgba(0, 0, 0, 0.62);
 }
 
 /* Subtle corner shimmer on dark cards */
