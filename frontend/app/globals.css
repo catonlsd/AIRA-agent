@@ -16,15 +16,22 @@
 :root {
   color-scheme: dark;
 
-  --bg: #0b1220;
-  --bg-muted: #0a1020;
-  --bg-elevated: #172033;
+  --bg: #081018;
+  --bg-muted: #0a1320;
+  --bg-elevated: #131f2d;
 
-  --surface: rgba(17, 24, 39, 0.86);
-  --surface-soft: rgba(23, 32, 51, 0.72);
-  --surface-muted: rgba(30, 41, 59, 0.62);
-  --surface-hover: rgba(255, 255, 255, 0.06);
-  --surface-strong: rgba(11, 18, 32, 0.96);
+  /* Layered surface ladder — depth is FELT: canvas < workspace < panel < card < hover */
+  --layer-canvas: #081018;
+  --layer-workspace: #0d1623;
+  --layer-panel: #131f2d;
+  --layer-card: #182638;
+  --layer-hover: #203247;
+
+  --surface: rgba(19, 31, 45, 0.80);     /* panel  (#131f2d, frosted) */
+  --surface-soft: rgba(24, 38, 56, 0.82); /* card   (#182638) */
+  --surface-muted: rgba(13, 22, 35, 0.72); /* workspace recess (#0d1623) */
+  --surface-hover: rgba(255, 255, 255, 0.05);
+  --surface-strong: rgba(8, 16, 24, 0.96);
 
   --text: #cbd5e1;
   --text-strong: #e8edf5;
@@ -78,9 +85,27 @@
     0 0 32px color-mix(in srgb, var(--accent) 14%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.055);
 
+  /* Named elevation tokens — premium, layered, contained (use these, not shadow-lg) */
+  --shadow-panel:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.30),
+    0 10px 30px -14px rgba(0, 0, 0, 0.58);
+  --shadow-floating:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 2px 4px rgba(0, 0, 0, 0.30),
+    0 22px 54px -18px rgba(0, 0, 0, 0.68);
+  --shadow-command:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent),
+    0 14px 36px -16px rgba(0, 0, 0, 0.60),
+    0 0 28px -10px color-mix(in srgb, var(--accent) 22%, transparent);
+  --shadow-tooltip:
+    0 2px 4px rgba(0, 0, 0, 0.32),
+    0 8px 20px -8px rgba(0, 0, 0, 0.52);
+
   --grid-line: rgba(255, 255, 255, 0.022);
   --page-vignette: rgba(0, 0, 0, 0.70);
-  --pre-bg: #0b1220;
+  --pre-bg: #081018;
 
   /* Radii */
   --radius-xs: 0.375rem;
@@ -109,15 +134,21 @@
 html[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: #0b1220;
-  --bg-muted: #0a1020;
-  --bg-elevated: #172033;
+  --bg: #081018;
+  --bg-muted: #0a1320;
+  --bg-elevated: #131f2d;
 
-  --surface: rgba(17, 24, 39, 0.86);
-  --surface-soft: rgba(23, 32, 51, 0.72);
-  --surface-muted: rgba(30, 41, 59, 0.62);
-  --surface-hover: rgba(255, 255, 255, 0.06);
-  --surface-strong: rgba(11, 18, 32, 0.96);
+  --layer-canvas: #081018;
+  --layer-workspace: #0d1623;
+  --layer-panel: #131f2d;
+  --layer-card: #182638;
+  --layer-hover: #203247;
+
+  --surface: rgba(19, 31, 45, 0.80);
+  --surface-soft: rgba(24, 38, 56, 0.82);
+  --surface-muted: rgba(13, 22, 35, 0.72);
+  --surface-hover: rgba(255, 255, 255, 0.05);
+  --surface-strong: rgba(8, 16, 24, 0.96);
 
   --text: #cbd5e1;
   --text-strong: #e8edf5;
@@ -188,16 +219,16 @@ html[data-theme="dark"] .aira-research-theme {
   --page-vignette: rgba(0, 0, 0, 0.68);
 }
 
-/* AIRA-X mode sub-theme: Hermes Console */
+/* AIRA-X mode sub-theme: Command Console — canonical emerald primary + teal secondary */
 html[data-theme="dark"][data-aira-mode="aira-x"] {
-  --accent: #2dd4bf;
-  --accent-strong: #14b8a6;
-  --accent-soft: rgba(45, 212, 191, 0.12);
-  --accent-glow: rgba(45, 212, 191, 0.10);
+  --accent: #10b981;
+  --accent-strong: #059669;
+  --accent-soft: rgba(16, 185, 129, 0.13);
+  --accent-glow: rgba(16, 185, 129, 0.12);
 
-  --secondary: #10b981;
-  --secondary-soft: rgba(16, 185, 129, 0.11);
-  --secondary-glow: rgba(16, 185, 129, 0.09);
+  --secondary: #2dd4bf;
+  --secondary-soft: rgba(45, 212, 191, 0.10);
+  --secondary-glow: rgba(45, 212, 191, 0.10);
 
   --border-strong: rgba(16, 185, 129, 0.38);
 }
@@ -1448,4 +1479,99 @@ html[data-theme="light"] form.aira-focus-composer {
   .aira-focus-content[data-composer-focused="true"] {
     transform: none;
   }
+}
+/* =========================
+   PHASE 1 — PREMIUM INTERACTION BASELINE (Command brand)
+   Operations mono · themed scrollbars · selection · focus rings ·
+   skeleton shimmer · subtle grid/glow. Reusable brand conventions.
+========================= */
+
+/* Operations mono — IDs, timestamps, metrics, log lines, incident numbers */
+.font-ops {
+  font-family: var(--font-ops), var(--font-mono), ui-monospace, "SFMono-Regular", monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "ss01" 1;
+  letter-spacing: -0.01em;
+}
+
+/* Premium themed scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-subtle) 38%, transparent) transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-subtle) 30%, transparent);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--accent) 42%, var(--text-subtle));
+  background-clip: padding-box;
+}
+
+/* Selection — emerald tint */
+::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text-strong);
+}
+
+/* Focus ring — calm, accessible (offset from the surface, accent halo) */
+:where(a, button, [role="button"], [role="tab"], input, select, textarea, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* Skeleton loading — shimmer, never spinners */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-muted);
+  border-radius: var(--radius-sm);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--text-subtle) 14%, transparent),
+    transparent
+  );
+  animation: aira-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes aira-shimmer { 100% { transform: translateX(100%); } }
+
+/* Subtle ambient utilities — premium, never neon */
+.bg-grid {
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+.glow-accent {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent),
+    0 0 24px -6px color-mix(in srgb, var(--accent) 26%, transparent);
+}
+.hairline-top::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent,
+    color-mix(in srgb, var(--accent) 45%, transparent), transparent);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after { animation: none; }
+  html { scroll-behavior: auto; }
 }

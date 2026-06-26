@@ -102,3 +102,23 @@ export function Tabs<T extends string>({ tabs, active, onChange, className }: {
     </div>
   );
 }
+
+/** Premium empty state — title + supporting copy + optional icon/action.
+ * Use instead of bare "No incidents." text. */
+export function EmptyState({ icon, title, description, action, className }: {
+  icon?: ReactNode; title: ReactNode; description?: ReactNode; action?: ReactNode; className?: string;
+}) {
+  return (
+    <div className={cn("flex flex-col items-center justify-center gap-2 rounded-[1.25rem] border border-dashed border-[var(--border)] bg-[var(--surface-muted)] px-6 py-12 text-center", className)}>
+      {icon ? <div className="mb-1 text-[var(--text-subtle)]" aria-hidden="true">{icon}</div> : null}
+      <p className="text-sm font-semibold text-[var(--text-strong)]">{title}</p>
+      {description ? <p className="max-w-sm text-xs leading-relaxed text-[var(--text-muted)]">{description}</p> : null}
+      {action ? <div className="mt-2">{action}</div> : null}
+    </div>
+  );
+}
+
+/** Shimmer skeleton block — premium loading (never a spinner). */
+export function Skeleton({ className }: { className?: string }) {
+  return <div className={cn("skeleton", className)} aria-hidden="true" />;
+}

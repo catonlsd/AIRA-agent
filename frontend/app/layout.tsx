@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { IBM_Plex_Mono, Manrope } from "next/font/google";
+import { IBM_Plex_Mono, JetBrains_Mono, Manrope } from "next/font/google";
 import { AppShell } from "@/components/app-shell";
 import { ModeProvider } from "@/components/mode-provider";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -15,6 +15,14 @@ const ibmPlexMono = IBM_Plex_Mono({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   variable: "--font-mono",
+  display: "swap",
+});
+
+// Operations mono — IDs, timestamps, metrics, log lines, incident numbers.
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-ops",
   display: "swap",
 });
 
@@ -40,7 +48,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#050509",
+  themeColor: "#081018",
 };
 
 export default function RootLayout({
@@ -51,7 +59,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${manrope.variable} ${ibmPlexMono.variable} min-h-screen`}
+        className={`${manrope.variable} ${ibmPlexMono.variable} ${jetbrainsMono.variable} min-h-screen`}
       >
         <ThemeProvider>
           <ModeProvider>
