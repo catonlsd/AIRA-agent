@@ -37,8 +37,11 @@ function getSystemTheme(): ResolvedTheme {
 }
 
 function getStoredTheme(): ThemeMode {
+  // AIRA-X's canonical identity is the dark "operator console" — default to it so the
+  // premium look is the first impression for everyone. Users can still pick light or
+  // system from the theme toggle (their choice is persisted and honored).
   if (typeof window === "undefined") {
-    return "system";
+    return "dark";
   }
 
   try {
@@ -48,10 +51,10 @@ function getStoredTheme(): ThemeMode {
       return storedTheme;
     }
   } catch {
-    return "system";
+    return "dark";
   }
 
-  return "system";
+  return "dark";
 }
 
 function resolveTheme(theme: ThemeMode): ResolvedTheme {
