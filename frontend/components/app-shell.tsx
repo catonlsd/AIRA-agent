@@ -14,25 +14,28 @@ export function AppShell({ children }: { children: ReactNode }) {
   const isOperator = pathname === "/operator" || pathname.startsWith("/operator/");
 
   const shellClassName = cn(
-    "aira-shell aira-production-theme soft-grid min-h-screen text-[var(--text)]"
+    "aira-shell aira-production-theme soft-grid text-[var(--text)]"
   );
 
+  // Landing + operator render without the product nav. They are their own single
+  // scroll viewport (body is locked; the scroll region lives here, not on <body>).
   if (isLandingPage || isOperator) {
-    return <div className={shellClassName}>{children}</div>;
+    return <div className={cn(shellClassName, "scroll-region")}>{children}</div>;
   }
 
+  // Two-pane app shell: the sidebar and main content are INDEPENDENT scroll viewports.
+  // `layout-root` is a flex column-locked-to-100dvh; `<Nav>` owns its scroll, `<main>`
+  // (layout-main) owns the page scroll. The body never scrolls.
   return (
-    <div className={shellClassName}>
-      <div className="flex min-h-screen">
-        <Nav />
+    <div className={cn(shellClassName, "layout-root")}>
+      <Nav />
 
-        <main className="relative min-w-0 flex-1 overflow-x-hidden">
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-0 h-px bg-gradient-to-r from-transparent via-[var(--border-strong)] to-transparent" />
-          <div className="pointer-events-none fixed right-8 top-6 z-0 hidden h-40 w-40 rounded-full bg-[var(--accent-glow)] opacity-70 blur-3xl lg:block" />
+      <main className="layout-main relative min-w-0 flex-1">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-0 h-px bg-gradient-to-r from-transparent via-[var(--border-strong)] to-transparent" />
+        <div className="pointer-events-none fixed right-8 top-6 z-0 hidden h-40 w-40 rounded-full bg-[var(--accent-glow)] opacity-70 blur-3xl lg:block" />
 
-          <div className="relative z-10 p-4 sm:p-6 lg:px-8 lg:py-7">{children}</div>
-        </main>
-      </div>
+        <div className="relative z-10 p-4 sm:p-6 lg:px-8 lg:py-7">{children}</div>
+      </main>
     </div>
   );
 }

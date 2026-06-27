@@ -59,7 +59,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${manrope.variable} ${ibmPlexMono.variable} ${jetbrainsMono.variable} min-h-screen`}
+        className={`${manrope.variable} ${ibmPlexMono.variable} ${jetbrainsMono.variable} no-page-scroll`}
       >
         <ThemeProvider>
           <ModeProvider>

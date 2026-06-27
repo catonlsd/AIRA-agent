@@ -215,7 +215,7 @@ export function Nav() {
   return (
     <aside
       className={cn(
-        "sticky top-0 z-40 flex h-screen shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-card)] backdrop-blur-2xl transition-[width,padding] duration-300",
+        "relative z-40 flex h-[100dvh] shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-card)] backdrop-blur-2xl transition-[width,padding] duration-300",
         collapsed ? "w-20 px-3 py-5" : "w-80 px-4 py-5"
       )}
     >
