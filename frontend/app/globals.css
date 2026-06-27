@@ -16,40 +16,40 @@
 :root {
   color-scheme: dark;
 
-  --bg: #15101a;
-  --bg-muted: #1a1320;
-  --bg-elevated: #241a2e;
+  --bg: #081018;
+  --bg-muted: #0a1320;
+  --bg-elevated: #131f2d;
 
   /* Layered surface ladder — depth is FELT: canvas < workspace < panel < card < hover */
-  --layer-canvas: #15101a;
-  --layer-workspace: #1a1320;
-  --layer-panel: #241a2e;
-  --layer-card: #2d2138;
-  --layer-hover: #3a2c47;
+  --layer-canvas: #081018;
+  --layer-workspace: #0d1623;
+  --layer-panel: #131f2d;
+  --layer-card: #182638;
+  --layer-hover: #203247;
 
-  --surface: rgba(36, 26, 46, 0.80);     /* panel  (#241a2e, frosted) */
-  --surface-soft: rgba(45, 33, 56, 0.82); /* card   (#2d2138) */
-  --surface-muted: rgba(26, 19, 32, 0.72); /* workspace recess (#1a1320) */
+  --surface: rgba(19, 31, 45, 0.80);     /* panel  (#131f2d, frosted) */
+  --surface-soft: rgba(24, 38, 56, 0.82); /* card   (#182638) */
+  --surface-muted: rgba(13, 22, 35, 0.72); /* workspace recess (#0d1623) */
   --surface-hover: rgba(255, 255, 255, 0.05);
-  --surface-strong: rgba(21, 16, 26, 0.96);
+  --surface-strong: rgba(8, 16, 24, 0.96);
 
-  --text: #d6cdda;
-  --text-strong: #efe9f0;
-  --text-muted: #a194ab;
-  --text-subtle: #6f6379;
+  --text: #cbd5e1;
+  --text-strong: #e8edf5;
+  --text-muted: #94a3b8;
+  --text-subtle: #64748b;
 
   --border: rgba(255, 255, 255, 0.085);
-  --border-strong: rgba(251, 113, 133, 0.38);
+  --border-strong: rgba(16, 185, 129, 0.38);
 
-  --accent: #fb7185;
-  --accent-strong: #f43f5e;
-  --accent-soft: rgba(251, 113, 133, 0.14);
-  --accent-foreground: #2a0d14;
-  --accent-glow: rgba(251, 113, 133, 0.12);
+  --accent: #10b981;
+  --accent-strong: #059669;
+  --accent-soft: rgba(16, 185, 129, 0.13);
+  --accent-foreground: #022c22;
+  --accent-glow: rgba(16, 185, 129, 0.10);
 
-  --secondary: #c084fc;
-  --secondary-soft: rgba(192, 132, 252, 0.10);
-  --secondary-glow: rgba(192, 132, 252, 0.10);
+  --secondary: #2dd4bf;
+  --secondary-soft: rgba(45, 212, 191, 0.10);
+  --secondary-glow: rgba(45, 212, 191, 0.08);
 
   --success: #10b981;
   --success-soft: rgba(16, 185, 129, 0.10);
@@ -105,7 +105,7 @@
 
   --grid-line: rgba(255, 255, 255, 0.022);
   --page-vignette: rgba(0, 0, 0, 0.70);
-  --pre-bg: #15101a;
+  --pre-bg: #081018;
 
   /* Radii */
   --radius-xs: 0.375rem;
@@ -134,39 +134,39 @@
 html[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: #15101a;
-  --bg-muted: #1a1320;
-  --bg-elevated: #241a2e;
+  --bg: #081018;
+  --bg-muted: #0a1320;
+  --bg-elevated: #131f2d;
 
-  --layer-canvas: #15101a;
-  --layer-workspace: #1a1320;
-  --layer-panel: #241a2e;
-  --layer-card: #2d2138;
-  --layer-hover: #3a2c47;
+  --layer-canvas: #081018;
+  --layer-workspace: #0d1623;
+  --layer-panel: #131f2d;
+  --layer-card: #182638;
+  --layer-hover: #203247;
 
-  --surface: rgba(36, 26, 46, 0.80);
-  --surface-soft: rgba(45, 33, 56, 0.82);
-  --surface-muted: rgba(26, 19, 32, 0.72);
+  --surface: rgba(19, 31, 45, 0.80);
+  --surface-soft: rgba(24, 38, 56, 0.82);
+  --surface-muted: rgba(13, 22, 35, 0.72);
   --surface-hover: rgba(255, 255, 255, 0.05);
-  --surface-strong: rgba(21, 16, 26, 0.96);
+  --surface-strong: rgba(8, 16, 24, 0.96);
 
-  --text: #d6cdda;
-  --text-strong: #efe9f0;
-  --text-muted: #a194ab;
-  --text-subtle: #6f6379;
+  --text: #cbd5e1;
+  --text-strong: #e8edf5;
+  --text-muted: #94a3b8;
+  --text-subtle: #64748b;
 
   --border: rgba(255, 255, 255, 0.085);
-  --border-strong: rgba(251, 113, 133, 0.38);
+  --border-strong: rgba(16, 185, 129, 0.38);
 
-  --accent: #fb7185;
-  --accent-strong: #f43f5e;
-  --accent-soft: rgba(251, 113, 133, 0.14);
-  --accent-foreground: #2a0d14;
-  --accent-glow: rgba(251, 113, 133, 0.12);
+  --accent: #10b981;
+  --accent-strong: #059669;
+  --accent-soft: rgba(16, 185, 129, 0.13);
+  --accent-foreground: #022c22;
+  --accent-glow: rgba(16, 185, 129, 0.10);
 
-  --secondary: #c084fc;
-  --secondary-soft: rgba(192, 132, 252, 0.10);
-  --secondary-glow: rgba(192, 132, 252, 0.10);
+  --secondary: #2dd4bf;
+  --secondary-soft: rgba(45, 212, 191, 0.10);
+  --secondary-glow: rgba(45, 212, 191, 0.08);
 
   --success: #10b981;
   --success-soft: rgba(16, 185, 129, 0.10);
@@ -197,16 +197,16 @@ html[data-theme="dark"] {
 /* AIRA mode sub-theme: Obsidian Selection */
 html[data-theme="dark"][data-aira-mode="aira"],
 html[data-theme="dark"] .aira-research-theme {
-  --accent: #fb7185;
-  --accent-strong: #f43f5e;
-  --accent-soft: rgba(251, 113, 133, 0.14);
-  --accent-glow: rgba(251, 113, 133, 0.20);
+  --accent: #10b981;
+  --accent-strong: #059669;
+  --accent-soft: rgba(16, 185, 129, 0.14);
+  --accent-glow: rgba(16, 185, 129, 0.22);
 
-  --secondary: #c084fc;
-  --secondary-soft: rgba(192, 132, 252, 0.10);
-  --secondary-glow: rgba(192, 132, 252, 0.15);
+  --secondary: #2dd4bf;
+  --secondary-soft: rgba(45, 212, 191, 0.10);
+  --secondary-glow: rgba(45, 212, 191, 0.15);
 
-  --border-strong: rgba(251, 113, 133, 0.44);
+  --border-strong: rgba(16, 185, 129, 0.44);
 
   --bg: #0b1220;
   --bg-muted: #0a1020;
@@ -219,18 +219,18 @@ html[data-theme="dark"] .aira-research-theme {
   --page-vignette: rgba(0, 0, 0, 0.68);
 }
 
-/* AIRA-X mode sub-theme: Command Console — Rose/Plum identity (rose primary + violet secondary) */
+/* AIRA-X mode sub-theme: Command Console — canonical emerald primary + teal secondary */
 html[data-theme="dark"][data-aira-mode="aira-x"] {
-  --accent: #fb7185;
-  --accent-strong: #f43f5e;
-  --accent-soft: rgba(251, 113, 133, 0.14);
-  --accent-glow: rgba(251, 113, 133, 0.12);
+  --accent: #10b981;
+  --accent-strong: #059669;
+  --accent-soft: rgba(16, 185, 129, 0.13);
+  --accent-glow: rgba(16, 185, 129, 0.12);
 
-  --secondary: #c084fc;
-  --secondary-soft: rgba(192, 132, 252, 0.10);
-  --secondary-glow: rgba(192, 132, 252, 0.10);
+  --secondary: #2dd4bf;
+  --secondary-soft: rgba(45, 212, 191, 0.10);
+  --secondary-glow: rgba(45, 212, 191, 0.10);
 
-  --border-strong: rgba(251, 113, 133, 0.38);
+  --border-strong: rgba(16, 185, 129, 0.38);
 }
 
 /* =========================
@@ -247,7 +247,7 @@ html[data-theme="light"] {
   --surface: rgba(255, 255, 255, 0.90);
   --surface-soft: rgba(248, 250, 252, 0.88);
   --surface-muted: rgba(241, 245, 249, 0.84);
-  --surface-hover: rgba(225, 29, 72, 0.06);
+  --surface-hover: rgba(14, 165, 233, 0.07);
   --surface-strong: rgba(255, 255, 255, 0.96);
 
   --text: #172033;
@@ -256,17 +256,17 @@ html[data-theme="light"] {
   --text-subtle: #94a3b8;
 
   --border: rgba(15, 23, 42, 0.10);
-  --border-strong: rgba(225, 29, 72, 0.30);
+  --border-strong: rgba(14, 165, 233, 0.32);
 
-  --accent: #e11d48;
-  --accent-strong: #be123c;
-  --accent-soft: rgba(225, 29, 72, 0.08);
+  --accent: #059669;
+  --accent-strong: #0369a1;
+  --accent-soft: rgba(2, 132, 199, 0.08);
   --accent-foreground: #ffffff;
-  --accent-glow: rgba(225, 29, 72, 0.12);
+  --accent-glow: rgba(2, 132, 199, 0.12);
 
-  --secondary: #7c3aed;
-  --secondary-soft: rgba(124, 58, 237, 0.08);
-  --secondary-glow: rgba(124, 58, 237, 0.10);
+  --secondary: #6d5dfc;
+  --secondary-soft: rgba(109, 93, 252, 0.08);
+  --secondary-glow: rgba(109, 93, 252, 0.10);
 
   --success: #16a34a;
   --success-soft: rgba(22, 163, 74, 0.08);
@@ -340,14 +340,10 @@ body {
   font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
 }
 
-/* Dark body background */
+/* Dark body background — flat solid canvas (no gradient) */
 html[data-theme="dark"] body,
 body {
-  background:
-    radial-gradient(circle at 20% 8%, color-mix(in srgb, var(--accent-glow) 90%, transparent), transparent 30%),
-    radial-gradient(circle at 78% 12%, color-mix(in srgb, var(--secondary-glow) 76%, transparent), transparent 28%),
-    radial-gradient(circle at 50% 110%, rgba(15, 23, 42, 0.72), transparent 40%),
-    linear-gradient(180deg, #080e1a 0%, #0d1526 46%, #0b1220 100%);
+  background: var(--bg);
 }
 
 /* Light body background */
@@ -393,10 +389,7 @@ body::after {
 }
 
 html[data-theme="dark"] body::after {
-  opacity: 0.92;
-  background:
-    radial-gradient(circle at center, transparent 0%, rgba(0, 0, 0, 0.72) 78%),
-    linear-gradient(90deg, rgba(0, 0, 0, 0.26), transparent 45%, rgba(0, 0, 0, 0.28));
+  display: none; /* flat dark canvas — no vignette gradient */
 }
 
 html[data-theme="light"] body::after {
