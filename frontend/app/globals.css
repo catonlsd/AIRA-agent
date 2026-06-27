@@ -16,40 +16,40 @@
 :root {
   color-scheme: dark;
 
-  --bg: #081018;
-  --bg-muted: #0a1320;
-  --bg-elevated: #131f2d;
+  --bg: #212121;
+  --bg-muted: #181818;
+  --bg-elevated: #2a2a2a;
 
   /* Layered surface ladder — depth is FELT: canvas < workspace < panel < card < hover */
-  --layer-canvas: #081018;
-  --layer-workspace: #0d1623;
-  --layer-panel: #131f2d;
-  --layer-card: #182638;
-  --layer-hover: #203247;
+  --layer-canvas: #212121;
+  --layer-workspace: #181818;
+  --layer-panel: #2a2a2a;
+  --layer-card: #303030;
+  --layer-hover: #3a3a3a;
 
-  --surface: rgba(19, 31, 45, 0.80);     /* panel  (#131f2d, frosted) */
-  --surface-soft: rgba(24, 38, 56, 0.82); /* card   (#182638) */
-  --surface-muted: rgba(13, 22, 35, 0.72); /* workspace recess (#0d1623) */
+  --surface: rgba(47, 47, 47, 0.94);     /* panel  (#2a2a2a, frosted) */
+  --surface-soft: rgba(56, 56, 56, 0.95); /* card   (#303030) */
+  --surface-muted: rgba(24, 24, 24, 0.92); /* workspace recess (#181818) */
   --surface-hover: rgba(255, 255, 255, 0.05);
-  --surface-strong: rgba(8, 16, 24, 0.96);
+  --surface-strong: rgba(23, 23, 23, 0.98);
 
-  --text: #cbd5e1;
-  --text-strong: #e8edf5;
-  --text-muted: #94a3b8;
-  --text-subtle: #64748b;
+  --text: #d1d1d1;
+  --text-strong: #ececec;
+  --text-muted: #9b9b9b;
+  --text-subtle: #6e6e6e;
 
   --border: rgba(255, 255, 255, 0.085);
-  --border-strong: rgba(16, 185, 129, 0.38);
+  --border-strong: rgba(255, 255, 255, 0.22);
 
-  --accent: #10b981;
-  --accent-strong: #059669;
-  --accent-soft: rgba(16, 185, 129, 0.13);
-  --accent-foreground: #022c22;
-  --accent-glow: rgba(16, 185, 129, 0.10);
+  --accent: #ececec;
+  --accent-strong: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.10);
+  --accent-foreground: #171717;
+  --accent-glow: rgba(255, 255, 255, 0.05);
 
-  --secondary: #2dd4bf;
-  --secondary-soft: rgba(45, 212, 191, 0.10);
-  --secondary-glow: rgba(45, 212, 191, 0.08);
+  --secondary: #b4b4b4;
+  --secondary-soft: rgba(180, 180, 180, 0.08);
+  --secondary-glow: rgba(180, 180, 180, 0.05);
 
   --success: #10b981;
   --success-soft: rgba(16, 185, 129, 0.10);
@@ -105,7 +105,7 @@
 
   --grid-line: rgba(255, 255, 255, 0.022);
   --page-vignette: rgba(0, 0, 0, 0.70);
-  --pre-bg: #081018;
+  --pre-bg: #212121;
 
   /* Radii */
   --radius-xs: 0.375rem;
@@ -134,39 +134,39 @@
 html[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: #081018;
-  --bg-muted: #0a1320;
-  --bg-elevated: #131f2d;
+  --bg: #212121;
+  --bg-muted: #181818;
+  --bg-elevated: #2a2a2a;
 
-  --layer-canvas: #081018;
-  --layer-workspace: #0d1623;
-  --layer-panel: #131f2d;
-  --layer-card: #182638;
-  --layer-hover: #203247;
+  --layer-canvas: #212121;
+  --layer-workspace: #181818;
+  --layer-panel: #2a2a2a;
+  --layer-card: #303030;
+  --layer-hover: #3a3a3a;
 
-  --surface: rgba(19, 31, 45, 0.80);
-  --surface-soft: rgba(24, 38, 56, 0.82);
-  --surface-muted: rgba(13, 22, 35, 0.72);
+  --surface: rgba(47, 47, 47, 0.94);
+  --surface-soft: rgba(56, 56, 56, 0.95);
+  --surface-muted: rgba(24, 24, 24, 0.92);
   --surface-hover: rgba(255, 255, 255, 0.05);
-  --surface-strong: rgba(8, 16, 24, 0.96);
+  --surface-strong: rgba(23, 23, 23, 0.98);
 
-  --text: #cbd5e1;
-  --text-strong: #e8edf5;
-  --text-muted: #94a3b8;
-  --text-subtle: #64748b;
+  --text: #d1d1d1;
+  --text-strong: #ececec;
+  --text-muted: #9b9b9b;
+  --text-subtle: #6e6e6e;
 
   --border: rgba(255, 255, 255, 0.085);
-  --border-strong: rgba(16, 185, 129, 0.38);
+  --border-strong: rgba(255, 255, 255, 0.22);
 
-  --accent: #10b981;
-  --accent-strong: #059669;
-  --accent-soft: rgba(16, 185, 129, 0.13);
-  --accent-foreground: #022c22;
-  --accent-glow: rgba(16, 185, 129, 0.10);
+  --accent: #ececec;
+  --accent-strong: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.10);
+  --accent-foreground: #171717;
+  --accent-glow: rgba(255, 255, 255, 0.05);
 
-  --secondary: #2dd4bf;
-  --secondary-soft: rgba(45, 212, 191, 0.10);
-  --secondary-glow: rgba(45, 212, 191, 0.08);
+  --secondary: #b4b4b4;
+  --secondary-soft: rgba(180, 180, 180, 0.08);
+  --secondary-glow: rgba(180, 180, 180, 0.05);
 
   --success: #10b981;
   --success-soft: rgba(16, 185, 129, 0.10);
@@ -197,16 +197,16 @@ html[data-theme="dark"] {
 /* AIRA mode sub-theme: Obsidian Selection */
 html[data-theme="dark"][data-aira-mode="aira"],
 html[data-theme="dark"] .aira-research-theme {
-  --accent: #10b981;
-  --accent-strong: #059669;
-  --accent-soft: rgba(16, 185, 129, 0.14);
-  --accent-glow: rgba(16, 185, 129, 0.22);
+  --accent: #ececec;
+  --accent-strong: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.10);
+  --accent-glow: rgba(255, 255, 255, 0.06);
 
-  --secondary: #2dd4bf;
-  --secondary-soft: rgba(45, 212, 191, 0.10);
-  --secondary-glow: rgba(45, 212, 191, 0.15);
+  --secondary: #b4b4b4;
+  --secondary-soft: rgba(180, 180, 180, 0.08);
+  --secondary-glow: rgba(180, 180, 180, 0.05);
 
-  --border-strong: rgba(16, 185, 129, 0.44);
+  --border-strong: rgba(255, 255, 255, 0.24);
 
   --bg: #0b1220;
   --bg-muted: #0a1020;
@@ -221,16 +221,16 @@ html[data-theme="dark"] .aira-research-theme {
 
 /* AIRA-X mode sub-theme: Command Console — canonical emerald primary + teal secondary */
 html[data-theme="dark"][data-aira-mode="aira-x"] {
-  --accent: #10b981;
-  --accent-strong: #059669;
-  --accent-soft: rgba(16, 185, 129, 0.13);
-  --accent-glow: rgba(16, 185, 129, 0.12);
+  --accent: #ececec;
+  --accent-strong: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.10);
+  --accent-glow: rgba(255, 255, 255, 0.05);
 
-  --secondary: #2dd4bf;
-  --secondary-soft: rgba(45, 212, 191, 0.10);
-  --secondary-glow: rgba(45, 212, 191, 0.10);
+  --secondary: #b4b4b4;
+  --secondary-soft: rgba(180, 180, 180, 0.08);
+  --secondary-glow: rgba(180, 180, 180, 0.05);
 
-  --border-strong: rgba(16, 185, 129, 0.38);
+  --border-strong: rgba(255, 255, 255, 0.22);
 }
 
 /* =========================
@@ -370,11 +370,7 @@ body::before {
 }
 
 html[data-theme="dark"] body::before {
-  opacity: 0.58;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
-  background-size: 42px 42px;
+  display: none; /* flat dark canvas — no grid texture (ChatGPT-style) */
 }
 
 /* Vignette overlay */
@@ -613,7 +609,7 @@ html[data-theme="dark"] .aira-card::before {
     transparent 68%,
     color-mix(in srgb, var(--secondary) 12%, transparent)
   );
-  opacity: 0.16;
+  opacity: 0; /* flat cards — no accent corner shimmer (ChatGPT-style) */
   border-radius: inherit;
 }
 
