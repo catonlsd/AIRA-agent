@@ -358,58 +358,62 @@
   --pre-bg: #1a1850;
 }
 
-/* ============ PHANTOM (manual-only, never clock-driven) ============ */
+/* ============ PHANTOM (manual-only, never clock-driven) ============
+   Premium cinematic edition: matte layered blacks, no background gradient.
+   Depth comes from ambient volumetric lighting (.ambient-phantom) + glass
+   panels, not color transitions. Crimson is controlled light, used only for
+   accents. The canvas reads as black at first glance. */
 [data-theme="phantom"] {
   color-scheme: dark;
 
-  /* === BACKGROUNDS === */
-  --bg: #0a0a0a;
-  --bg-gradient: radial-gradient(ellipse at 62% 38%, #1c0808 0%, #0a0a0a 55%);
-  --bg-muted: rgba(20, 8, 8, 0.85);
-  --bg-elevated: rgba(22, 10, 10, 0.95);
+  /* === BACKGROUNDS === (flat matte black — no visible gradient) */
+  --bg: #080808;
+  --bg-gradient: #080808; /* solid; the body layer stays black, lighting is separate */
+  --bg-muted: #0a0a0a;
+  --bg-elevated: rgba(18, 18, 18, 0.96);
 
-  /* === SURFACES === */
-  --surface: rgba(18, 8, 8, 0.95);
-  --surface-soft: color-mix(in srgb, var(--surface) 88%, #ffffff 12%);
-  --surface-muted: rgba(20, 8, 8, 0.8);
-  --surface-hover: rgba(255, 50, 50, 0.08);
-  --surface-strong: #1a0c0c;
+  /* === SURFACES === (matte glass black, neutral — not red-tinted) */
+  --surface: rgba(20, 21, 24, 0.66);
+  --surface-soft: rgba(28, 29, 33, 0.72);
+  --surface-muted: rgba(14, 15, 17, 0.62);
+  --surface-hover: rgba(229, 48, 58, 0.07);
+  --surface-strong: #141518;
 
-  /* === TEXT === (WCAG on #0a0a0a: white 20.9:1, muted 7.1:1, subtle 4.6:1) */
+  /* === TEXT === (WCAG on #08090a: white 20.9:1, muted 7.0:1, subtle 4.6:1) */
   --text-strong: #ffffff;
   --text: color-mix(in srgb, var(--text-strong) 82%, var(--text-muted));
-  --text-muted: #a8a8a8;
-  --text-subtle: #6e6e6e;
+  --text-muted: #a6a7ab;
+  --text-subtle: #6d6e72;
 
-  /* === BORDERS === */
-  --border: rgba(255, 50, 50, 0.14);
-  --border-strong: rgba(255, 50, 50, 0.38);
+  /* === BORDERS === (neutral hairlines; crimson is reserved for active/focus) */
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.16);
 
-  /* === ACCENT (Phantom red) === */
+  /* === ACCENT (Phantom crimson — controlled light, small areas only) === */
   --accent: #e5303a;
   --accent-strong: #ff4444;
   --accent-soft: color-mix(in srgb, #e5303a 12%, transparent);
-  --accent-glow: rgba(229, 48, 58, 0.35);
+  --accent-glow: rgba(229, 48, 58, 0.3);
   --accent-foreground: #ffffff;
 
-  /* === SECONDARY (deep navy) === */
+  /* === SECONDARY (deep navy depth) === */
   --secondary: #1e3a5f;
   --secondary-soft: color-mix(in srgb, #1e3a5f 12%, transparent);
-  --secondary-glow: rgba(30, 58, 95, 0.4);
+  --secondary-glow: rgba(30, 58, 95, 0.32);
 
-  /* === SHADOWS === */
+  /* === SHADOWS === (deep, soft, layered — carved-from-darkness panels) */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.6);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.75);
-  --shadow-soft: 0 4px 16px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.04);
-  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 4px 16px rgba(0, 0, 0, 0.75);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.78);
+  --shadow-soft: 0 20px 60px -28px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 1px 2px rgba(0, 0, 0, 0.5), 0 24px 60px -30px rgba(0, 0, 0, 0.88);
 
-  /* === SCROLLBAR === */
-  --scrollbar-thumb: #3a1010;
-  --scrollbar-track: #0a0a0a;
-  --pre-bg: #1a0c0c;
+  /* === SCROLLBAR === (neutral, recedes) */
+  --scrollbar-thumb: #2b2c30;
+  --scrollbar-track: #08090a;
+  --pre-bg: #101113;
 
   /* === SPEC ALIASES (forward-compat) === */
-  --bg-primary: var(--bg-gradient);
+  --bg-primary: var(--bg);
   --bg-secondary: var(--surface);
   --bg-tertiary: var(--surface-muted);
   --text-primary: var(--text-strong);
@@ -419,6 +423,10 @@
 
   /* Status colors inherit the dark-family (night) defaults from :root. */
 }
+
+/* (Phantom component overrides live near the end of the file, after the generic
+   [data-scheme="dark"] rules, so they win at equal specificity. See "PHANTOM
+   PREMIUM OVERRIDES".) */
 
 /* =========================
    GLOBAL RESET
@@ -1822,66 +1830,75 @@ html[data-scheme="light"] form.aira-focus-composer {
   .day-ring-3 { animation: sky-pulse 8s ease-out infinite 5.2s; }
 }
 
-/* ── Phantom ambient blobs ───────────────────────────── */
+/* ── Phantom ambient lighting ─────────────────────────────
+   Volumetric light sources in a dark room — heavily blurred, low opacity,
+   edges dissolving into black. They never merge into one colored field; the
+   canvas keeps reading as black. */
 .ph-blob {
   position: absolute;
   border-radius: 50%;
-  filter: blur(90px);
+  filter: blur(130px);
   pointer-events: none;
   will-change: transform;
+  mix-blend-mode: screen; /* light adds onto black, like a real light source */
 }
 
-/* Primary red blob — upper-center-right */
+/* Primary crimson light — the single hero light source, upper-right. Spills down
+   and to the left, dissolving into black so ~70% of the workspace stays untouched. */
 .ph-blob-red {
-  width: 55%;
-  height: 65%;
-  top: -10%;
-  left: 35%;
+  width: 68%;
+  height: 82%;
+  top: -28%;
+  right: -8%;
   background: radial-gradient(
-    ellipse at 40% 40%,
-    rgba(229, 48, 58, 0.72) 0%,
-    rgba(180, 20, 30, 0.4) 45%,
-    transparent 70%
+    ellipse at 62% 36%,
+    rgba(229, 48, 58, 0.34) 0%,
+    rgba(176, 22, 32, 0.12) 40%,
+    transparent 64%
   );
 }
 
-/* Secondary red blob — lower-left */
+/* Bright core — a tighter hotspot inside the hero light (intensity variation). */
 .ph-blob-red-2 {
-  width: 40%;
-  height: 45%;
-  bottom: -5%;
-  left: -5%;
+  width: 30%;
+  height: 36%;
+  top: -6%;
+  right: 6%;
+  left: auto;
+  bottom: auto;
   background: radial-gradient(
-    ellipse at 60% 60%,
-    rgba(229, 48, 58, 0.45) 0%,
-    rgba(180, 20, 30, 0.22) 50%,
-    transparent 72%
+    ellipse at 55% 45%,
+    rgba(255, 70, 80, 0.28) 0%,
+    rgba(220, 40, 50, 0.1) 46%,
+    transparent 68%
   );
 }
 
-/* Navy secondary blob — lower-right */
+/* Deep navy — extremely subtle, just enough cool depth so the red isn't flat. */
 .ph-blob-navy {
-  width: 38%;
-  height: 42%;
-  bottom: 5%;
-  right: -5%;
+  width: 46%;
+  height: 50%;
+  top: 18%;
+  right: -14%;
+  bottom: auto;
   background: radial-gradient(
-    ellipse at 40% 40%,
-    rgba(30, 58, 95, 0.55) 0%,
-    rgba(15, 30, 55, 0.28) 50%,
+    ellipse at 45% 45%,
+    rgba(34, 64, 104, 0.13) 0%,
+    rgba(16, 32, 58, 0.06) 50%,
     transparent 72%
   );
 }
 
-/* Grain texture layer — SVG noise filter */
+/* Film grain — fine, expensive, almost invisible. Sits above the lighting so it
+   textures the whole frame without distracting from text. */
 .ph-noise {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.045;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
   background-repeat: repeat;
-  background-size: 256px 256px;
+  background-size: 160px 160px;
 }
 
 @keyframes ph-drift-1 {
@@ -1908,6 +1925,68 @@ html[data-scheme="light"] form.aira-focus-composer {
   .ph-blob-red { animation: ph-drift-1 22s ease-in-out infinite; }
   .ph-blob-red-2 { animation: ph-drift-2 18s ease-in-out infinite; }
   .ph-blob-navy { animation: ph-drift-3 26s ease-in-out infinite; }
+}
+
+/* ═══════════ PHANTOM PREMIUM OVERRIDES ═══════════
+   Placed after the generic [data-scheme="dark"] rules so they win at equal
+   specificity. Visual-only; matte-black depth, crimson reserved for accents. */
+
+/* Panels — matte black carved by depth, not color. */
+html[data-theme="phantom"] .sarvam-card,
+html[data-theme="phantom"] .aira-card,
+html[data-theme="phantom"] .aira-panel,
+html[data-theme="phantom"] .glass {
+  background: rgba(16, 16, 16, 0.92);
+  border-color: rgba(255, 255, 255, 0.05);
+  -webkit-backdrop-filter: blur(12px) saturate(1.05);
+  backdrop-filter: blur(12px) saturate(1.05);
+  box-shadow: var(--shadow-card);
+}
+
+/* Card hover — lighting/elevation only, neutral (no crimson fill, no movement). */
+html[data-theme="phantom"] .sarvam-card:hover,
+html[data-theme="phantom"] .aira-card:hover {
+  background: rgba(22, 22, 22, 0.94);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 28px 70px -32px rgba(0, 0, 0, 0.92);
+}
+
+/* Inputs — premium desktop feel: flat #0d0d0d, hairline border, crimson on focus. */
+html[data-theme="phantom"] textarea,
+html[data-theme="phantom"] input,
+html[data-theme="phantom"] select {
+  background: #0d0d0d !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+html[data-theme="phantom"] textarea:focus,
+html[data-theme="phantom"] input:focus,
+html[data-theme="phantom"] select:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent) !important;
+  box-shadow: 0 0 0 3px rgba(229, 48, 58, 0.12) !important;
+}
+
+/* Sidebar — a stable, independent matte-black rail. No ambient, no glow. Crimson
+   appears only on hover/active. Tokens are re-scoped here so the nav's own
+   var()-driven surfaces darken without touching the component. */
+html[data-theme="phantom"] aside {
+  background: #060606 !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.05) !important;
+  --surface: rgba(255, 255, 255, 0.02);
+  --surface-soft: rgba(255, 255, 255, 0.025);
+  --surface-muted: rgba(255, 255, 255, 0.02);
+  --surface-hover: rgba(229, 48, 58, 0.06);
+  --surface-strong: rgba(255, 255, 255, 0.03);
+  --border: rgba(255, 255, 255, 0.05);
+  --border-strong: rgba(229, 48, 58, 0.18);
+  --accent-glow: transparent; /* kills the decorative sidebar glow blobs */
+  --secondary-glow: transparent;
+}
+
+/* Nav item hover — illumination, not a fill: faint crimson wash + edge + glow. */
+html[data-theme="phantom"] aside a:hover {
+  box-shadow:
+    0 0 20px rgba(229, 48, 58, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 /* Selection — emerald tint */
