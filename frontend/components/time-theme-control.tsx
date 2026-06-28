@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import {
-  CloudSun,
+  Eye,
   Moon,
-  Sparkles,
   Sun,
+  SunMedium,
   Sunrise,
   Sunset,
   type LucideIcon,
@@ -16,12 +16,12 @@ import { useTheme } from "@/components/theme-provider";
 import { THEME_LABELS, THEME_NAMES, type ThemeName } from "@/lib/timeTheme";
 
 const ICONS: Record<ThemeName, LucideIcon> = {
-  predawn: Moon,
+  predawn: Eye,
   sunrise: Sunrise,
   daytime: Sun,
-  dusk: Sunset,
-  sunset: CloudSun,
-  night: Sparkles,
+  dusk: SunMedium,
+  sunset: Sunset,
+  night: Moon,
 };
 
 export function TimeThemeControl() {
@@ -66,7 +66,7 @@ export function TimeThemeControl() {
                   : "text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]",
               )}
             >
-              <Icon className="h-3.5 w-3.5" />
+              <Icon className="h-4 w-4" />
               <span>{THEME_LABELS[name]}</span>
             </button>
           );
