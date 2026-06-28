@@ -41,7 +41,8 @@ function readOverride(): ThemeName | null {
 function applyTheme(name: ThemeName) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
-  const dark = name === "night";
+  // night + phantom are the dark-scheme themes (drive the [data-scheme="dark"] rules).
+  const dark = name === "night" || name === "phantom";
 
   root.dataset.theme = name; // palette
   root.dataset.scheme = dark ? "dark" : "light"; // coarse light/dark for component rules

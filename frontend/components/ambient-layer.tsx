@@ -106,6 +106,14 @@ export function AmbientLayer() {
       <div className="ambient-layer ambient-sunset">
         <div className="sunset-bloom" />
       </div>
+
+      {/* PHANTOM — drifting crimson + navy blobs over grain (manual-only theme) */}
+      <div className="ambient-layer ambient-phantom">
+        <div className="ph-blob ph-blob-red" />
+        <div className="ph-blob ph-blob-navy" />
+        <div className="ph-blob ph-blob-red-2" />
+        <div className="ph-noise" />
+      </div>
     </div>
   );
 }

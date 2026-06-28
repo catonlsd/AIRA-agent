@@ -8,8 +8,12 @@ export type ThemeName =
   | "daytime"
   | "dusk"
   | "sunset"
-  | "night";
+  | "night"
+  | "phantom";
 
+// The 6 clock-driven periods, in order. `phantom` is intentionally NOT here: it is
+// a manual-only theme (never returned by getThemeForTime / not part of the rotation),
+// so the Settings period group and the clock both stay six-wide.
 export const THEME_NAMES: readonly ThemeName[] = [
   "predawn",
   "sunrise",
@@ -26,12 +30,17 @@ export const THEME_LABELS: Record<ThemeName, string> = {
   dusk: "Dusk",
   sunset: "Sunset",
   night: "Night",
+  phantom: "Phantom",
 };
+
+// Every theme a user can pin (the 6 clock periods + the manual-only phantom). Used to
+// validate persisted overrides; broader than THEME_NAMES (which is the clock rotation).
+const SELECTABLE_THEME_NAMES: readonly ThemeName[] = [...THEME_NAMES, "phantom"];
 
 export function isThemeName(value: unknown): value is ThemeName {
   return (
     typeof value === "string" &&
-    (THEME_NAMES as readonly string[]).includes(value)
+    (SELECTABLE_THEME_NAMES as readonly string[]).includes(value)
   );
 }
 

@@ -358,6 +358,68 @@
   --pre-bg: #1a1850;
 }
 
+/* ============ PHANTOM (manual-only, never clock-driven) ============ */
+[data-theme="phantom"] {
+  color-scheme: dark;
+
+  /* === BACKGROUNDS === */
+  --bg: #0a0a0a;
+  --bg-gradient: radial-gradient(ellipse at 62% 38%, #1c0808 0%, #0a0a0a 55%);
+  --bg-muted: rgba(20, 8, 8, 0.85);
+  --bg-elevated: rgba(22, 10, 10, 0.95);
+
+  /* === SURFACES === */
+  --surface: rgba(18, 8, 8, 0.95);
+  --surface-soft: color-mix(in srgb, var(--surface) 88%, #ffffff 12%);
+  --surface-muted: rgba(20, 8, 8, 0.8);
+  --surface-hover: rgba(255, 50, 50, 0.08);
+  --surface-strong: #1a0c0c;
+
+  /* === TEXT === (WCAG on #0a0a0a: white 20.9:1, muted 7.1:1, subtle 4.6:1) */
+  --text-strong: #ffffff;
+  --text: color-mix(in srgb, var(--text-strong) 82%, var(--text-muted));
+  --text-muted: #a8a8a8;
+  --text-subtle: #6e6e6e;
+
+  /* === BORDERS === */
+  --border: rgba(255, 50, 50, 0.14);
+  --border-strong: rgba(255, 50, 50, 0.38);
+
+  /* === ACCENT (Phantom red) === */
+  --accent: #e5303a;
+  --accent-strong: #ff4444;
+  --accent-soft: color-mix(in srgb, #e5303a 12%, transparent);
+  --accent-glow: rgba(229, 48, 58, 0.35);
+  --accent-foreground: #ffffff;
+
+  /* === SECONDARY (deep navy) === */
+  --secondary: #1e3a5f;
+  --secondary-soft: color-mix(in srgb, #1e3a5f 12%, transparent);
+  --secondary-glow: rgba(30, 58, 95, 0.4);
+
+  /* === SHADOWS === */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.6);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.75);
+  --shadow-soft: 0 4px 16px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 4px 16px rgba(0, 0, 0, 0.75);
+
+  /* === SCROLLBAR === */
+  --scrollbar-thumb: #3a1010;
+  --scrollbar-track: #0a0a0a;
+  --pre-bg: #1a0c0c;
+
+  /* === SPEC ALIASES (forward-compat) === */
+  --bg-primary: var(--bg-gradient);
+  --bg-secondary: var(--surface);
+  --bg-tertiary: var(--surface-muted);
+  --text-primary: var(--text-strong);
+  --text-secondary: var(--text-muted);
+  --ray-primary: #ff4444;
+  --ray-secondary: #1e3a5f;
+
+  /* Status colors inherit the dark-family (night) defaults from :root. */
+}
+
 /* =========================
    GLOBAL RESET
 ========================= */
@@ -1577,6 +1639,7 @@ html[data-scheme="light"] form.aira-focus-composer {
 [data-theme="dusk"] .ambient-dusk { opacity: 1; }
 [data-theme="sunset"] .ambient-sunset { opacity: 1; }
 [data-theme="night"] .ambient-night { opacity: 1; }
+[data-theme="phantom"] .ambient-phantom { opacity: 1; }
 
 /* --- Night: stars + a rare shooting star --- */
 .star {
@@ -1757,6 +1820,94 @@ html[data-scheme="light"] form.aira-focus-composer {
   .day-ring-1 { animation: sky-pulse 8s ease-out infinite; }
   .day-ring-2 { animation: sky-pulse 8s ease-out infinite 2.6s; }
   .day-ring-3 { animation: sky-pulse 8s ease-out infinite 5.2s; }
+}
+
+/* ── Phantom ambient blobs ───────────────────────────── */
+.ph-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* Primary red blob — upper-center-right */
+.ph-blob-red {
+  width: 55%;
+  height: 65%;
+  top: -10%;
+  left: 35%;
+  background: radial-gradient(
+    ellipse at 40% 40%,
+    rgba(229, 48, 58, 0.72) 0%,
+    rgba(180, 20, 30, 0.4) 45%,
+    transparent 70%
+  );
+}
+
+/* Secondary red blob — lower-left */
+.ph-blob-red-2 {
+  width: 40%;
+  height: 45%;
+  bottom: -5%;
+  left: -5%;
+  background: radial-gradient(
+    ellipse at 60% 60%,
+    rgba(229, 48, 58, 0.45) 0%,
+    rgba(180, 20, 30, 0.22) 50%,
+    transparent 72%
+  );
+}
+
+/* Navy secondary blob — lower-right */
+.ph-blob-navy {
+  width: 38%;
+  height: 42%;
+  bottom: 5%;
+  right: -5%;
+  background: radial-gradient(
+    ellipse at 40% 40%,
+    rgba(30, 58, 95, 0.55) 0%,
+    rgba(15, 30, 55, 0.28) 50%,
+    transparent 72%
+  );
+}
+
+/* Grain texture layer — SVG noise filter */
+.ph-noise {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.045;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+@keyframes ph-drift-1 {
+  0% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(18px, -12px) scale(1.04); }
+  66% { transform: translate(-10px, 15px) scale(0.97); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+
+@keyframes ph-drift-2 {
+  0% { transform: translate(0px, 0px) scale(1); }
+  40% { transform: translate(-15px, 10px) scale(1.03); }
+  75% { transform: translate(12px, -8px) scale(0.98); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+
+@keyframes ph-drift-3 {
+  0% { transform: translate(0px, 0px); }
+  50% { transform: translate(10px, -14px); }
+  100% { transform: translate(0px, 0px); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ph-blob-red { animation: ph-drift-1 22s ease-in-out infinite; }
+  .ph-blob-red-2 { animation: ph-drift-2 18s ease-in-out infinite; }
+  .ph-blob-navy { animation: ph-drift-3 26s ease-in-out infinite; }
 }
 
 /* Selection — emerald tint */

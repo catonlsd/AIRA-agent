@@ -54,12 +54,13 @@ export const viewport: Viewport = {
 // Set data-theme/data-scheme before first paint so there is no wrong-theme flash.
 // Mirrors lib/timeTheme.ts (kept inline because this runs pre-hydration, no imports).
 const THEME_BOOTSTRAP = `(function(){try{var k="aira-x-theme";var v=localStorage.getItem(k);` +
-  `var n=["predawn","sunrise","daytime","dusk","sunset","night"];` +
+  `var n=["predawn","sunrise","daytime","dusk","sunset","night","phantom"];` +
   `var t=n.indexOf(v)>=0?v:null;if(!t){var d=new Date();var m=d.getHours()*60+d.getMinutes();` +
   `t=(m>=180&&m<=329)?"predawn":(m>=330&&m<=479)?"sunrise":(m>=480&&m<=1019)?"daytime":` +
   `(m>=1020&&m<=1109)?"dusk":(m>=1110&&m<=1154)?"sunset":"night";}` +
-  `var e=document.documentElement;e.dataset.theme=t;e.dataset.scheme=t==="night"?"dark":"light";` +
-  `e.style.colorScheme=t==="night"?"dark":"light";}catch(e){}})();`;
+  `var dark=(t==="night"||t==="phantom");` +
+  `var e=document.documentElement;e.dataset.theme=t;e.dataset.scheme=dark?"dark":"light";` +
+  `e.style.colorScheme=dark?"dark":"light";}catch(e){}})();`;
 
 export default function RootLayout({
   children,
