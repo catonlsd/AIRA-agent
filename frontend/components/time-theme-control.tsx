@@ -1,28 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Eye,
-  Moon,
-  Sun,
-  SunMedium,
-  Sunrise,
-  Sunset,
-  type LucideIcon,
-} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
-import { THEME_LABELS, THEME_NAMES, type ThemeName } from "@/lib/timeTheme";
-
-const ICONS: Record<ThemeName, LucideIcon> = {
-  predawn: Eye,
-  sunrise: Sunrise,
-  daytime: Sun,
-  dusk: SunMedium,
-  sunset: Sunset,
-  night: Moon,
-};
+import { THEME_LABELS, THEME_NAMES } from "@/lib/timeTheme";
 
 export function TimeThemeControl() {
   const { theme, autoTheme, isAuto, setOverride } = useTheme();
@@ -49,7 +31,6 @@ export function TimeThemeControl() {
         </button>
 
         {THEME_NAMES.map((name) => {
-          const Icon = ICONS[name];
           const active = mounted && !isAuto && theme === name;
 
           return (
@@ -66,7 +47,6 @@ export function TimeThemeControl() {
                   : "text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]",
               )}
             >
-              <Icon className="h-4 w-4" />
               <span>{THEME_LABELS[name]}</span>
             </button>
           );

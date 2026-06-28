@@ -45,15 +45,6 @@ function makeStars(count: number): Star[] {
   return stars;
 }
 
-const RAYS = [
-  { left: 10, dur: 10 },
-  { left: 26, dur: 13 },
-  { left: 38, dur: 8 },
-  { left: 55, dur: 12 },
-  { left: 72, dur: 9 },
-  { left: 88, dur: 14 },
-];
-
 export function AmbientLayer() {
   const stars = useMemo(() => makeStars(120), []);
 
@@ -97,15 +88,12 @@ export function AmbientLayer() {
         <div className="sunrise-bloom" />
       </div>
 
-      {/* DAYTIME — thin drifting light rays */}
+      {/* DAYTIME — overhead sky glow + slow concentric pulse rings */}
       <div className="ambient-layer ambient-daytime">
-        {RAYS.map((r, i) => (
-          <div
-            key={i}
-            className="day-ray"
-            style={{ left: `${r.left}%`, "--ray-dur": `${r.dur}s` } as React.CSSProperties}
-          />
-        ))}
+        <div className="day-glow" />
+        <div className="day-ring day-ring-1" />
+        <div className="day-ring day-ring-2" />
+        <div className="day-ring day-ring-3" />
       </div>
 
       {/* DUSK — amber horizon band across the lower third */}

@@ -3035,7 +3035,7 @@ export default function ChatPage() {
       <AiraStyles />
 
       <div className={cn(
-        "mx-auto flex min-h-[calc(100vh-64px)] w-full flex-col gap-4 px-4 pb-6",
+        "mx-auto flex h-full min-h-0 w-full flex-col gap-4 px-4 py-4",
         threadIsEmpty ? "max-w-2xl" : "max-w-3xl",
         "aira-chat-page"
       )}>
@@ -3062,11 +3062,11 @@ export default function ChatPage() {
 
         {/* Main content */}
         <div
-          className="aira-focus-content flex flex-1 flex-col gap-4"
+          className="aira-focus-content flex min-h-0 flex-1 flex-col gap-4"
           data-composer-focused={composerFocused ? "true" : "false"}
         >
           {threadIsEmpty && !loading && !airaXLoading ? (
-            <div className="flex flex-1 flex-col">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
               <AiraHomeStage
                 question={question}
                 setQuestion={setQuestion}
@@ -3086,7 +3086,7 @@ export default function ChatPage() {
               <AssistantWorkspaceLinks onUploadClick={() => uploadInputRef.current?.click()} />
             </div>
           ) : (
-            <div className="flex flex-1 flex-col gap-4 pt-2">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1 pt-2">
               {/* Thread */}
               {turns.map((turn, index) => (
                 <ResearchTurnCard
@@ -3114,9 +3114,9 @@ export default function ChatPage() {
             </div>
           )}
 
-          {/* Sticky composer */}
+          {/* Composer — pinned as the static last child below the scrolling thread */}
           {!threadIsEmpty && (
-            <div className="sticky bottom-4 flex flex-col gap-2">
+            <div className="flex flex-col gap-2 pt-1">
               <OctaStatus
                 state={octaState}
                 message={octaMessage}

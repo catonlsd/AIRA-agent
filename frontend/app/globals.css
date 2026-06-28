@@ -371,8 +371,9 @@
 html {
   scroll-behavior: smooth;
   background: var(--bg);
-  /* Prevent layout shift on scrollbar appear */
-  scrollbar-gutter: stable;
+  /* Viewport lock — the shell/main own scrolling, never the page itself. */
+  height: 100%;
+  overflow: hidden;
 }
 
 html,
@@ -1664,19 +1665,43 @@ html[data-scheme="light"] form.aira-focus-composer {
   );
 }
 
-/* --- Daytime: thin drifting light rays --- */
-.day-ray {
+/* --- Daytime: overhead sky glow + concentric pulse rings --- */
+.day-glow {
   position: absolute;
-  top: -10%;
-  height: 120%;
-  width: 1px;
-  transform: rotate(15deg);
-  background: linear-gradient(to bottom, transparent, rgba(25, 118, 210, 0.08), transparent);
+  top: -15%;
+  left: 50%;
+  width: 70%;
+  height: 60%;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center top,
+    rgba(25, 118, 210, 0.1) 0%,
+    rgba(66, 165, 245, 0.05) 40%,
+    transparent 70%
+  );
 }
 
-@keyframes ray-drift {
-  from { transform: rotate(15deg) translateX(0); }
-  to { transform: rotate(15deg) translateX(30px); }
+.day-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 50%;
+  border: 1px solid rgba(25, 118, 210, 0.06);
+  transform: translate(-50%, -50%) scale(0.6);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.day-ring-1 { width: 40%; height: 40%; }
+.day-ring-2 { width: 65%; height: 65%; }
+.day-ring-3 { width: 90%; height: 90%; }
+
+@keyframes sky-pulse {
+  0% { transform: translate(-50%, -50%) scale(0.6); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.1); opacity: 0; }
 }
 
 /* --- Dusk: amber horizon band across the lower third --- */
@@ -1728,9 +1753,10 @@ html[data-scheme="light"] form.aira-focus-composer {
   .shooting-star {
     animation: shoot-cycle 35s linear infinite;
   }
-  .day-ray {
-    animation: ray-drift var(--ray-dur, 10s) ease-in-out infinite alternate;
-  }
+  /* Staggered so one ring is always mid-expansion (8s ÷ 3 ≈ 2.6s) — no visible loop reset. */
+  .day-ring-1 { animation: sky-pulse 8s ease-out infinite; }
+  .day-ring-2 { animation: sky-pulse 8s ease-out infinite 2.6s; }
+  .day-ring-3 { animation: sky-pulse 8s ease-out infinite 5.2s; }
 }
 
 /* Selection — emerald tint */
@@ -1833,4 +1859,12 @@ html { height: 100%; }
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+}
+
+/* Chat uses an app-shell scroll model: <main> is viewport-locked and never
+   scrolls; the thread container inside the page is the only scroller. */
+.layout-main-fixed {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }

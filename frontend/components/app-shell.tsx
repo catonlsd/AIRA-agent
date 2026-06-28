@@ -13,6 +13,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   // The operator console is OPERATOR-ONLY and renders without the product nav, so
   // it stays clearly separate from the normal user product (never linked in Nav).
   const isOperator = pathname === "/operator" || pathname.startsWith("/operator/");
+  // Chat owns its scroll internally (thread scrolls, composer pinned), so <main>
+  // is viewport-locked instead of being the page scroller.
+  const isChat = pathname === "/chat" || pathname.startsWith("/chat/");
 
   const shellClassName = cn(
     "aira-shell aira-production-theme soft-grid text-[var(--text)]"
@@ -31,7 +34,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className={cn(shellClassName, "layout-root")}>
       <Nav />
 
-      <main className="layout-main relative min-w-0 flex-1">
+      <main
+        className={cn(
+          "relative min-w-0 flex-1",
+          isChat ? "layout-main-fixed flex flex-col" : "layout-main"
+        )}
+      >
         {/* Per-period ambient effects — covers the main area only (never the sidebar),
             sits behind the z-10 content. CSS-only; crossfades on the data-theme flip. */}
         <AmbientLayer />
@@ -39,7 +47,16 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="pointer-events-none absolute inset-x-0 top-0 z-0 h-px bg-gradient-to-r from-transparent via-[var(--border-strong)] to-transparent" />
         <div className="pointer-events-none fixed right-8 top-6 z-0 hidden h-40 w-40 rounded-full bg-[var(--accent-glow)] opacity-70 blur-3xl lg:block" />
 
-        <div className="relative z-10 p-4 sm:p-6 lg:px-8 lg:py-7">{children}</div>
+        <div
+          className={cn(
+            "relative z-10",
+            isChat
+              ? "flex min-h-0 flex-1 flex-col"
+              : "p-4 sm:p-6 lg:px-8 lg:py-7"
+          )}
+        >
+          {children}
+        </div>
       </main>
     </div>
   );
