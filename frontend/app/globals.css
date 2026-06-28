@@ -1989,6 +1989,71 @@ html[data-theme="phantom"] aside a:hover {
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
+/* ── Global scroll glow ──────────────────────────────────
+   Edge glows + a top "horizon line" that fade in with scroll depth. The color
+   matches the active theme; alpha is driven entirely by --scroll-depth (set on
+   <html> by useScrollDepth). Full alpha in the token — depth controls opacity. */
+:root { --scroll-glow-color: rgba(200, 200, 220, 1); }
+[data-theme="predawn"] { --scroll-glow-color: rgba(139, 92, 246, 1); }
+[data-theme="sunrise"] { --scroll-glow-color: rgba(233, 30, 140, 1); }
+[data-theme="daytime"] { --scroll-glow-color: rgba(25, 118, 210, 1); }
+[data-theme="dusk"] { --scroll-glow-color: rgba(255, 160, 0, 1); }
+[data-theme="sunset"] { --scroll-glow-color: rgba(224, 64, 251, 1); }
+[data-theme="night"] { --scroll-glow-color: rgba(200, 200, 220, 1); }
+[data-theme="phantom"] { --scroll-glow-color: rgba(229, 48, 58, 1); }
+
+.scroll-glow-left,
+.scroll-glow-right {
+  position: absolute;
+  top: 8%;
+  bottom: 8%;
+  width: 80px;
+  pointer-events: none;
+  opacity: calc(var(--scroll-depth, 0) * 0.75);
+  transition: opacity 120ms ease-out; /* smooths out micro-jitter */
+  will-change: opacity;
+}
+
+.scroll-glow-left {
+  left: 0;
+  border-radius: 0 40px 40px 0;
+  background: linear-gradient(to right, var(--scroll-glow-color, rgba(255, 255, 255, 0)) 0%, transparent 100%);
+}
+
+.scroll-glow-right {
+  right: 0;
+  border-radius: 40px 0 0 40px;
+  background: linear-gradient(to left, var(--scroll-glow-color, rgba(255, 255, 255, 0)) 0%, transparent 100%);
+}
+
+/* Horizon line — top edge, appears on scroll */
+.scroll-glow-top {
+  position: absolute;
+  top: 0;
+  left: 5%;
+  right: 5%;
+  height: 1.5px;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    var(--scroll-glow-color, rgba(255, 255, 255, 0)) 30%,
+    var(--scroll-glow-color, rgba(255, 255, 255, 0)) 70%,
+    transparent 100%
+  );
+  opacity: calc(var(--scroll-depth, 0) * 0.65);
+  transition: opacity 120ms ease-out;
+  will-change: opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-glow-left,
+  .scroll-glow-right,
+  .scroll-glow-top {
+    transition: none;
+  }
+}
+
 /* Selection — emerald tint */
 ::selection {
   background: color-mix(in srgb, var(--accent) 30%, transparent);

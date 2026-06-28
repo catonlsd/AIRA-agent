@@ -4,10 +4,15 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { Nav } from "@/components/nav";
 import { AmbientLayer } from "@/components/ambient-layer";
+import { useScrollDepth } from "@/lib/useScrollDepth";
 import { cn } from "@/lib/utils";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+
+  // Drives --scroll-glow opacity from the main content scroll position. Global
+  // (one capture listener); keyed on pathname so a new route starts at rest.
+  useScrollDepth(300, pathname);
 
   const isLandingPage = pathname === "/";
   // The operator console is OPERATOR-ONLY and renders without the product nav, so

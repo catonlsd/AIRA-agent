@@ -114,6 +114,12 @@ export function AmbientLayer() {
         <div className="ph-blob ph-blob-red-2" />
         <div className="ph-noise" />
       </div>
+
+      {/* Scroll glow — global, all themes. Invisible at rest; fades in with scroll
+          depth (--scroll-depth). Sits outside the per-theme layers. */}
+      <div className="scroll-glow-left" aria-hidden="true" />
+      <div className="scroll-glow-right" aria-hidden="true" />
+      <div className="scroll-glow-top" aria-hidden="true" />
     </div>
   );
 }
