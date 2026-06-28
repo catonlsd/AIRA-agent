@@ -2004,9 +2004,11 @@ html[data-theme="phantom"] aside a:hover {
 
 .scroll-glow-left,
 .scroll-glow-right {
-  position: absolute;
-  top: 8%;
-  bottom: 8%;
+  /* Viewport-level: cover the full visible height regardless of content length.
+     --scroll-depth still inherits from <html> to drive opacity. */
+  position: fixed;
+  top: 0;
+  bottom: 0;
   width: 80px;
   pointer-events: none;
   opacity: calc(var(--scroll-depth, 0) * 0.75);
@@ -2015,9 +2017,10 @@ html[data-theme="phantom"] aside a:hover {
 }
 
 .scroll-glow-left {
-  left: 0;
+  left: var(--sidebar-width, 320px); /* flush with the sidebar's right edge */
   border-radius: 0 40px 40px 0;
   background: linear-gradient(to right, var(--scroll-glow-color, rgba(255, 255, 255, 0)) 0%, transparent 100%);
+  transition: opacity 120ms ease-out, left 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .scroll-glow-right {
@@ -2124,6 +2127,10 @@ html[data-theme="phantom"] aside a:hover {
    100dvh handles mobile browser chrome; overscroll-behavior prevents scroll chaining.
 ========================= */
 html { height: 100%; }
+
+:root {
+  --sidebar-width: 320px; /* default (expanded w-80); nav updates this on collapse */
+}
 
 .no-page-scroll {
   height: 100%;

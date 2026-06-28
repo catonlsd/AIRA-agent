@@ -63,6 +63,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           {children}
         </div>
       </main>
+
+      {/* Viewport-fixed side glows — rendered at the shell level (outside <main>,
+          which is a transformed containing block) so they pin to the visible
+          viewport edges at full height. Opacity inherits --scroll-depth from <html>. */}
+      <div className="scroll-glow-left" aria-hidden="true" />
+      <div className="scroll-glow-right" aria-hidden="true" />
     </div>
   );
 }

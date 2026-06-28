@@ -115,10 +115,9 @@ export function AmbientLayer() {
         <div className="ph-noise" />
       </div>
 
-      {/* Scroll glow — global, all themes. Invisible at rest; fades in with scroll
-          depth (--scroll-depth). Sits outside the per-theme layers. */}
-      <div className="scroll-glow-left" aria-hidden="true" />
-      <div className="scroll-glow-right" aria-hidden="true" />
+      {/* The viewport-fixed side glows live in the shell (outside <main>, which is a
+          transformed containing block). The top horizon line stays here — it's
+          absolute to the content area, exactly where it belongs. */}
       <div className="scroll-glow-top" aria-hidden="true" />
     </div>
   );

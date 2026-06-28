@@ -202,6 +202,15 @@ export function Nav() {
     setCollapsed(getStoredSidebarCollapsed());
   }, []);
 
+  // Publish the sidebar width so viewport-fixed decorations (e.g. the scroll-glow
+  // left edge) can sit flush with the rail across the collapse transition.
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--sidebar-width",
+      collapsed ? "80px" : "320px"
+    );
+  }, [collapsed]);
+
   function toggleSidebar() {
     setCollapsed((currentValue) => {
       const nextValue = !currentValue;
