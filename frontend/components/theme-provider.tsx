@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -9,173 +10,117 @@ import {
   type ReactNode,
 } from "react";
 
-type ThemeMode = "light" | "dark" | "system";
-type ResolvedTheme = "light" | "dark";
+import {
+  getThemeForTime,
+  isThemeName,
+  msUntilNextTheme,
+  type ThemeName,
+} from "@/lib/timeTheme";
+
+const STORAGE_KEY = "aira-x-theme";
 
 type ThemeContextValue = {
-  theme: ThemeMode;
-  resolvedTheme: ResolvedTheme;
-  setTheme: (theme: ThemeMode) => void;
+  theme: ThemeName;
+  autoTheme: ThemeName;
+  isAuto: boolean;
+  setOverride: (name: ThemeName | null) => void;
 };
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-const STORAGE_KEY = "aira-x-theme";
-
-function isThemeMode(value: string | null): value is ThemeMode {
-  return value === "light" || value === "dark" || value === "system";
-}
-
-function getSystemTheme(): ResolvedTheme {
-  if (typeof window === "undefined") {
-    return "dark";
-  }
-
-  return window.matchMedia("(prefers-color-scheme: light)").matches
-    ? "light"
-    : "dark";
-}
-
-function getStoredTheme(): ThemeMode {
-  // AIRA-X's canonical identity is the dark "operator console" — default to it so the
-  // premium look is the first impression for everyone. Users can still pick light or
-  // system from the theme toggle (their choice is persisted and honored).
-  if (typeof window === "undefined") {
-    return "dark";
-  }
-
+function readOverride(): ThemeName | null {
+  if (typeof window === "undefined") return null;
   try {
-    const storedTheme = window.localStorage.getItem(STORAGE_KEY);
-
-    if (isThemeMode(storedTheme)) {
-      return storedTheme;
-    }
+    const value = window.localStorage.getItem(STORAGE_KEY);
+    return isThemeName(value) ? value : null; // legacy light/dark/system -> Auto
   } catch {
-    return "dark";
+    return null;
   }
-
-  return "dark";
 }
 
-function resolveTheme(theme: ThemeMode): ResolvedTheme {
-  if (theme === "system") {
-    return getSystemTheme();
-  }
-
-  return theme;
-}
-
-function applyTheme(resolvedTheme: ResolvedTheme) {
-  if (typeof document === "undefined") {
-    return;
-  }
-
+function applyTheme(name: ThemeName) {
+  if (typeof document === "undefined") return;
   const root = document.documentElement;
+  const dark = name === "night";
 
-  root.dataset.theme = resolvedTheme;
-  root.style.colorScheme = resolvedTheme;
+  root.dataset.theme = name; // palette
+  root.dataset.scheme = dark ? "dark" : "light"; // coarse light/dark for component rules
+  root.style.colorScheme = dark ? "dark" : "light";
 
-  root.classList.toggle("dark", resolvedTheme === "dark");
-  root.classList.toggle("light", resolvedTheme === "light");
-
-  const themeColor = resolvedTheme === "dark" ? "#050509" : "#f7f8fb";
-  let metaThemeColor = document.querySelector<HTMLMetaElement>(
-    'meta[name="theme-color"]'
-  );
-
-  if (!metaThemeColor) {
-    metaThemeColor = document.createElement("meta");
-    metaThemeColor.name = "theme-color";
-    document.head.appendChild(metaThemeColor);
-  }
-
-  metaThemeColor.content = themeColor;
-}
-
-function saveTheme(theme: ThemeMode) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(STORAGE_KEY, theme);
-  } catch {
-    // Ignore storage failures so theme switching still works in memory.
-  }
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  const bg = getComputedStyle(root).getPropertyValue("--bg").trim();
+  if (meta && bg) meta.content = bg;
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeMode>(() => getStoredTheme());
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
-    resolveTheme(getStoredTheme())
-  );
+  const [autoTheme, setAutoTheme] = useState<ThemeName>(() => getThemeForTime());
+  const [override, setOverrideState] = useState<ThemeName | null>(null);
 
+  // Server render had no storage access; hydrate the override after mount.
   useEffect(() => {
-    const storedTheme = getStoredTheme();
-    const resolved = resolveTheme(storedTheme);
-
-    setThemeState(storedTheme);
-    setResolvedTheme(resolved);
-    applyTheme(resolved);
+    setOverrideState(readOverride());
+    setAutoTheme(getThemeForTime());
   }, []);
 
-  useEffect(() => {
-    const resolved = resolveTheme(theme);
-
-    setResolvedTheme(resolved);
-    applyTheme(resolved);
-  }, [theme]);
+  const activeTheme = override ?? autoTheme;
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: light)");
+    applyTheme(activeTheme);
+  }, [activeTheme]);
 
-    function handleSystemThemeChange() {
-      if (theme !== "system") {
-        return;
-      }
-
-      const resolved = getSystemTheme();
-
-      setResolvedTheme(resolved);
-      applyTheme(resolved);
-    }
-
-    mediaQuery.addEventListener("change", handleSystemThemeChange);
-
-    return () => {
-      mediaQuery.removeEventListener("change", handleSystemThemeChange);
+  // Self-rescheduling boundary timer (no polling).
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      timer = setTimeout(() => {
+        setAutoTheme(getThemeForTime());
+        schedule();
+      }, msUntilNextTheme());
     };
-  }, [theme]);
+    schedule();
+    return () => clearTimeout(timer);
+  }, []);
 
-  function setTheme(nextTheme: ThemeMode) {
-    const resolved = resolveTheme(nextTheme);
+  // Re-sync when the tab regains focus (laptop wake / long idle).
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") setAutoTheme(getThemeForTime());
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
 
-    setThemeState(nextTheme);
-    setResolvedTheme(resolved);
-    saveTheme(nextTheme);
-    applyTheme(resolved);
-  }
+  const setOverride = useCallback((name: ThemeName | null) => {
+    setOverrideState(name);
+    try {
+      if (name) window.localStorage.setItem(STORAGE_KEY, name);
+      else window.localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Ignore storage failures; override still applies in memory.
+    }
+  }, []);
 
-  const value = useMemo(
+  const value = useMemo<ThemeContextValue>(
     () => ({
-      theme,
-      resolvedTheme,
-      setTheme,
+      theme: activeTheme,
+      autoTheme,
+      isAuto: override === null,
+      setOverride,
     }),
-    [theme, resolvedTheme]
+    [activeTheme, autoTheme, override, setOverride],
   );
 
-  return (
-    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
-  );
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {
   const context = useContext(ThemeContext);
-
   if (!context) {
     throw new Error("useTheme must be used inside ThemeProvider");
   }
-
   return context;
 }

@@ -1497,7 +1497,7 @@ const AIRA_STYLES = `
 }
 .octa-companion--lg { flex-direction: column; align-items: center; text-align: center; }
 .octa-companion--sm { flex-direction: row; align-items: center; }
-html[data-theme="dark"] .octa-companion {
+html[data-scheme="dark"] .octa-companion {
   --octa-eye: #00d4ff;
   --octa-glow: rgba(0, 212, 255, 0.7);
 }
@@ -1581,7 +1581,7 @@ html[data-theme="dark"] .octa-companion {
 .octa-svg .o-accent { fill: #aee4ff; }
 .octa-svg .o-eye { fill: var(--octa-eye); filter: drop-shadow(0 0 1.5px var(--octa-glow)); }
 .octa-svg .o-scan { fill: var(--octa-eye); opacity: 0; }
-html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
+html[data-scheme="light"] .octa-svg .o-visor { fill: #1c2d49; }
 
 /* idle motion: gentle blink, antenna pulse, slow tentacle wave */
 .octa-svg .o-blink { transform-box: fill-box; transform-origin: center; animation: octa-blink 5s infinite; }
@@ -2080,7 +2080,7 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
   --octa-glow: rgba(110, 193, 255, 0.55);
   --octa-accent: #6ec1ff;
 }
-html[data-theme="dark"] .octa-inline { --octa-eye: #00d4ff; --octa-glow: rgba(0, 212, 255, 0.7); }
+html[data-scheme="dark"] .octa-inline { --octa-eye: #00d4ff; --octa-glow: rgba(0, 212, 255, 0.7); }
 .octa-inline .octa-svg { width: 18px; height: 18px; animation: octa-breathe 5s ease-in-out infinite; }
 .octa-inline-label { font-size: 0.8rem; color: var(--text-muted); }
 
@@ -2114,7 +2114,7 @@ html[data-theme="dark"] .octa-inline { --octa-eye: #00d4ff; --octa-glow: rgba(0,
   border-color: color-mix(in srgb, var(--danger) 30%, transparent);
   background: var(--danger-soft);
 }
-html[data-theme="dark"] .aira-card::before {
+html[data-scheme="dark"] .aira-card::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -2138,7 +2138,7 @@ html[data-theme="dark"] .aira-card::before {
   box-shadow: var(--shadow-card);
   padding: 1.25rem;
 }
-html[data-theme="dark"] .aira-answer-card {
+html[data-scheme="dark"] .aira-answer-card {
   background: linear-gradient(180deg,
     color-mix(in srgb, var(--surface) 90%, white 5%),
     var(--surface));

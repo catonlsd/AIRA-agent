@@ -30,7 +30,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { TimeThemeControl } from "@/components/time-theme-control";
 import { cn } from "@/lib/utils";
 import { getSessionId } from "@/lib/session";
 import {
@@ -1529,43 +1529,17 @@ function AppearanceCard() {
       <SectionHeading
         icon={<Palette className="h-5 w-5" />}
         title="Appearance"
-        description="Switch between light, dark, and system theme without compromising interface polish."
+        description="The theme follows your local time of day automatically. Leave it on Auto, or pin a specific period."
       />
 
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-        <ThemeToggle />
+        <TimeThemeControl />
 
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-            <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
-              Light
-            </p>
-
-            <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
-              Clean assistant workspace with soft surfaces.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-            <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
-              Dark
-            </p>
-
-            <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
-              Operator-console feel with readable contrast.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-            <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
-              System
-            </p>
-
-            <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
-              Follows the device theme preference.
-            </p>
-          </div>
-        </div>
+        <p className="mt-4 text-xs leading-5 text-[var(--text-muted)]">
+          Auto cycles through six palettes across the day — pre-dawn, sunrise, daytime,
+          dusk, sunset, and night — with a smooth crossfade at each boundary. Pinning a
+          period overrides the clock until you switch back to Auto.
+        </p>
       </div>
     </section>
   );
