@@ -115,9 +115,11 @@ export function AmbientLayer() {
         <div className="ph-noise" />
       </div>
 
-      {/* The viewport-fixed side glows live in the shell (outside <main>, which is a
-          transformed containing block). The top horizon line stays here — it's
-          absolute to the content area, exactly where it belongs. */}
+      {/* Scroll glow — global, all themes. Pinned to the workspace box and clipped
+          by it; fades in with --scroll-depth. left:0 = workspace's left edge =
+          the sidebar's right edge, so no offset math is needed. */}
+      <div className="scroll-glow-left" aria-hidden="true" />
+      <div className="scroll-glow-right" aria-hidden="true" />
       <div className="scroll-glow-top" aria-hidden="true" />
     </div>
   );

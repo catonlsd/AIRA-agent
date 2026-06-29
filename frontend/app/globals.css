@@ -2004,9 +2004,10 @@ html[data-theme="phantom"] aside a:hover {
 
 .scroll-glow-left,
 .scroll-glow-right {
-  /* Viewport-level: cover the full visible height regardless of content length.
-     --scroll-depth still inherits from <html> to drive opacity. */
-  position: fixed;
+  /* Pinned to the workspace box (the decoration layer is absolute inset-0 inside
+     the non-scrolling workspace) and clipped by it. Full height; opacity from
+     --scroll-depth (inherited from <html>). */
+  position: absolute;
   top: 0;
   bottom: 0;
   width: 80px;
@@ -2017,10 +2018,7 @@ html[data-theme="phantom"] aside a:hover {
 }
 
 .scroll-glow-left {
-  /* --sidebar-width is the sidebar's real measured width (published by Nav via a
-     ResizeObserver), so the glow stays flush in every state — it even tracks the
-     collapse animation live, no CSS left-transition needed. */
-  left: var(--sidebar-width, 20rem);
+  left: 0; /* = workspace left edge = sidebar right edge; no offset math */
   border-radius: 0 40px 40px 0;
   background: linear-gradient(to right, var(--scroll-glow-color, rgba(255, 255, 255, 0)) 0%, transparent 100%);
 }
@@ -2156,7 +2154,6 @@ html { height: 100%; }
   overscroll-behavior: contain;
 }
 
-.layout-main,
 .scroll-region {
   height: 100vh;
   height: 100dvh;
@@ -2165,10 +2162,21 @@ html { height: 100%; }
   overscroll-behavior: contain;
 }
 
-/* Chat uses an app-shell scroll model: <main> is viewport-locked and never
-   scrolls; the thread container inside the page is the only scroller. */
-.layout-main-fixed {
+/* Workspace: the single owner of decoration + scrolling. A hard clip + isolation
+   boundary so no decorative layer (any theme) can paint into the sidebar. It does
+   not scroll itself — the inner .layout-workspace-scroll does. Theme-agnostic. */
+.layout-workspace {
   height: 100vh;
   height: 100dvh;
+  position: relative;
   overflow: hidden;
+  isolation: isolate;
+}
+
+.layout-workspace-scroll {
+  position: relative;
+  z-index: 1; /* above the z:0 decoration layer */
+  height: 100%;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }

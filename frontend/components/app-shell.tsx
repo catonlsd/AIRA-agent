@@ -39,36 +39,24 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className={cn(shellClassName, "layout-root")}>
       <Nav />
 
-      <main
-        className={cn(
-          "relative min-w-0 flex-1",
-          isChat ? "layout-main-fixed flex flex-col" : "layout-main"
-        )}
-      >
-        {/* Per-period ambient effects — covers the main area only (never the sidebar),
-            sits behind the z-10 content. CSS-only; crossfades on the data-theme flip. */}
+      <main className="layout-workspace min-w-0 flex-1">
+        {/* Decoration layer — absolute inset-0, pinned + clipped by the workspace. */}
         <AmbientLayer />
 
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-0 h-px bg-gradient-to-r from-transparent via-[var(--border-strong)] to-transparent" />
-        <div className="pointer-events-none fixed right-8 top-6 z-0 hidden h-40 w-40 rounded-full bg-[var(--accent-glow)] opacity-70 blur-3xl lg:block" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-px bg-gradient-to-r from-transparent via-[var(--border-strong)] to-transparent" />
 
+        {/* Scroll container — owns page scrolling; sits above the decoration layer. */}
         <div
           className={cn(
-            "relative z-10",
+            "layout-workspace-scroll",
             isChat
-              ? "flex min-h-0 flex-1 flex-col"
-              : "p-4 sm:p-6 lg:px-8 lg:py-7"
+              ? "flex min-h-0 flex-col overflow-hidden" // chat owns its inner thread scroll
+              : "overflow-y-auto p-4 sm:p-6 lg:px-8 lg:py-7"
           )}
         >
           {children}
         </div>
       </main>
-
-      {/* Viewport-fixed side glows — rendered at the shell level (outside <main>,
-          which is a transformed containing block) so they pin to the visible
-          viewport edges at full height. Opacity inherits --scroll-depth from <html>. */}
-      <div className="scroll-glow-left" aria-hidden="true" />
-      <div className="scroll-glow-right" aria-hidden="true" />
     </div>
   );
 }
