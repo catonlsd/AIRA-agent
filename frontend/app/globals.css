@@ -2376,7 +2376,9 @@ html[data-theme="phantom"] aside {
 html { height: 100%; }
 
 :root {
-  --sidebar-width: 20rem; /* default (expanded w-80 = 20rem); nav updates on collapse */
+  /* Sidebar width — single source of truth (referenced by the aside + its flex). */
+  --sidebar-width-expanded: 20rem; /* was w-80 */
+  --sidebar-width-collapsed: 5rem;  /* was w-20 */
 }
 
 .no-page-scroll {

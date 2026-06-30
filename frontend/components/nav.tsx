@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   Activity,
@@ -197,31 +197,9 @@ function NavLink({
 export function Nav() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const asideRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     setCollapsed(getStoredSidebarCollapsed());
-  }, []);
-
-  // Publish the sidebar's REAL rendered width as --sidebar-width so viewport-fixed
-  // decorations (e.g. the scroll-glow left edge) sit flush with the rail in any
-  // state. A ResizeObserver tracks it across the collapse animation and any
-  // font-size/zoom change — no assumptions about rem vs px or fixed widths.
-  useEffect(() => {
-    const el = asideRef.current;
-    if (!el) return;
-
-    const publish = () =>
-      document.documentElement.style.setProperty(
-        "--sidebar-width",
-        `${el.offsetWidth}px`
-      );
-
-    publish();
-    const observer = new ResizeObserver(publish);
-    observer.observe(el);
-
-    return () => observer.disconnect();
   }, []);
 
   function toggleSidebar() {
@@ -236,10 +214,14 @@ export function Nav() {
 
   return (
     <aside
-      ref={asideRef}
+      style={{
+        width: collapsed
+          ? "var(--sidebar-width-collapsed)"
+          : "var(--sidebar-width-expanded)",
+      }}
       className={cn(
         "relative z-40 flex h-[100dvh] shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-card)] backdrop-blur-2xl transition-[width,padding] duration-300",
-        collapsed ? "w-20 px-3 py-5" : "w-80 px-4 py-5"
+        collapsed ? "px-3 py-5" : "px-4 py-5"
       )}
     >
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
