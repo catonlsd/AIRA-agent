@@ -103,14 +103,22 @@
   --page-vignette: rgba(0, 0, 0, 0.70);
   --pre-bg: #212121;
 
-  /* Radii */
-  --radius-xs: 0.375rem;
-  --radius-sm: 0.5rem;
-  --radius: 0.75rem;
-  --radius-md: 1rem;
-  --radius-lg: 1.25rem;
-  --radius-xl: 1.75rem;
-  --radius-pill: 999px;
+  /* ── Frozen radius API (Phase 1) ──────────────────────────────────
+     Named in px for precision. Phase 3 will migrate the 14 border-radius:
+     var(--radius-*) consumer rules in this file to the new names. Until then,
+     the old rem-based names alias to the nearest new token so nothing breaks.
+     Minor dimensional shift accepted for the Phase 1→3 window (~2–6px on
+     internal globals.css rules only; no component files are affected). */
+  --radius-sm:   6px;    /* badges, tags, small chips */
+  --radius-md:   10px;   /* inputs, buttons, small cards */
+  --radius-lg:   14px;   /* standard cards, panels */
+  --radius-xl:   20px;   /* hero cards, modals, large surfaces */
+  --radius-full: 9999px; /* pills, avatars */
+
+  /* Back-compat aliases — old rem names → nearest new px token */
+  --radius-xs:   var(--radius-sm);   /* was 0.375rem ≈ 6px — matches exactly */
+  --radius:      var(--radius-md);   /* was 0.75rem = 12px; ≈10px post-Phase 3 */
+  --radius-pill: var(--radius-full); /* was 999px; pill/circle both read "full" */
 
   /* Easing */
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
@@ -121,6 +129,36 @@
   --transition-fast: 0.14s var(--ease-out);
   --transition-base: 0.22s var(--ease-out);
   --transition-slow: 0.38s var(--ease-spring);
+
+  /* ── Frozen surface contract (Phase 1) — Night/SSR defaults ────────────
+     Values derived from the Night theme (the current :root palette).
+     Every theme block overrides these. Phantom and Night set identical
+     surface tokens. Do NOT change these names after Phase 1. */
+  --canvas:             #2e2c7a; /* deepest bg; body + overscroll edges */
+  --workspace:          rgba(60, 58, 130, 0.75); /* main.layout-workspace */
+  --surface-primary:    rgba(50, 48, 110, 0.9);  /* cards, panels */
+  --surface-secondary:  rgba(60, 58, 130, 0.75); /* inputs, nested surfaces */
+  --surface-hover:      rgba(255, 255, 255, 0.06);
+  --surface-active:     #323070; /* pressed / selected */
+  --surface-border:     rgba(255, 255, 255, 0.1);
+  --surface-highlight:  rgba(255, 255, 255, 0.03); /* dark rim light */
+
+  /* ── Status colors — frozen, do not rename ────────────────────────────
+     Consumed directly as --success/--warning/--danger/--info/--alert
+     throughout globals.css and components/ui/tokens.ts (toneDot/toneText).
+     --status-* are standardized aliases pointing to the live names; add
+     the --status-* form to any new code, but the old names stay canonical
+     until a full audit in a later phase. */
+  --status-success: var(--success);
+  --status-success-soft: var(--success-soft);
+  --status-warning: var(--warning);
+  --status-warning-soft: var(--warning-soft);
+  --status-danger: var(--danger);
+  --status-danger-soft: var(--danger-soft);
+  --status-info: var(--info);
+  --status-info-soft: var(--info-soft);
+  --status-alert: var(--alert);
+  --status-alert-soft: var(--alert-soft);
 }
 
 /* ============ TIME-ADAPTIVE PERIODS ============
@@ -164,6 +202,21 @@
   --scrollbar-thumb: #c4a8f0;
   --scrollbar-track: #ede5ff;
   --pre-bg: #2a1a4a;
+
+  /* ── Phase 1 surface contract ───────────────── */
+  --canvas:             #e2d0f8;                   /* = --bg */
+  --workspace:          rgba(225, 210, 248, 0.6);  /* = --bg-muted */
+  --surface-primary:    rgba(240, 230, 255, 0.75); /* = --surface */
+  --surface-secondary:  rgba(225, 210, 248, 0.6);  /* = --surface-muted */
+  --surface-hover:      rgba(139, 92, 246, 0.12);  /* = existing --surface-hover */
+  --surface-active:     #f0e8ff;                   /* = --surface-strong */
+  --surface-border:     rgba(139, 92, 246, 0.18);  /* = --border */
+  --surface-highlight:  rgba(0, 0, 0, 0.04);       /* light theme: dark rim */
+  /* DEPRECATED aliases — remove in Phase 3 */
+  --surface:        var(--surface-primary);
+  --surface-soft:   var(--surface-secondary);
+  --surface-muted:  var(--surface-secondary);
+  --surface-strong: var(--surface-active);
 }
 
 [data-theme="sunrise"] {
@@ -204,6 +257,21 @@
   --scrollbar-thumb: #f48fb1;
   --scrollbar-track: #fff9c4;
   --pre-bg: #3a1020;
+
+  /* ── Phase 1 surface contract ───────────────── */
+  --canvas:             #ffd54f;                   /* = --bg */
+  --workspace:          rgba(255, 220, 150, 0.65); /* = --bg-muted */
+  --surface-primary:    rgba(255, 235, 180, 0.8);  /* = --surface */
+  --surface-secondary:  rgba(255, 220, 150, 0.65); /* = --surface-muted */
+  --surface-hover:      rgba(233, 30, 140, 0.1);   /* = existing --surface-hover */
+  --surface-active:     #fff3d6;                   /* = --surface-strong */
+  --surface-border:     rgba(233, 30, 140, 0.18);  /* = --border */
+  --surface-highlight:  rgba(0, 0, 0, 0.04);       /* light theme: dark rim */
+  /* DEPRECATED aliases — remove in Phase 3 */
+  --surface:        var(--surface-primary);
+  --surface-soft:   var(--surface-secondary);
+  --surface-muted:  var(--surface-secondary);
+  --surface-strong: var(--surface-active);
 }
 
 [data-theme="daytime"] {
@@ -242,6 +310,21 @@
   --scrollbar-thumb: #90caf9;
   --scrollbar-track: #e3f2fd;
   --pre-bg: #0d2b5e;
+
+  /* ── Phase 1 surface contract ───────────────── */
+  --canvas:             #e3f2fd;                   /* = --bg */
+  --workspace:          rgba(232, 244, 253, 0.7);  /* = --bg-muted */
+  --surface-primary:    rgba(255, 255, 255, 0.9);  /* = --surface */
+  --surface-secondary:  rgba(232, 244, 253, 0.7);  /* = --surface-muted */
+  --surface-hover:      rgba(21, 101, 192, 0.08);  /* = existing --surface-hover */
+  --surface-active:     #ffffff;                   /* = --surface-strong */
+  --surface-border:     rgba(21, 101, 192, 0.15);  /* = --border */
+  --surface-highlight:  rgba(0, 0, 0, 0.04);       /* light theme: dark rim */
+  /* DEPRECATED aliases — remove in Phase 3 */
+  --surface:        var(--surface-primary);
+  --surface-soft:   var(--surface-secondary);
+  --surface-muted:  var(--surface-secondary);
+  --surface-strong: var(--surface-active);
 }
 
 [data-theme="dusk"] {
@@ -280,6 +363,21 @@
   --scrollbar-thumb: #90caf9;
   --scrollbar-track: #e3f2fd;
   --pre-bg: #1a3050;
+
+  /* ── Phase 1 surface contract ───────────────── */
+  --canvas:             #d6e9f8;                   /* = --bg */
+  --workspace:          rgba(210, 235, 255, 0.65); /* = --bg-muted */
+  --surface-primary:    rgba(230, 245, 255, 0.82); /* = --surface */
+  --surface-secondary:  rgba(210, 235, 255, 0.65); /* = --surface-muted */
+  --surface-hover:      rgba(255, 160, 0, 0.1);    /* = existing --surface-hover */
+  --surface-active:     #eaf4ff;                   /* = --surface-strong */
+  --surface-border:     rgba(21, 101, 192, 0.15);  /* = --border */
+  --surface-highlight:  rgba(0, 0, 0, 0.04);       /* light theme: dark rim */
+  /* DEPRECATED aliases — remove in Phase 3 */
+  --surface:        var(--surface-primary);
+  --surface-soft:   var(--surface-secondary);
+  --surface-muted:  var(--surface-secondary);
+  --surface-strong: var(--surface-active);
 }
 
 [data-theme="sunset"] {
@@ -318,6 +416,21 @@
   --scrollbar-thumb: #ce93d8;
   --scrollbar-track: #f3e5f5;
   --pre-bg: #4a1560;
+
+  /* ── Phase 1 surface contract ───────────────── */
+  --canvas:             #f3c8d8;                   /* = --bg */
+  --workspace:          rgba(235, 208, 242, 0.65); /* = --bg-muted */
+  --surface-primary:    rgba(245, 225, 248, 0.8);  /* = --surface */
+  --surface-secondary:  rgba(235, 208, 242, 0.65); /* = --surface-muted */
+  --surface-hover:      rgba(224, 64, 251, 0.1);   /* = existing --surface-hover */
+  --surface-active:     #f7e9fa;                   /* = --surface-strong */
+  --surface-border:     rgba(224, 64, 251, 0.18);  /* = --border */
+  --surface-highlight:  rgba(0, 0, 0, 0.04);       /* light theme: dark rim */
+  /* DEPRECATED aliases — remove in Phase 3 */
+  --surface:        var(--surface-primary);
+  --surface-soft:   var(--surface-secondary);
+  --surface-muted:  var(--surface-secondary);
+  --surface-strong: var(--surface-active);
 }
 
 [data-theme="night"] {
@@ -356,6 +469,23 @@
   --scrollbar-thumb: #5c5a8e;
   --scrollbar-track: #252360;
   --pre-bg: #1a1850;
+
+  /* ── Phase 1 surface contract ───────────────── */
+  /* Night values match :root defaults exactly (zero redundancy acceptable for
+     explicitness; ensures [data-theme="night"] is self-contained). */
+  --canvas:             #2e2c7a;                   /* = --bg */
+  --workspace:          rgba(60, 58, 130, 0.75);   /* = --bg-muted */
+  --surface-primary:    rgba(50, 48, 110, 0.9);    /* = --surface */
+  --surface-secondary:  rgba(60, 58, 130, 0.75);   /* = --surface-muted */
+  --surface-hover:      rgba(255, 255, 255, 0.06); /* = existing --surface-hover */
+  --surface-active:     #323070;                   /* = --surface-strong */
+  --surface-border:     rgba(255, 255, 255, 0.1);  /* = --border */
+  --surface-highlight:  rgba(255, 255, 255, 0.03); /* dark theme: white rim */
+  /* DEPRECATED aliases — remove in Phase 3 */
+  --surface:        var(--surface-primary);
+  --surface-soft:   var(--surface-secondary);
+  --surface-muted:  var(--surface-secondary);
+  --surface-strong: var(--surface-active);
 }
 
 /* ============ PHANTOM (manual-only, never clock-driven) ============
@@ -383,13 +513,22 @@
   --surface-hover: #151515;
   --surface-strong: #181818; /* pressed/emphasis */
 
-  /* === MATERIAL TOKENS (single source for every Phantom panel/card) === */
-  --surface-primary: #111111; /* cards */
-  --surface-secondary: #000000; /* workspace — the darkest surface, distinct from the sidebar's #050505 */
-  --surface-active: #181818; /* pressed */
-  --surface-border: rgba(255, 255, 255, 0.05);
+  /* === MATERIAL TOKENS + Phase 1 surface contract ============ */
+  /* --canvas and --workspace complete the 8-token contract for Phantom.
+     Intentional: canvas (#050505) is LIGHTER than workspace (#000000) —
+     the sidebar renders at canvas level (#050505 hardcoded), the workspace
+     is deeper/blacker (#000000). This is an inversion of the normal dark
+     hierarchy (where canvas is deepest) chosen to give Phantom the "void"
+     workspace identity with a slightly lighter chrome rail. */
+  --canvas:    #050505;    /* sidebar chrome level; body rarely seen behind workspace */
+  --workspace: #000000;    /* main.layout-workspace — the deepest visible surface */
+  --surface-primary:   #111111;                   /* cards */
+  --surface-secondary: #000000;                   /* inputs, nested — matches workspace */
+  --surface-hover:     #151515;
+  --surface-active:    #181818;                   /* pressed */
+  --surface-border:    rgba(255, 255, 255, 0.05);
   --surface-highlight: rgba(255, 255, 255, 0.025); /* inset top highlight */
-  --surface-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  --surface-shadow:    0 24px 80px rgba(0, 0, 0, 0.45);
 
   /* === TEXT === (WCAG on --bg #000000: white 21.0:1, muted 8.74:1, subtle 4.69:1.
      text-subtle lightened from #6d6e72 (was failing AA: 3.89-4.12:1 against every
