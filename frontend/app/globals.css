@@ -1956,6 +1956,21 @@ html[data-theme="phantom"] main.layout-workspace {
   background: var(--surface-secondary);
 }
 
+/* Hero-card corner glows — every page (Operations, Settings, Knowledge,
+   Workflows, Approvals, History, ...) renders the SAME pair of decorative
+   <div>s inside its hero .sarvam-card: one bg-[var(--accent-glow)] and one
+   bg-[var(--secondary-glow)] corner blob, clipped by the card's overflow:
+   hidden. For Phantom, --secondary-glow is deep navy — that's the literal
+   source of the blue wash in hero-card corners (not a CSS gradient on the
+   card itself, which is already flat #111111 with no background-image).
+   This is a JSX pattern duplicated across 9 page files, not a single shared
+   component, so it's neutralized here, theme-scoped, with zero component
+   edits and zero effect on any other theme. */
+html[data-theme="phantom"] .sarvam-card [class*="bg-[var(--accent-glow)]"],
+html[data-theme="phantom"] .sarvam-card [class*="bg-[var(--secondary-glow)]"] {
+  display: none;
+}
+
 /* Panels — matte hardware, not glass. Depth comes from elevation + border + shadow
    + a hairline inner highlight, never from a gradient, glow, or backdrop blur (a
    blur would let whatever sits behind the panel bleed its color through). */
