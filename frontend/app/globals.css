@@ -366,10 +366,12 @@
 [data-theme="phantom"] {
   color-scheme: dark;
 
-  /* === BACKGROUNDS === (flat matte black — no visible gradient) */
-  --bg: #050505; /* canvas */
-  --bg-gradient: #050505; /* solid; the body layer stays black, lighting is separate */
-  --bg-muted: #0b0b0b; /* workspace */
+  /* === BACKGROUNDS === (flat true black — no visible gradient; the canvas is
+     rarely seen directly since the workspace covers it, but stays the deepest
+     tone for consistency/overscroll). */
+  --bg: #000000; /* canvas */
+  --bg-gradient: #000000; /* solid; the body layer stays black, lighting is separate */
+  --bg-muted: #0b0b0b;
   --bg-elevated: #111111; /* cards */
 
   /* === SURFACES === (opaque matte ramp — Canvas → Workspace → Cards → Hover →
@@ -383,17 +385,20 @@
 
   /* === MATERIAL TOKENS (single source for every Phantom panel/card) === */
   --surface-primary: #111111; /* cards */
-  --surface-secondary: #0b0b0b; /* workspace */
+  --surface-secondary: #000000; /* workspace — the darkest surface, distinct from the sidebar's #050505 */
   --surface-active: #181818; /* pressed */
   --surface-border: rgba(255, 255, 255, 0.05);
   --surface-highlight: rgba(255, 255, 255, 0.025); /* inset top highlight */
   --surface-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
 
-  /* === TEXT === (WCAG on #08090a: white 20.9:1, muted 7.0:1, subtle 4.6:1) */
+  /* === TEXT === (WCAG on --bg #000000: white 21.0:1, muted 8.74:1, subtle 4.69:1.
+     text-subtle lightened from #6d6e72 (was failing AA: 3.89-4.12:1 against every
+     bg value Phantom has used, including this one — own luminance was the limit,
+     not the background) to #76777a, which clears 4.5:1 with margin. */
   --text-strong: #ffffff;
   --text: color-mix(in srgb, var(--text-strong) 82%, var(--text-muted));
   --text-muted: #a6a7ab;
-  --text-subtle: #6d6e72;
+  --text-subtle: #76777a;
 
   /* === BORDERS === (neutral hairlines; crimson is reserved for active/focus) */
   --border: rgba(255, 255, 255, 0.07);
