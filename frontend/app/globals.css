@@ -752,20 +752,31 @@ html[data-scheme="dark"] .aira-card::before {
   border-radius: inherit;
 }
 
+.sarvam-card,
+.aira-card {
+  transition:
+    box-shadow 180ms ease-out,
+    transform 180ms ease-out,
+    border-color var(--transition-base);
+}
+
 .sarvam-card:hover,
 .aira-card:hover {
   border-color: var(--border-strong);
   box-shadow: var(--shadow-hover);
+  transform: translateY(-0.5px); /* elev-1 hover — restrained lift, depth-only */
 }
 
+/* Dark-scheme hover (night, phantom): neutral depth only — no accent-colored
+   border/glow. (Previously tinted the border + added a crimson ring/glow here;
+   that coupled the semantic accent layer to a hover/elevation state, which the
+   composable elevation system treats as a hard violation.) */
 html[data-scheme="dark"] .sarvam-card:hover,
 html[data-scheme="dark"] .aira-card:hover {
-  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  border-color: var(--border-strong);
   box-shadow:
     0 24px 88px rgba(0, 0, 0, 0.54),
-    0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
-    0 0 36px color-mix(in srgb, var(--accent) 12%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.055);
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .aira-panel,
@@ -1995,13 +2006,14 @@ html[data-theme="phantom"] .glass {
     transform 200ms ease-out;
 }
 
-/* Card hover — lift + elevation only: brighter surface, brighter hairline,
-   deeper shadow. No color fill, no shimmer, no pulse. */
+/* Card hover — elevation only: brighter surface, brighter hairline, deeper
+   shadow. No color fill, no shimmer, no pulse. Lift comes from the base
+   .sarvam-card:hover rule (translateY(-0.5px), the elevation system's ceiling) —
+   not redefined here. */
 html[data-theme="phantom"] .sarvam-card:hover,
 html[data-theme="phantom"] .aira-card:hover {
   background: var(--surface-hover);
   border-color: rgba(255, 255, 255, 0.08);
-  transform: translateY(-2px);
   box-shadow: inset 0 1px 0 var(--surface-highlight), 0 28px 90px rgba(0, 0, 0, 0.5);
 }
 
@@ -2105,6 +2117,190 @@ html[data-theme="phantom"] aside {
   .scroll-glow-right,
   .scroll-glow-top {
     transition: none;
+  }
+}
+
+/* =========================
+   COMPOSABLE ELEVATION SYSTEM
+   elev-0..elev-4: depth only (shadow, inset rim light, blur) — never color/accent.
+   Crimson (--accent family) stays a separate semantic layer: active nav, focus
+   rings, primary/destructive buttons. No .elev-* or .mat-* rule below references
+   --accent, by construction.
+
+   NOTE: this codebase has no Carbon/Graphite/Slate/Obsidian material system —
+   confirmed absent from all 281 commits across every branch. These classes wire
+   directly onto the real shared surface classes (.sarvam-card, .aira-card,
+   .aira-panel, .glass) instead. elev-2 (dropdowns/popovers/tooltips) and elev-4
+   + .scrim-modal (modals) are defined and ready but have no current consumer —
+   AIRA-X has no Dropdown/Popover/Tooltip/Drawer/Modal components yet.
+========================= */
+
+/* Per-theme shadow tint — elev-1..4 reuse each theme's own shadow color (not a
+   universal literal), per theme already-tuned --shadow-sm/--shadow-card hue. */
+:root { --elev-r: 0; --elev-g: 0; --elev-b: 0; } /* night (default) */
+[data-theme="predawn"] { --elev-r: 100; --elev-g: 60; --elev-b: 200; }
+[data-theme="sunrise"] { --elev-r: 180; --elev-g: 80; --elev-b: 20; }
+[data-theme="daytime"] { --elev-r: 21; --elev-g: 101; --elev-b: 192; }
+[data-theme="dusk"] { --elev-r: 21; --elev-g: 101; --elev-b: 192; }
+[data-theme="sunset"] { --elev-r: 150; --elev-g: 40; --elev-b: 180; }
+[data-theme="night"] { --elev-r: 0; --elev-g: 0; --elev-b: 0; }
+[data-theme="phantom"] { --elev-r: 0; --elev-g: 0; --elev-b: 0; }
+
+/* Per-theme alpha scale. Dark themes (night/phantom) use the spec's literal
+   reference values. Light themes (predawn/sunrise/daytime/dusk/sunset) are
+   scaled to ~35-38% of the dark alpha — a JUDGMENT CALL (flagged): a heavy
+   black/tinted shadow reads as harsh on a pale background, so these are
+   deliberately soft. Revisit per-theme if any feels too heavy/invisible in QA. */
+:root,
+[data-theme="predawn"],
+[data-theme="sunrise"],
+[data-theme="daytime"],
+[data-theme="dusk"],
+[data-theme="sunset"] {
+  --elev-a1: 0.1;
+  --elev-a2: 0.13;
+  --elev-a3: 0.16;
+  --elev-a4: 0.2;
+}
+[data-theme="night"],
+[data-theme="phantom"] {
+  --elev-a1: 0.28;
+  --elev-a2: 0.32;
+  --elev-a3: 0.36;
+  --elev-a4: 0.45;
+}
+
+.elev-0 {
+  /* No additional shadow — the surface's own rest shadow already applies. */
+}
+
+.elev-1 {
+  box-shadow: 0 4px 12px rgba(var(--elev-r), var(--elev-g), var(--elev-b), var(--elev-a1));
+  transition: box-shadow 180ms ease-out, transform 180ms ease-out, background 180ms ease-out;
+}
+.elev-1:hover,
+.elev-1.is-hovered {
+  box-shadow: 0 6px 16px rgba(var(--elev-r), var(--elev-g), var(--elev-b), calc(var(--elev-a1) * 1.14));
+  transform: translateY(-0.5px);
+}
+
+.elev-2 {
+  box-shadow: 0 8px 24px rgba(var(--elev-r), var(--elev-g), var(--elev-b), var(--elev-a2));
+  transition: box-shadow 160ms ease-out, opacity 160ms ease-out;
+}
+
+.elev-3 {
+  box-shadow: 0 14px 32px rgba(var(--elev-r), var(--elev-g), var(--elev-b), var(--elev-a3));
+}
+
+.elev-4 {
+  box-shadow: 0 20px 48px rgba(var(--elev-r), var(--elev-g), var(--elev-b), var(--elev-a4));
+}
+
+/* Inset rim light (dark-background themes only) — simulates a light source
+   above the surface, the depth-only mechanism for "edge lighting" (no border-
+   color change). JUDGMENT CALL: scoped to night + phantom only. predawn/dusk
+   were considered ("mixed-tone") but their --bg is a light pastel, not dark —
+   a white inset highlight there would read as a rendering artifact, exactly
+   the failure mode the spec warns about, so they're excluded. */
+[data-theme="phantom"],
+[data-theme="night"] {
+  --elev-rim: rgba(255, 255, 255, 1);
+}
+[data-theme="phantom"] .elev-1,
+[data-theme="night"] .elev-1 {
+  box-shadow:
+    0 4px 12px rgba(var(--elev-r), var(--elev-g), var(--elev-b), var(--elev-a1)),
+    inset 0 1px 0 color-mix(in srgb, var(--elev-rim) 6%, transparent);
+}
+[data-theme="phantom"] .elev-2,
+[data-theme="night"] .elev-2 {
+  box-shadow:
+    0 8px 24px rgba(var(--elev-r), var(--elev-g), var(--elev-b), var(--elev-a2)),
+    inset 0 1px 0 color-mix(in srgb, var(--elev-rim) 8%, transparent);
+}
+[data-theme="phantom"] .elev-3,
+[data-theme="night"] .elev-3 {
+  box-shadow:
+    0 14px 32px rgba(var(--elev-r), var(--elev-g), var(--elev-b), var(--elev-a3)),
+    inset 0 1px 0 color-mix(in srgb, var(--elev-rim) 10%, transparent);
+}
+[data-theme="phantom"] .elev-4,
+[data-theme="night"] .elev-4 {
+  box-shadow:
+    0 20px 48px rgba(var(--elev-r), var(--elev-g), var(--elev-b), var(--elev-a4)),
+    inset 0 1px 0 color-mix(in srgb, var(--elev-rim) 12%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .elev-1,
+  .elev-1:hover,
+  .elev-1.is-hovered {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* Hero cards — the only current elev-3 consumer. .fade-up is applied to exactly
+   one .sarvam-card per page (verified: 8 page files, always paired, never on a
+   secondary card), so it's a reliable hook with zero component/JSX edits. This
+   is the migration target Step 1 of the original prompt asked for (an Obsidian
+   material never existed here to retire from). */
+.sarvam-card.fade-up {
+  box-shadow: 0 14px 32px rgba(var(--elev-r), var(--elev-g), var(--elev-b), var(--elev-a3));
+}
+[data-theme="phantom"] .sarvam-card.fade-up,
+[data-theme="night"] .sarvam-card.fade-up {
+  box-shadow:
+    0 14px 32px rgba(var(--elev-r), var(--elev-g), var(--elev-b), var(--elev-a3)),
+    inset 0 1px 0 color-mix(in srgb, var(--elev-rim) 10%, transparent);
+}
+
+/* Floating layers (elev-2): defined, no current consumer (no Dropdown/Popover/
+   Tooltip component exists yet). Quick fade only — depth communicates "above,"
+   not motion. */
+.elev-2-enter {
+  animation: elev2-fade-in 110ms ease-out;
+}
+@keyframes elev2-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Overlay layer (elev-3 + scrim): defined, no current consumer (no Drawer
+   component exists yet). */
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+/* Modal layer (elev-4 + scrim-modal): defined, no current consumer (no Modal/
+   Dialog component exists yet — chat's focus-mode backdrop is bespoke page
+   markup, not a reusable modal). Scale+fade only, ease-out, no slide/lift. */
+.scrim-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+.modal-enter {
+  animation: modal-scale-fade 160ms ease-out;
+  transform-origin: center;
+}
+@keyframes modal-scale-fade {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal-enter {
+    animation: modal-fade-only 160ms ease-out;
+  }
+  @keyframes modal-fade-only {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 }
 
