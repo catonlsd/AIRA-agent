@@ -564,7 +564,7 @@ function ApprovalRequiredPanel({
             type="button"
             onClick={onApprove}
             disabled={approvalButtonsDisabled}
-            className="rounded-xl bg-[var(--warning)] px-5 py-3 text-sm font-black text-[var(--on-warning)] shadow-[var(--shadow-soft)] transition disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-xl bg-[var(--warning)] px-5 py-3 text-sm font-black text-[var(--on-warning)] shadow-[var(--shadow-soft)] transition duration-fast active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {approvalProcessing
               ? "Processing..."
@@ -577,7 +577,7 @@ function ApprovalRequiredPanel({
             type="button"
             onClick={onReject}
             disabled={approvalButtonsDisabled}
-            className="inline-flex items-center gap-2 rounded-xl border border-[var(--danger-border)] bg-[var(--surface-soft)] px-5 py-3 text-sm font-black text-[var(--danger)] transition hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl border border-[var(--danger-border)] bg-[var(--surface-soft)] px-5 py-3 text-sm font-black text-[var(--danger)] transition duration-fast active:scale-[0.985] hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <XCircle className="h-4 w-4" />
             {approvalProcessing
@@ -1233,7 +1233,7 @@ export default function WorkflowDetailPage() {
           <div className="mb-5 flex flex-wrap items-center gap-2">
             <Link
               href="/workflows"
-              className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Back to Workflow Runs
@@ -1241,7 +1241,7 @@ export default function WorkflowDetailPage() {
 
             <Link
               href="/chat"
-              className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+              className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985]"
             >
               <TerminalSquare className="h-3.5 w-3.5" />
               Open Assistant
@@ -1250,7 +1250,7 @@ export default function WorkflowDetailPage() {
 
             <Link
               href="/approvals"
-              className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
             >
               <ShieldCheck className="h-3.5 w-3.5" />
               Review Approvals
@@ -1369,7 +1369,7 @@ export default function WorkflowDetailPage() {
 
                 <Link
                   href="/workflows"
-                  className="mt-3 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                  className="mt-3 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
                 >
                   View all workflow runs
                   <ArrowRight className="h-3.5 w-3.5" />
@@ -1400,7 +1400,7 @@ export default function WorkflowDetailPage() {
                   type="button"
                   onClick={handleDelete}
                   disabled={deleteButtonDisabled}
-                  className="inline-flex w-fit items-center gap-2 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-soft)] px-5 py-3 text-sm font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex w-fit items-center gap-2 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-soft)] px-5 py-3 text-sm font-black text-[var(--danger)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {deleteLoading ? (
                     <RefreshCw className="h-4 w-4 animate-spin" />

@@ -7,7 +7,8 @@
 | Phase 1 | Surface contract (8 tokens) + radius scale | **Frozen** |
 | Phase 2 | Typography contract (12 size + 7 weight + 5 leading + 5 tracking tokens) + 13 utility classes | **Frozen** |
 | Phase 3 | Spacing contract (10 tokens, 8px-base scale with approved half-steps) | **Frozen** |
-| Phase 4 | Component polish; badge/pill refactor; `<pre>` block tokens; form input tokens | Pending |
+| Phase 4 | Component polish; badge/pill refactor; `<pre>` block tokens; form input tokens | **Frozen** |
+| Phase 5 | Motion system — duration tokens, transition migration, lift constraint, press states, reduced-motion spinner | **Frozen** |
 
 ---
 
@@ -383,3 +384,113 @@ The `fontWeight.black` override routes every existing `font-black` utility throu
 **Steps 1–9** — Token layer (`globals.css`), Tailwind config, and 15 component/page files migrated per approved plan. Build: `tsc --noEmit` clean, `eslint` 0 errors (22 pre-existing warnings in untouched files), Next.js build 14/14 routes.
 
 **Visual QA** — all screens approved by team review on `feat/command-theme` branch.
+
+---
+
+## Phase 5 — Motion System
+
+### Governance Rules
+
+1. **Single responsibility** — only `transition-duration`, `transition-timing-function`, `transform` (lift/scale), and `animation` values are in scope. No color changes, no new layout tokens, no component restructuring.
+2. **No new tokens without approval** — the 5 duration primitives below are frozen. Any new easing curve requires explicit sign-off.
+3. **Lift constraint** — maximum hover lift is **1px** (`-translate-y-px`). Values of `hover:-translate-y-0.5` (2px) and `group-hover:-translate-y-1` (4px) are disallowed. Swept and resolved in Phase 5.
+4. **Press states** — `active:scale-[0.985]` is required on all interactive button and `<Link>` elements. Nav sidebar `NavLink` items are explicitly excluded (they have their own active treatment in CSS).
+5. **Reduced-motion** — `prefers-reduced-motion: reduce` block is required in globals.css; spinner falls back to opacity pulse, not spin.
+
+### Duration Tokens
+
+Added to `:root` in `frontend/app/globals.css`.
+
+| Token | Value | Use case |
+|---|---|---|
+| `--duration-instant` | `80ms` | Tooltip show/hide, focus rings |
+| `--duration-fast` | `120ms` | Buttons, links, chips, icon buttons |
+| `--duration-base` | `180ms` | Form inputs, selects, dropdowns |
+| `--duration-moderate` | `250ms` | Panels, drawers, accordions |
+| `--duration-slow` | `350ms` | Page-level transitions, modals |
+
+### Easing Tokens (updated)
+
+| Token | Value | Status |
+|---|---|---|
+| `--ease-out` | `cubic-bezier(0, 0, 0.2, 1)` | Active |
+| `--ease-spring` | `cubic-bezier(0.34, 1.56, 0.64, 1)` | Active — `--transition-slow` only |
+| `--ease-in-out` | *(removed)* | Removed in Phase 5 — no callsites |
+
+### Composite Transition Tokens (updated)
+
+These reference the duration primitives:
+
+| Token | Value |
+|---|---|
+| `--transition-fast` | `var(--duration-fast) var(--ease-out)` |
+| `--transition-base` | `var(--duration-base) var(--ease-out)` |
+| `--transition-slow` | `var(--duration-slow) var(--ease-spring)` |
+
+### Tailwind Config Additions (Phase 5)
+
+```typescript
+// frontend/tailwind.config.ts — inside extend:
+transitionDuration: {
+  'instant':  'var(--duration-instant)',
+  'fast':     'var(--duration-fast)',
+  'base':     'var(--duration-base)',
+  'moderate': 'var(--duration-moderate)',
+  'slow':     'var(--duration-slow)',
+},
+```
+
+Usage: `transition duration-fast`, `transition duration-base` — always pair `transition` with an explicit `duration-*`.
+
+### Press States
+
+All interactive buttons and `<Link>` elements receive `active:scale-[0.985]`.
+
+**Exclusions:**
+- Nav sidebar `NavLink` items — they have a dedicated CSS active state; scaling would conflict.
+- Non-interactive elements with lift (e.g., `<article>` hover cards) — lift fix only, no scale.
+
+### Lift Constraint
+
+| Old (disallowed) | New (approved) |
+|---|---|
+| `hover:-translate-y-0.5` (2px) | `hover:-translate-y-px` (1px) |
+| `group-hover:-translate-y-1` (4px) | `group-hover:-translate-y-px` (1px) |
+
+### Reduced-Motion Spinner
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin {
+    animation: spinner-pulse 2s ease-in-out infinite !important;
+  }
+}
+@keyframes spinner-pulse {
+  0%, 100% { opacity: 0.3; }
+  50%       { opacity: 1; }
+}
+```
+
+Replaces continuous rotation with an opacity pulse for users who have motion sensitivity enabled.
+
+### Dead Keyframes Removed
+
+The following `@keyframes` had zero callsites and were removed from `globals.css`:
+
+- `pageFade`
+- `handshake`
+- `chatBubblePop`
+
+The duplicate `@keyframes fadeUp` in `chat/chat.css` (8px translateY) was also removed. The canonical definition in `globals.css` (12px translateY) is used by `.chat-message { animation: fadeUp 0.25s ease; }`.
+
+### Migration Summary
+
+| Pattern | Tailwind utility | Files affected |
+|---|---|---|
+| Bare `transition` on buttons/links | `transition duration-fast active:scale-[0.985]` | 12 |
+| Bare `transition` on inputs/selects | `transition duration-base` | 6 |
+| `hover:-translate-y-0.5` lift violations | `hover:-translate-y-px` | 5 |
+| `group-hover:-translate-y-1` lift violations | `group-hover:-translate-y-px` | 2 |
+| Nav logo `<Link>` | `transition-all duration-200 hover:-translate-y-px active:scale-[0.985]` | 1 |
+
+**Files touched:** `globals.css`, `tailwind.config.ts`, `components/ui/tokens.ts`, `components/ui/primitives.tsx`, `components/nav.tsx`, `components/citation-list.tsx`, `components/time-theme-control.tsx`, `app/approvals/page.tsx`, `app/workflows/page.tsx`, `app/workflows/[run_id]/page.tsx`, `app/settings/page.tsx`, `app/tools/page.tsx`, `app/agents/page.tsx`, `app/history/page.tsx`, `app/documents/page.tsx`, `app/overview/page.tsx`, `app/operator/page.tsx`, `app/upload/page.tsx`, `app/chat/chat.css`

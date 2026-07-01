@@ -408,7 +408,7 @@ export default function AgentsPage() {
         <div className="relative z-10">
           <Link
             href="/settings"
-            className="mb-5 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+            className="mb-5 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to System Console
@@ -434,7 +434,7 @@ export default function AgentsPage() {
               <div className="mt-5 flex flex-wrap gap-3">
                 <Link
                   href="/workflows"
-                  className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+                  className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985]"
                 >
                   <Workflow className="h-3.5 w-3.5" />
                   View Workflows
@@ -443,7 +443,7 @@ export default function AgentsPage() {
 
                 <Link
                   href="/approvals"
-                  className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                  className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
                 >
                   <ShieldCheck className="h-3.5 w-3.5" />
                   Review Approvals
@@ -516,7 +516,7 @@ export default function AgentsPage() {
                 <button
                   type="button"
                   onClick={loadAgents}
-                  className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                  className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
                   Refresh
@@ -533,7 +533,7 @@ export default function AgentsPage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Search agent name, role, capability, or responsibility..."
-                className="w-full rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+                className="w-full rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition duration-base placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
               />
             </label>
 
@@ -541,7 +541,7 @@ export default function AgentsPage() {
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
               >
                 Clear Search
               </button>

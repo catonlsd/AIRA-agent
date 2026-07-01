@@ -914,17 +914,17 @@ export default function OperatorConsole() {
             type="password" value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && keyInput.trim()) void connect(); }}
             placeholder="Service key"
-            className="mt-5 w-full rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-sm text-[var(--text-strong)] outline-none transition focus:border-[var(--border-strong)]"
+            className="mt-5 w-full rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-sm text-[var(--text-strong)] outline-none transition duration-base focus:border-[var(--border-strong)]"
           />
           <input
             type="text" value={nameInput} maxLength={80} onChange={(e) => setNameInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && keyInput.trim()) void connect(); }}
             placeholder="Your operator name (optional — for handoff)"
-            className="mt-2.5 w-full rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-sm text-[var(--text-strong)] outline-none transition focus:border-[var(--border-strong)]"
+            className="mt-2.5 w-full rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-sm text-[var(--text-strong)] outline-none transition duration-base focus:border-[var(--border-strong)]"
           />
           {keyError ? <p className="mt-2 text-xs font-semibold text-[var(--danger)]">{keyError}</p> : null}
           <button type="button" onClick={() => void connect()} disabled={!keyInput.trim() || status === "checking"}
-            className="mt-4 w-full rounded-full border border-transparent bg-[var(--accent)] px-4 py-2.5 text-sm font-black text-[var(--accent-contrast,#fff)] transition hover:opacity-90 disabled:opacity-60">
+            className="mt-4 w-full rounded-full border border-transparent bg-[var(--accent)] px-4 py-2.5 text-sm font-black text-[var(--accent-contrast,#fff)] transition duration-fast active:scale-[0.985] hover:opacity-90 disabled:opacity-60">
             {status === "checking" ? "Checking…" : "Connect"}
           </button>
         </div>
@@ -959,15 +959,15 @@ export default function OperatorConsole() {
         <div className="flex items-center gap-2">
           {flash ? <span className="text-xs font-semibold text-[var(--success)]">{flash}</span> : null}
           <button type="button" onClick={() => void onSweep()} disabled={busy === "sweep"}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:text-[var(--text-strong)] disabled:opacity-60">
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:text-[var(--text-strong)] disabled:opacity-60">
             <Zap className="h-3.5 w-3.5" /> {busy === "sweep" ? "Sweeping…" : "Sweep"}
           </button>
           <button type="button" onClick={() => { void load(); if (tab === "history") void loadHistory(); }}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:text-[var(--text-strong)]">
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:text-[var(--text-strong)]">
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </button>
           <button type="button" onClick={disconnect}
-            className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:text-[var(--danger)]">
+            className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:text-[var(--danger)]">
             Disconnect
           </button>
         </div>
@@ -977,7 +977,7 @@ export default function OperatorConsole() {
       <div className="mb-5 flex gap-1.5">
         {TABS.map((t) => (
           <button key={t.id} type="button" onClick={() => setTab(t.id)}
-            className={cn("inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-black transition",
+            className={cn("inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-black transition duration-fast active:scale-[0.985]",
               tab === t.id ? "bg-[var(--accent)] text-[var(--accent-contrast,#fff)]" : "border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:text-[var(--text-strong)]")}>
             <t.icon className="h-3.5 w-3.5" /> {t.label}
             {t.id === "recovery" && deadLetters.length > 0 ? <span className="ml-0.5 rounded-full bg-[var(--danger)] px-1.5 text-[11px] text-white">{deadLetters.length}</span> : null}
@@ -1041,16 +1041,16 @@ export default function OperatorConsole() {
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
                       <button type="button" onClick={() => void onPreview(d.destination_id)}
-                        className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-muted)] transition hover:text-[var(--text-strong)]">
+                        className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:text-[var(--text-strong)]">
                         Why routed?
                       </button>
                       <button type="button" onClick={() => (editing === d.destination_id ? setEditing(null) : startEdit(d))}
-                        className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-muted)] transition hover:text-[var(--text-strong)]">
+                        className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:text-[var(--text-strong)]">
                         <SlidersHorizontal className="h-3 w-3" /> Tune
                       </button>
                       {d.cooling_down ? (
                         <button type="button" onClick={() => void onClearCooldown(d.destination_id)} disabled={busy === d.destination_id}
-                          className="rounded-full border border-transparent bg-[var(--accent)] px-3 py-1 text-[11px] font-black text-[var(--accent-contrast,#fff)] transition hover:opacity-90 disabled:opacity-60">
+                          className="rounded-full border border-transparent bg-[var(--accent)] px-3 py-1 text-[11px] font-black text-[var(--accent-contrast,#fff)] transition duration-fast active:scale-[0.985] hover:opacity-90 disabled:opacity-60">
                           {busy === d.destination_id ? "…" : "Clear cooldown"}
                         </button>
                       ) : null}
@@ -1085,7 +1085,7 @@ export default function OperatorConsole() {
                         </label>
                         <div className="flex items-center gap-2 sm:col-span-2">
                           <button type="button" onClick={() => void onSaveTuning(d.destination_id)} disabled={busy === d.destination_id}
-                            className="rounded-full border border-transparent bg-[var(--accent)] px-3 py-1 text-[11px] font-black text-[var(--accent-contrast,#fff)] transition hover:opacity-90 disabled:opacity-60">
+                            className="rounded-full border border-transparent bg-[var(--accent)] px-3 py-1 text-[11px] font-black text-[var(--accent-contrast,#fff)] transition duration-fast active:scale-[0.985] hover:opacity-90 disabled:opacity-60">
                             {busy === d.destination_id ? "Saving…" : "Save"}
                           </button>
                           <button type="button" onClick={() => setEditing(null)}
@@ -1174,7 +1174,7 @@ export default function OperatorConsole() {
             <div className="ml-auto flex flex-wrap items-center gap-1.5">
               {["", "failed", "pending", "delivered"].map((s) => (
                 <button key={s || "all"} type="button" onClick={() => setFilter((f) => ({ ...f, status: s }))}
-                  className={cn("rounded-full px-3 py-1 text-[11px] font-black transition",
+                  className={cn("rounded-full px-3 py-1 text-[11px] font-black transition duration-fast active:scale-[0.985]",
                     filter.status === s ? "bg-[var(--accent)] text-[var(--accent-contrast,#fff)]" : "border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:text-[var(--text-strong)]")}>
                   {s || "all"}
                 </button>
@@ -1193,7 +1193,7 @@ export default function OperatorConsole() {
               {deliveries.map((d) => (
                 <div key={d.id}>
                   <button type="button" onClick={() => void onLineage(d.id)}
-                    className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-3.5 py-2.5 text-left transition hover:border-[var(--border-strong)]">
+                    className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-3.5 py-2.5 text-left transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)]">
                     <div className="flex min-w-0 items-center gap-2">
                       <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", TONE_DOT[deliveryStatusTone(d.status)])} aria-hidden="true" />
                       <span className="truncate text-xs">
@@ -1243,11 +1243,11 @@ export default function OperatorConsole() {
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <button type="button" onClick={() => void onLineage(dl.id)}
-                        className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1 text-[11px] font-black text-[var(--text-muted)] transition hover:text-[var(--text-strong)]">Lineage</button>
+                        className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1 text-[11px] font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:text-[var(--text-strong)]">Lineage</button>
                       <Badge tone={deadLetterTone(dl.dead_letter_state)}>{deadLetterLabel(dl.dead_letter_state)}</Badge>
                       {canRedrive(dl) ? (
                         <button type="button" onClick={() => void onRedrive(dl.id)} disabled={busy === dl.id}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-transparent bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-[var(--accent-contrast,#fff)] transition hover:opacity-90 disabled:opacity-60">
+                          className="inline-flex items-center gap-1.5 rounded-full border border-transparent bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-[var(--accent-contrast,#fff)] transition duration-fast active:scale-[0.985] hover:opacity-90 disabled:opacity-60">
                           <Send className="h-3 w-3" /> {busy === dl.id ? "…" : "Redrive"}
                         </button>
                       ) : (

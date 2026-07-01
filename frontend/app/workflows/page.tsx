@@ -499,7 +499,7 @@ function FilterTabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-full border px-3 py-1.5 text-xs font-black transition",
+        "rounded-full border px-3 py-1.5 text-xs font-black transition duration-fast active:scale-[0.985]",
         active
           ? "border-[var(--border-strong)] bg-[var(--accent)] text-[var(--accent-foreground)] shadow-[var(--shadow-soft)]"
           : "border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
@@ -722,7 +722,7 @@ function ApprovalActionPanel({
           type="button"
           onClick={() => onApprove(run.run_id)}
           disabled={actionButtonsDisabled}
-          className="rounded-xl bg-[var(--warning)] px-4 py-2.5 text-xs font-black text-[var(--on-warning)] shadow-[var(--shadow-soft)] transition disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-xl bg-[var(--warning)] px-4 py-2.5 text-xs font-black text-[var(--on-warning)] shadow-[var(--shadow-soft)] transition duration-fast active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {approvalProcessing
             ? "Processing..."
@@ -735,7 +735,7 @@ function ApprovalActionPanel({
           type="button"
           onClick={() => onReject(run.run_id)}
           disabled={actionButtonsDisabled}
-          className="inline-flex items-center gap-2 rounded-xl border border-[var(--danger-border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-xl border border-[var(--danger-border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--danger)] transition duration-fast active:scale-[0.985] hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           <XCircle className="h-3.5 w-3.5" />
           {approvalProcessing
@@ -918,7 +918,7 @@ function WorkflowRunCard({
         <div className="flex shrink-0 flex-col gap-3 xl:w-48">
           <Link
             href={`/workflows/${run.run_id}`}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
           >
             Open Details
             <ArrowRight className="h-3.5 w-3.5" />
@@ -928,7 +928,7 @@ function WorkflowRunCard({
             type="button"
             onClick={() => onDelete(run)}
             disabled={deleteDisabled}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-2.5 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-2.5 text-xs font-black text-[var(--danger)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {deleteInProgress ? (
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -1186,7 +1186,7 @@ export default function WorkflowsPage() {
             <div className="mt-5 flex flex-wrap gap-3">
               <Link
                 href="/chat"
-                className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+                className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985]"
               >
                 <Workflow className="h-3.5 w-3.5" />
                 Open Assistant
@@ -1195,7 +1195,7 @@ export default function WorkflowsPage() {
 
               <Link
                 href="/approvals"
-                className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
               >
                 <ShieldCheck className="h-3.5 w-3.5" />
                 Review Approvals
@@ -1240,7 +1240,7 @@ export default function WorkflowsPage() {
               disabled={
                 safeCleanupLoading || Boolean(actionRunId) || Boolean(deleteRunId)
               }
-              className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-3 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-3 text-xs font-black text-[var(--danger)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {safeCleanupLoading ? (
                 <RefreshCw className="h-4 w-4 animate-spin" />
@@ -1350,7 +1350,7 @@ export default function WorkflowsPage() {
               <button
                 type="button"
                 onClick={() => loadRuns({ showLoading: false })}
-                className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
                 Refresh
@@ -1379,7 +1379,7 @@ export default function WorkflowsPage() {
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
                   placeholder="Search goal, run ID, decision, action..."
-                  className="w-full rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+                  className="w-full rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition duration-base placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
                 />
               </label>
 
@@ -1390,7 +1390,7 @@ export default function WorkflowsPage() {
                 <select
                   value={preflightFilter}
                   onChange={(event) => setPreflightFilter(event.target.value)}
-                  className="w-full appearance-none rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm font-semibold text-[var(--text-strong)] outline-none transition focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+                  className="w-full appearance-none rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm font-semibold text-[var(--text-strong)] outline-none transition duration-base focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
                 >
                   <option value="all">All run types</option>
                   <option value="any_git">Any Git preflight</option>
@@ -1408,7 +1408,7 @@ export default function WorkflowsPage() {
                 <select
                   value={sortMode}
                   onChange={(event) => setSortMode(event.target.value as SortMode)}
-                  className="w-full appearance-none rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm font-semibold text-[var(--text-strong)] outline-none transition focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+                  className="w-full appearance-none rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm font-semibold text-[var(--text-strong)] outline-none transition duration-base focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
                 >
                   <option value="updated_desc">Newest activity</option>
                   <option value="created_asc">Oldest created</option>
@@ -1433,7 +1433,7 @@ export default function WorkflowsPage() {
                   setPreflightFilter("all");
                   setSortMode("updated_desc");
                 }}
-                className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
               >
                 Clear Filters
               </button>
@@ -1458,7 +1458,7 @@ export default function WorkflowsPage() {
 
                 <Link
                   href="/chat"
-                  className="mt-5 inline-flex items-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+                  className="mt-5 inline-flex items-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985]"
                 >
                   <Workflow className="h-4 w-4" />
                   Open Assistant

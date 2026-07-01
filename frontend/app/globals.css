@@ -123,13 +123,19 @@
 
   /* Easing */
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* Transitions */
-  --transition-fast: 0.14s var(--ease-out);
-  --transition-base: 0.22s var(--ease-out);
-  --transition-slow: 0.38s var(--ease-spring);
+  /* Duration scale — Phase 5 */
+  --duration-instant:    80ms;
+  --duration-fast:      120ms;
+  --duration-base:      180ms;
+  --duration-moderate:  250ms;
+  --duration-slow:      350ms;
+
+  /* Composite transitions (CSS class rules only — not for Tailwind utilities) */
+  --transition-fast: var(--duration-fast)  var(--ease-out);    /* 120ms */
+  --transition-base: var(--duration-base)  var(--ease-out);    /* 180ms */
+  --transition-slow: var(--duration-slow)  var(--ease-spring); /* 350ms */
 
   /* ── Frozen surface contract (Phase 1) — Night/SSR defaults ────────────
      Values derived from the Night theme (the current :root palette).
@@ -1827,34 +1833,11 @@ html[data-scheme="light"] form.aira-focus-composer {
 }
 
 /* =========================
-   ICON MICRO-ANIMATIONS
-========================= */
-
-@keyframes handshake {
-  0%, 100% { transform: rotate(0deg) translateX(0); }
-  20%       { transform: rotate(-12deg) translateX(-1px); }
-  40%       { transform: rotate(12deg) translateX(1px); }
-  60%       { transform: rotate(-8deg) translateX(-1px); }
-  80%       { transform: rotate(8deg) translateX(1px); }
-}
-
-@keyframes chatBubblePop {
-  0%, 100% { transform: scale(1) translateY(0); }
-  35%      { transform: scale(1.22) translateY(-2px); }
-  65%      { transform: scale(0.96) translateY(1px); }
-}
-
-/* =========================
    KEYFRAMES
 ========================= */
 
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes pageFade {
-  from { opacity: 0; transform: translateY(7px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
@@ -2679,6 +2662,16 @@ html[data-theme="phantom"] aside {
 @media (prefers-reduced-motion: reduce) {
   .skeleton::after { animation: none; }
   html { scroll-behavior: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin {
+    animation: spinner-pulse 2s ease-in-out infinite !important;
+  }
+}
+@keyframes spinner-pulse {
+  0%, 100% { opacity: 0.3; }
+  50%       { opacity: 1; }
 }
 
 /* =========================

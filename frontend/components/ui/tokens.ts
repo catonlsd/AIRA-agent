@@ -42,6 +42,6 @@ export const PANEL = "sarvam-card rounded-[1.5rem] p-5";
 export const SECTION_LABEL =
   "flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]";
 export const BTN_BASE =
-  "inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-11 font-black text-[var(--text-strong)] transition hover:border-[var(--border-strong)] disabled:opacity-50";
+  "inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-11 font-black text-[var(--text-strong)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] disabled:opacity-50";
 /** Back-compat alias used 23× across the operator console. */
 export const INC_BTN = BTN_BASE;

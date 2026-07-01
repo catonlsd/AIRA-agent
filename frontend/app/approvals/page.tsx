@@ -463,7 +463,7 @@ function TabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-full border px-3 py-1.5 text-xs font-black transition",
+        "rounded-full border px-3 py-1.5 text-xs font-black transition duration-fast active:scale-[0.985]",
         active
           ? "border-[var(--border-strong)] bg-[var(--accent)] text-[var(--accent-foreground)] shadow-[var(--shadow-soft)]"
           : "border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
@@ -628,7 +628,7 @@ function ApprovalCard({
         <div className="flex shrink-0 flex-col gap-3 xl:w-80">
           <Link
             href={`/workflows/${run.run_id}`}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
           >
             Open Workflow
             <ArrowRight className="h-3.5 w-3.5" />
@@ -896,7 +896,7 @@ export default function ApprovalsPage() {
             <div className="mt-5 flex flex-wrap gap-3">
               <Link
                 href="/chat"
-                className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+                className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985]"
               >
                 <Workflow className="h-3.5 w-3.5" />
                 Open Assistant
@@ -905,7 +905,7 @@ export default function ApprovalsPage() {
 
               <Link
                 href="/workflows"
-                className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
               >
                 <GitBranch className="h-3.5 w-3.5" />
                 View Workflow Runs
@@ -983,7 +983,7 @@ export default function ApprovalsPage() {
           <button
             type="button"
             onClick={() => loadRuns({ showLoading: false })}
-            className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+            className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
@@ -1012,7 +1012,7 @@ export default function ApprovalsPage() {
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="Search goal, run ID, action, branch..."
-              className="w-full rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+              className="w-full rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition duration-base placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
             />
           </label>
 
@@ -1025,7 +1025,7 @@ export default function ApprovalsPage() {
               onChange={(event) =>
                 setPreflightFilter(event.target.value as PreflightFilter)
               }
-              className="w-full appearance-none rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm font-semibold text-[var(--text-strong)] outline-none transition focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+              className="w-full appearance-none rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm font-semibold text-[var(--text-strong)] outline-none transition duration-base focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
             >
               <option value="all">All approval types</option>
               <option value="git_any">Any Git preflight</option>
@@ -1041,7 +1041,7 @@ export default function ApprovalsPage() {
             <select
               value={sortMode}
               onChange={(event) => setSortMode(event.target.value as SortMode)}
-              className="w-full appearance-none rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm font-semibold text-[var(--text-strong)] outline-none transition focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+              className="w-full appearance-none rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm font-semibold text-[var(--text-strong)] outline-none transition duration-base focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
             >
               <option value="newest">Newest activity</option>
               <option value="oldest">Oldest activity</option>
@@ -1064,7 +1064,7 @@ export default function ApprovalsPage() {
               setPreflightFilter("all");
               setSortMode("newest");
             }}
-            className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+            className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
           >
             Clear Filters
           </button>
@@ -1102,7 +1102,7 @@ export default function ApprovalsPage() {
           <div className="mt-5 flex flex-wrap justify-center gap-3">
             <Link
               href="/chat"
-              className="inline-flex items-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+              className="inline-flex items-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985]"
             >
               <Workflow className="h-4 w-4" />
               Open Assistant
@@ -1111,7 +1111,7 @@ export default function ApprovalsPage() {
 
             <Link
               href="/workflows"
-              className="inline-flex items-center gap-2 rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-5 py-3 text-sm font-black text-[var(--text-muted)] shadow-[var(--shadow-soft)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+              className="inline-flex items-center gap-2 rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-5 py-3 text-sm font-black text-[var(--text-muted)] shadow-[var(--shadow-soft)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
             >
               <GitBranch className="h-4 w-4" />
               View Workflows

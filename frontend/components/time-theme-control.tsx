@@ -24,7 +24,7 @@ export function TimeThemeControl() {
           onClick={() => setOverride(null)}
           aria-pressed={mounted ? isAuto : false}
           className={cn(
-            "flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-bold transition",
+            "flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-bold transition duration-fast active:scale-[0.985]",
             mounted && isAuto
               ? "bg-[var(--accent)] text-[var(--accent-foreground)] shadow-[var(--shadow-soft)]"
               : "text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]",
@@ -44,7 +44,7 @@ export function TimeThemeControl() {
               aria-pressed={active}
               aria-label={`Use ${THEME_LABELS[name]} theme`}
               className={cn(
-                "flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-[11px] font-bold transition",
+                "flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-[11px] font-bold transition duration-fast active:scale-[0.985]",
                 active
                   ? "bg-[var(--accent)] text-[var(--accent-foreground)] shadow-[var(--shadow-soft)]"
                   : "text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]",
@@ -63,7 +63,7 @@ export function TimeThemeControl() {
             aria-pressed={phantomActive}
             aria-label="Use Phantom theme"
             className={cn(
-              "flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-[11px] font-bold transition",
+              "flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-[11px] font-bold transition duration-fast active:scale-[0.985]",
               phantomActive
                 ? "bg-[var(--accent)] text-[var(--accent-foreground)] shadow-[var(--shadow-soft)]"
                 : "text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]",

@@ -88,9 +88,9 @@ export default function UploadPage() {
 
         <button
           disabled={loading}
-          className="group mt-5 inline-flex items-center gap-2 rounded-full bg-accent px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-600/25 disabled:cursor-not-allowed disabled:opacity-60"
+          className="group mt-5 inline-flex items-center gap-2 rounded-full bg-accent px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition-all duration-300 hover:-translate-y-px active:scale-[0.985] hover:shadow-xl hover:shadow-blue-600/25 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <Upload className="h-4 w-4 transition-transform duration-300 group-hover:-translate-y-1 group-hover:scale-110" />
+          <Upload className="h-4 w-4 transition-transform duration-300 group-hover:-translate-y-px group-hover:scale-110" />
           {loading ? "Processing documents..." : "Upload and index"}
         </button>
 

@@ -366,7 +366,7 @@ function RuntimeHealthCard() {
           <button
             type="button"
             onClick={checkBackendHealth}
-            className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+            className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
           >
             <RefreshCw
               className={cn(
@@ -496,7 +496,7 @@ function AccountCard() {
           <button
             type="button"
             onClick={onSignOut}
-            className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
+            className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
           >
             <LogOut className="h-3.5 w-3.5" />
             Sign out
@@ -511,7 +511,7 @@ function AccountCard() {
                 type="button"
                 onClick={() => { setMode(m); setError(""); }}
                 className={cn(
-                  "rounded-full border px-3 py-1.5 text-xs font-black transition",
+                  "rounded-full border px-3 py-1.5 text-xs font-black transition duration-fast active:scale-[0.985]",
                   mode === m
                     ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
                     : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:text-[var(--text-strong)]"
@@ -546,7 +546,7 @@ function AccountCard() {
 
           <button
             type="submit" disabled={busy || !email || password.length < 1}
-            className="mt-3 inline-flex items-center gap-2 rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-4 py-2 text-xs font-black text-[var(--accent)] transition hover:brightness-105 disabled:opacity-60"
+            className="mt-3 inline-flex items-center gap-2 rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-4 py-2 text-xs font-black text-[var(--accent)] transition duration-fast active:scale-[0.985] hover:brightness-105 disabled:opacity-60"
           >
             {busy ? "Working…" : mode === "login" ? "Sign in" : "Create account"}
           </button>
@@ -663,7 +663,7 @@ function WorkspaceCard() {
               onClick={() => !isActive && switchScope(w.id)}
               aria-pressed={isActive}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-black transition",
+                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-black transition duration-fast active:scale-[0.985]",
                 isActive
                   ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
                   : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
@@ -688,7 +688,7 @@ function WorkspaceCard() {
         />
         <button
           type="button" onClick={onCreate} disabled={busy || !newName.trim()}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-xs font-black text-[var(--text-muted)] transition hover:text-[var(--text-strong)] disabled:opacity-60"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:text-[var(--text-strong)] disabled:opacity-60"
         >
           <Plus className="h-3.5 w-3.5" />
           Create
@@ -729,7 +729,7 @@ function WorkspaceCard() {
                     <button
                       type="button" onClick={() => onRemove(m.account_id)}
                       aria-label={`Remove ${m.email}`}
-                      className="text-[var(--text-subtle)] transition hover:text-[var(--danger)]"
+                      className="text-[var(--text-subtle)] transition duration-fast active:scale-[0.985] hover:text-[var(--danger)]"
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -756,7 +756,7 @@ function WorkspaceCard() {
               </select>
               <button
                 type="button" onClick={onInvite} disabled={busy || !inviteEmail.trim()}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-xs font-black text-[var(--accent)] transition hover:brightness-105 disabled:opacity-60"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-xs font-black text-[var(--accent)] transition duration-fast active:scale-[0.985] hover:brightness-105 disabled:opacity-60"
               >
                 <Plus className="h-3.5 w-3.5" />
                 Add
@@ -867,7 +867,7 @@ function LibraryCard() {
       onClick={() => onUseInChat(refType, refId)}
       disabled={busy === refId}
       className={cn(
-        "shrink-0 rounded-full border px-3 py-1.5 text-xs font-black transition disabled:opacity-60",
+        "shrink-0 rounded-full border px-3 py-1.5 text-xs font-black transition duration-fast active:scale-[0.985] disabled:opacity-60",
         primary
           ? "border-transparent bg-[var(--accent)] text-[var(--accent-contrast,#fff)] hover:opacity-90"
           : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
@@ -892,7 +892,7 @@ function LibraryCard() {
             <a
               href={`${API_BASE}${r.download_url}`}
               download
-              className="shrink-0 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
+              className="shrink-0 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
             >
               Download
             </a>
@@ -918,13 +918,13 @@ function LibraryCard() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={`Search ${scopeLabel.toLowerCase()}…`}
-            className="w-full rounded-full border border-[var(--border)] bg-[var(--surface-soft)] py-2 pl-9 pr-3 text-sm text-[var(--text-strong)] outline-none transition focus:border-[var(--border-strong)]"
+            className="w-full rounded-full border border-[var(--border)] bg-[var(--surface-soft)] py-2 pl-9 pr-3 text-sm text-[var(--text-strong)] outline-none transition duration-base focus:border-[var(--border-strong)]"
           />
         </div>
         <button
           type="submit"
           disabled={searching}
-          className="shrink-0 rounded-full border border-transparent bg-[var(--accent)] px-4 py-2 text-xs font-black text-[var(--accent-contrast,#fff)] transition hover:opacity-90 disabled:opacity-60"
+          className="shrink-0 rounded-full border border-transparent bg-[var(--accent)] px-4 py-2 text-xs font-black text-[var(--accent-contrast,#fff)] transition duration-fast active:scale-[0.985] hover:opacity-90 disabled:opacity-60"
         >
           {searching ? "Searching…" : "Search"}
         </button>
@@ -958,7 +958,7 @@ function LibraryCard() {
                           type="button"
                           onClick={() => onPin(r)}
                           title="Pin for later"
-                          className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] p-1.5 text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--accent)]"
+                          className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] p-1.5 text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:text-[var(--accent)]"
                         >
                           <Bookmark className="h-3.5 w-3.5" />
                         </button>
@@ -1006,7 +1006,7 @@ function LibraryCard() {
                       type="button"
                       onClick={() => onUnpin(p.id)}
                       title="Unpin"
-                      className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] p-1.5 text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--warning)]"
+                      className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] p-1.5 text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:text-[var(--warning)]"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -1037,7 +1037,7 @@ function LibraryCard() {
                       type="button"
                       onClick={() => onLoadBundle(b.id)}
                       disabled={busy === b.id}
-                      className="shrink-0 rounded-full border border-transparent bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-[var(--accent-contrast,#fff)] transition hover:opacity-90 disabled:opacity-60"
+                      className="shrink-0 rounded-full border border-transparent bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-[var(--accent-contrast,#fff)] transition duration-fast active:scale-[0.985] hover:opacity-90 disabled:opacity-60"
                     >
                       {busy === b.id ? "Opening…" : "Load"}
                     </button>
@@ -1045,7 +1045,7 @@ function LibraryCard() {
                       type="button"
                       onClick={() => onDeleteBundle(b.id)}
                       title="Delete pack"
-                      className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] p-1.5 text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--warning)]"
+                      className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] p-1.5 text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:text-[var(--warning)]"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -1186,7 +1186,7 @@ function RecentResourcesCard() {
                           type="button"
                           onClick={() => onCancelJob(j.id)}
                           disabled={jobBusy === j.id}
-                          className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1 text-[11px] font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--warning)] disabled:opacity-60"
+                          className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1 text-[11px] font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:text-[var(--warning)] disabled:opacity-60"
                         >
                           {jobBusy === j.id ? "…" : "Cancel"}
                         </button>
@@ -1196,7 +1196,7 @@ function RecentResourcesCard() {
                           type="button"
                           onClick={() => onRetryJob(j.id)}
                           disabled={jobBusy === j.id}
-                          className="rounded-full border border-transparent bg-[var(--accent)] px-2.5 py-1 text-[11px] font-black text-[var(--accent-contrast,#fff)] transition hover:opacity-90 disabled:opacity-60"
+                          className="rounded-full border border-transparent bg-[var(--accent)] px-2.5 py-1 text-[11px] font-black text-[var(--accent-contrast,#fff)] transition duration-fast active:scale-[0.985] hover:opacity-90 disabled:opacity-60"
                         >
                           {jobBusy === j.id ? "…" : "Retry"}
                         </button>
@@ -1302,7 +1302,7 @@ function RecentResourcesCard() {
                       onClick={() => onContinue(r)}
                       disabled={continuing === r.id}
                       className={cn(
-                        "shrink-0 rounded-full border px-3 py-1.5 text-xs font-black transition disabled:opacity-60",
+                        "shrink-0 rounded-full border px-3 py-1.5 text-xs font-black transition duration-fast active:scale-[0.985] disabled:opacity-60",
                         isResumable(r)
                           ? "border-transparent bg-[var(--accent)] text-[var(--accent-contrast,#fff)] hover:opacity-90"
                           : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
@@ -1414,7 +1414,7 @@ function PreferencesCard() {
                   type="button"
                   onClick={onClearAll}
                   disabled={busyKey === "__all__"}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--danger)_40%,transparent)] bg-[var(--danger-soft)] px-3 py-2 text-xs font-black text-[var(--danger)] transition hover:brightness-105"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--danger)_40%,transparent)] bg-[var(--danger-soft)] px-3 py-2 text-xs font-black text-[var(--danger)] transition duration-fast active:scale-[0.985] hover:brightness-105"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   Confirm clear all
@@ -1422,7 +1422,7 @@ function PreferencesCard() {
                 <button
                   type="button"
                   onClick={() => setConfirmClear(false)}
-                  className="rounded-full border border-[var(--border)] px-3 py-2 text-xs font-black text-[var(--text-muted)] transition hover:text-[var(--text-strong)]"
+                  className="rounded-full border border-[var(--border)] px-3 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:text-[var(--text-strong)]"
                 >
                   Cancel
                 </button>
@@ -1431,7 +1431,7 @@ function PreferencesCard() {
               <button
                 type="button"
                 onClick={() => setConfirmClear(true)}
-                className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
+                className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Clear all
@@ -1483,7 +1483,7 @@ function PreferencesCard() {
                       type="button"
                       onClick={() => onRemove(item.key)}
                       disabled={busyKey === item.key}
-                      className="shrink-0 text-xs font-bold text-[var(--text-subtle)] transition hover:text-[var(--danger)]"
+                      className="shrink-0 text-xs font-bold text-[var(--text-subtle)] transition duration-fast active:scale-[0.985] hover:text-[var(--danger)]"
                       aria-label={`Remove ${item.label} preference`}
                     >
                       Remove
@@ -1502,7 +1502,7 @@ function PreferencesCard() {
                         disabled={busyKey === item.key}
                         aria-pressed={active}
                         className={cn(
-                          "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-black transition",
+                          "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-black transition duration-fast active:scale-[0.985]",
                           active
                             ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
                             : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-strong)]"
@@ -1563,7 +1563,7 @@ function ModuleLinkCard({
   return (
     <Link
       href={href}
-      className="sarvam-card group rounded-[1.5rem] p-5 transition hover:-translate-y-0.5"
+      className="sarvam-card group rounded-[1.5rem] p-5 transition duration-fast hover:-translate-y-px active:scale-[0.985]"
     >
       <div className="mb-5 flex items-start justify-between gap-4">
         <div
@@ -1609,7 +1609,7 @@ function WorkspaceSection() {
             <Link
               key={module.title}
               href={module.href}
-              className="group rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4 transition hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]"
+              className="group rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4 transition duration-fast hover:-translate-y-px active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]"
             >
               <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--accent-soft)] text-[var(--accent)]">
                 <Icon className="h-4 w-4" />

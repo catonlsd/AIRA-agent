@@ -239,7 +239,7 @@ function MessageCard({ message }: { message: Message }) {
     message.content.replace(/\s+/g, " ").trim().length > 180;
 
   return (
-    <article className="sarvam-card rounded-[1.5rem] p-5 transition hover:-translate-y-0.5">
+    <article className="sarvam-card rounded-[1.5rem] p-5 transition duration-fast hover:-translate-y-px">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <div
@@ -450,7 +450,7 @@ export default function HistoryPage() {
 
             <Link
               href="/chat"
-              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-4 py-3 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-4 py-3 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985]"
             >
               <Sparkles className="h-4 w-4" />
               Assistant
@@ -531,7 +531,7 @@ export default function HistoryPage() {
                   <button
                     type="button"
                     onClick={() => loadMessages({ showLoading: false })}
-                    className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                    className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
                   >
                     <RefreshCw className="h-3.5 w-3.5" />
                     Refresh
@@ -541,7 +541,7 @@ export default function HistoryPage() {
                     type="button"
                     onClick={clearHistory}
                     disabled={clearing || messages.length === 0}
-                    className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-2 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-2 text-xs font-black text-[var(--danger)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {clearing ? (
                       <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -563,7 +563,7 @@ export default function HistoryPage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Search role, message content, date, or message ID..."
-                className="w-full rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+                className="w-full rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition duration-base placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
               />
             </label>
 
@@ -571,7 +571,7 @@ export default function HistoryPage() {
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
               >
                 Clear Search
               </button>
@@ -595,7 +595,7 @@ export default function HistoryPage() {
 
               <Link
                 href="/chat"
-                className="mt-5 inline-flex items-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+                className="mt-5 inline-flex items-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985]"
               >
                 <Sparkles className="h-4 w-4" />
                 Assistant

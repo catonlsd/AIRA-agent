@@ -242,7 +242,7 @@ export function Nav() {
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-expanded={!collapsed}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)] shadow-[var(--shadow-soft)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--accent)]"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)] shadow-[var(--shadow-soft)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--accent)]"
         >
           <ChevronRight
             className={cn(
@@ -257,7 +257,7 @@ export function Nav() {
         href="/chat"
         title={collapsed ? "AIRA-X Home" : undefined}
         className={cn(
-          "group mb-5 block border border-[var(--border)] bg-[var(--surface-soft)] shadow-[var(--shadow-soft)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]",
+          "group mb-5 block border border-[var(--border)] bg-[var(--surface-soft)] shadow-[var(--shadow-soft)] transition-all duration-200 hover:-translate-y-px active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]",
           collapsed ? "rounded-2xl p-2" : "rounded-[1.75rem] p-4"
         )}
       >

@@ -208,7 +208,7 @@ function WorkflowRunCard({ run }: { run: AiraXWorkflowRun }) {
   return (
     <Link
       href={`/workflows/${run.run_id}`}
-      className="group block rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4 transition hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]"
+      className="group block rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4 transition duration-fast hover:-translate-y-px active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]"
     >
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span
@@ -382,7 +382,7 @@ export default function OverviewPage() {
               type="button"
               onClick={handleSafeCleanup}
               disabled={cleanupLoading || loading}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-3 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-3 text-xs font-black text-[var(--danger)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {cleanupLoading ? (
                 <RefreshCw className="h-4 w-4 animate-spin" />
@@ -632,7 +632,7 @@ export default function OverviewPage() {
               action={
                 <Link
                   href="/workflows"
-                  className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                  className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
                 >
                   View all workflows
                   <ArrowRight className="h-3.5 w-3.5" />

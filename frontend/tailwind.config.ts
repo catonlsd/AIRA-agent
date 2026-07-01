@@ -17,6 +17,13 @@ const config: Config = {
       fontSize: {
         '11': ['var(--type-caption)', { lineHeight: 'var(--leading-caption)' }],
       },
+      transitionDuration: {
+        'instant':  'var(--duration-instant)',  /*  80ms */
+        'fast':     'var(--duration-fast)',     /* 120ms */
+        'base':     'var(--duration-base)',     /* 180ms */
+        'moderate': 'var(--duration-moderate)', /* 250ms */
+        'slow':     'var(--duration-slow)',     /* 350ms */
+      },
       spacing: {
         '1':   'var(--space-1)',    /*  4px */
         '1.5': 'var(--space-1-5)', /*  6px */

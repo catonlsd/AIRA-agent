@@ -112,7 +112,7 @@ Instances: 2 (one per color-scheme)
 Pattern: `pre { color: #e5edf8; }` (dark) / `[data-scheme="light"] pre { color: #c8f7dc; }` (light) — hardcoded hex colors
 Gap: No `--code-text` or `--pre-foreground` token
 Discovered: Phase 4 — Component Polish
-Deferred to: Phase 5
+Deferred to: Phase 6
 
 ---
 
@@ -123,4 +123,24 @@ Files: `overview/page.tsx`, `workflows/page.tsx`, `documents/page.tsx`, `assista
 Instances: 4
 Pattern: `color-mix(in srgb, var(--success) 34%, transparent)` — raw recipe, no token
 Discovered: Phase 4 — Component Polish
-Deferred to: Phase 5
+Deferred to: Phase 6
+
+---
+
+## TD-013
+
+**Category:** Duration tokens — legacy files still using `duration-300`
+**Instances:** 3
+**Discovered:** Phase 5 — Motion System
+**Target phase:** Phase 6 — Color Token Migration
+**Description:** `app/upload/page.tsx` and `components/citation-list.tsx` use Tailwind `duration-300` (300ms) on interactive elements instead of the Phase 5 `--duration-fast` / `--duration-base` tokens. These files are already out of scope for token migration due to their raw Tailwind color tokens (TD-002). Migrating duration in isolation would leave the files in an inconsistent partial-migration state. Resolution blocked by TD-002: once the blue-theme color tokens are replaced with semantic `var(--*)` tokens in Phase 6, duration can be migrated in the same pass.
+
+---
+
+## TD-014
+
+**Category:** Duration tokens — `chat/chat.css` `.chat-button` raw duration
+**Instances:** 1
+**Discovered:** Phase 5 — Motion System
+**Target phase:** Phase 6
+**Description:** `app/chat/chat.css` line: `.chat-button { transition: all 0.2s ease; }` uses a hardcoded `0.2s` duration that is not wired to any `--duration-*` token. The `.chat-button` CSS class was out of scope for the Phase 5 TSX sweep (it is a CSS rule, not a TSX className string). Resolution: replace with `transition: all var(--duration-fast) var(--ease-out);` once a Phase 6 CSS sweep is approved, or deprecate `.chat-button` in favour of Tailwind utilities on the relevant elements in `chat/page.tsx`.

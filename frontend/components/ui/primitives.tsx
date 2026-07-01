@@ -90,7 +90,7 @@ export function Tabs<T extends string>({ tabs, active, onChange, className }: {
           key={t.id} type="button" role="tab" aria-selected={active === t.id}
           onClick={() => onChange(t.id)}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition",
+            "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition duration-fast active:scale-[0.985]",
             active === t.id
               ? "bg-[var(--accent-soft)] text-[var(--accent)]"
               : "text-[var(--text-muted)] hover:text-[var(--text-strong)]",
