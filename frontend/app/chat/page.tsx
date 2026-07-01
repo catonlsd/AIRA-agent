@@ -510,7 +510,7 @@ function CodeBlock({ value, fallback = "No data available." }: { value?: string;
 
 function RunBadge({ children, className }: { children: ReactNode; className: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-bold tracking-wide uppercase", className)}>
+    <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-11 font-bold tracking-[var(--tracking-label)] uppercase", className)}>
       {children}
     </span>
   );

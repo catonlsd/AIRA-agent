@@ -101,3 +101,26 @@ All entries use hardcoded typography, color, or sizing values that were intentio
 **Discovered:** Phase 3 — Spacing (Step 0 audit)
 **Target phase:** Phase 4 — Component Polish
 **Description:** One instance of `mt-20` (80px) used as a page-level top-margin offset (likely empty-state or above-fold breathing room). This value has no parallel use anywhere else in the codebase and is intentionally left as a Tailwind utility rather than introducing a token for a single-use case. Review in Phase 4: if additional 80px offsets appear, add `--space-20: 5rem` to the scale; if the single instance is an outlier, remove or replace with a layout-level token instead.
+
+---
+
+## TD-011
+
+Category: Color tokens — pre element hardcoded hex foreground
+Files: `app/globals.css` (pre rule, light/dark variants)
+Instances: 2 (one per color-scheme)
+Pattern: `pre { color: #e5edf8; }` (dark) / `[data-scheme="light"] pre { color: #c8f7dc; }` (light) — hardcoded hex colors
+Gap: No `--code-text` or `--pre-foreground` token
+Discovered: Phase 4 — Component Polish
+Deferred to: Phase 5
+
+---
+
+## TD-012
+
+Category: Color tokens — success border recipe
+Files: `overview/page.tsx`, `workflows/page.tsx`, `documents/page.tsx`, `assistant-answer.tsx`
+Instances: 4
+Pattern: `color-mix(in srgb, var(--success) 34%, transparent)` — raw recipe, no token
+Discovered: Phase 4 — Component Polish
+Deferred to: Phase 5

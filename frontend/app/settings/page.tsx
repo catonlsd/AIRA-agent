@@ -418,7 +418,7 @@ function RuntimeHealthCard() {
       </div>
 
       {error && (
-        <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-4 text-sm leading-6 text-[var(--danger)]">
+        <div className="mt-4 rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] p-4 text-sm leading-[var(--leading-code)] text-[var(--danger)]">
           <strong>Runtime issue:</strong> {error}
         </div>
       )}
@@ -672,7 +672,7 @@ function WorkspaceCard() {
               {isActive && <CheckCircle2 className="h-3.5 w-3.5" />}
               {w.name}
               {w.role && w.id === activeId && (
-                <span className="text-[10px] font-bold text-[var(--text-subtle)]">· {roleLabel(w.role)}</span>
+                <span className="text-11 font-bold text-[var(--text-subtle)]">· {roleLabel(w.role)}</span>
               )}
             </button>
           );
@@ -941,7 +941,7 @@ function LibraryCard() {
                 {results.map((r, i) => (
                   <div key={`${r.result_type}-${r.ref_id ?? i}`} className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2.5">
-                      <span className="shrink-0 rounded-md border border-[var(--border)] bg-[var(--surface-muted)] px-1.5 py-0.5 text-[10px] font-black uppercase text-[var(--text-subtle)]">
+                      <span className="shrink-0 rounded-md border border-[var(--border)] bg-[var(--surface-muted)] px-1.5 py-0.5 text-11 font-black uppercase text-[var(--text-subtle)]">
                         {r.result_type}
                       </span>
                       <div className="min-w-0">

@@ -305,3 +305,81 @@ globals.css component rules that used raw rem values — resolved to nearest tok
 **Step 3** — `frontend/app/globals.css` component-scoped rules migrated. 12 substitutions across 8 selectors (`.aira-chip`, `.pro-kicker`, `.status-success/warning/danger/info`, `.system-status-live`, `.pro-quick-action`, `.pro-link-row`, `.pro-link-pill`, `.assistant-empty-shell`, `.aira-focus-hint`). All fractional rem values replaced with nearest `var(--space-*)` per approved harmonization map. Visual delta: ≤2px on harmonized values; 6 exact matches with zero pixel change.
 
 **Visual QA** — confirmed across nav, operator, approvals, assistant-answer chips, and status badges. `system-status-live::before` dot confirmed as Lucide SVG (not CSS pseudo-element); no pseudo-element spacing to check.
+
+---
+
+## Phase 4 — Component Polish
+
+### Governance Rules
+
+1. **Single responsibility** — only component-semantic token gaps are in scope. Generic structural `rounded-2xl` (cards, icon containers) are explicitly excluded.
+2. **No new tokens without approval** — all 8 tokens added in Phase 4 were individually approved before any component code was written.
+3. **Human visual approval required** — no self-certification. Build gates verify correctness; visual QA is done by the team.
+4. **Priority 1 scope** — Badges/pills, form inputs, alert containers, code/pre blocks, and CTA buttons. Dense-list metadata (operator page) and upload page are deferred.
+
+### New `:root` Tokens (Phase 4)
+
+| Token | Value | Role |
+|---|---|---|
+| `--radius-2xl` | `24px` | Large inputs, alert containers, code blocks, CTA buttons |
+| `--leading-code` | `1.5rem` | ABSOLUTE — pre/code blocks; 24px fixed grid at any font size |
+| `--leading-alert` | `1.25rem` | ABSOLUTE — alert prose; 20px fixed rhythm |
+| `--danger-border` | `color-mix(in srgb, var(--danger) 34%, transparent)` | Danger container borders |
+| `--warning-border` | `color-mix(in srgb, var(--warning) 34%, transparent)` | Warning container borders |
+| `--accent-border` | `color-mix(in srgb, var(--accent) 22%, transparent)` | Code block accent borders |
+| `--on-danger` | `#ffffff` | Text on solid danger backgrounds (reserved; 0 callsites in Phase 4) |
+| `--on-warning` | `#ffffff` | Text on solid warning backgrounds |
+
+**Note on absolute leading:** `--leading-code` and `--leading-alert` are intentionally `rem` (not unitless ratios) to preserve the fixed-height rendering of pre/alert elements at all font sizes. This is an exception to the relative leading convention used by all Phase 2 tokens.
+
+### Tailwind Config Additions (Phase 4)
+
+```typescript
+// frontend/tailwind.config.ts — inside extend:
+fontWeight: {
+  'black': 'var(--weight-heading)',   // font-black → var(--weight-heading) globally; 0 TSX edits
+},
+fontSize: {
+  '11': ['var(--type-caption)', { lineHeight: 'var(--leading-caption)' }],
+},
+```
+
+The `fontWeight.black` override routes every existing `font-black` utility through `var(--weight-heading)` (900) automatically — same zero-TSX-edits strategy used in Phase 3 for spacing. The `fontSize['11']` key replaces all `text-[11px]` and `text-[10px]` arbitrary values with a semantic utility.
+
+### `.aira-chip` / `.pro-kicker` Migration
+
+`globals.css` class rule migrated: `font-size: 0.68rem` → `font-size: var(--type-caption)` and `font-weight: 800` → `font-weight: var(--weight-heading)`. This is an accessibility fix (0.68rem = ~11px floor) and a token correctness fix (800 had no token; actual heading weight is 900 via `--weight-heading`).
+
+### Component Migration Summary
+
+| Pattern | Token(s) applied | Instance count |
+|---|---|---|
+| `text-[11px]` / `text-[10px]` badge/pill | `text-11` | 16 |
+| `tracking-wide` on ALL-CAPS small text | `tracking-[var(--tracking-label)]` | 14 |
+| `rounded-2xl` on semantic components | `rounded-[var(--radius-2xl)]` | 28 |
+| `border-[color-mix(in_srgb,var(--danger)_34%,transparent)]` | `border-[var(--danger-border)]` | 17 |
+| `border-[color-mix(in_srgb,var(--warning)_34%,transparent)]` | `border-[var(--warning-border)]` | 4 |
+| `border-[color-mix(in_srgb,var(--accent)_22%,transparent)]` | `border-[var(--accent-border)]` | 1 |
+| `leading-5` / `leading-6` on alert/pre text | `leading-[var(--leading-alert)]` / `leading-[var(--leading-code)]` | 14 |
+| `text-white` on solid warning buttons | `text-[var(--on-warning)]` | 3 |
+
+**Files touched:** `globals.css`, `tailwind.config.ts`, `components/ui/tokens.ts`, `components/ui/primitives.tsx`, `components/nav.tsx`, `components/technical-details.tsx`, `components/assistant-answer.tsx`, `app/approvals/page.tsx`, `app/workflows/page.tsx`, `app/workflows/[run_id]/page.tsx`, `app/settings/page.tsx`, `app/tools/page.tsx`, `app/agents/page.tsx`, `app/history/page.tsx`, `app/documents/page.tsx`, `app/overview/page.tsx`, `app/chat/page.tsx`
+
+### Documented Exceptions (Phase 4)
+
+- **`py-0.5` (2px)** — badge/pill vertical padding below token floor. Sub-minimum intentional exception; no `--space-0-5` token introduced.
+- **`rounded-xl`** on `assistant-answer.tsx` AnswerCodeBlock — semantic chat answer block, not a Priority 1 pre element. Intentionally excluded from `--radius-2xl` migration.
+- **`bg-[color-mix(in_srgb,var(--accent)_6%,transparent)]`** on code block backgrounds — no `--accent-bg-soft` token approved; kept as raw recipe.
+- **`--on-danger`** — token defined and available; 0 callsites consumed in Phase 4. All danger buttons in Priority 1 scope use bordered style (`text-[var(--danger)]` on soft background), not solid-danger-fill. Token reserved for future solid-danger button patterns.
+- **`operator/page.tsx` dense list `text-[11px]`** — not Priority 1 scope; deferred.
+
+### Deferred Items (Technical Debt)
+
+- **TD-011** — `app/globals.css` `pre { color: #e5edf8; }` hardcoded hex; no `--code-text` token. Target: Phase 5.
+- **TD-012** — `color-mix(in srgb, var(--success) 34%, transparent)` raw recipe in 4 files; no `--success-border` token. Target: Phase 5.
+
+### Delivery Record
+
+**Steps 1–9** — Token layer (`globals.css`), Tailwind config, and 15 component/page files migrated per approved plan. Build: `tsc --noEmit` clean, `eslint` 0 errors (22 pre-existing warnings in untouched files), Next.js build 14/14 routes.
+
+**Visual QA** — all screens approved by team review on `feat/command-theme` branch.

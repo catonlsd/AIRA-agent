@@ -263,7 +263,7 @@ function DocumentCard({
             type="button"
             onClick={() => onDelete(doc)}
             disabled={summarizing || deleting}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] px-4 py-2.5 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-2.5 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {deleting ? (
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -487,7 +487,7 @@ export default function DocumentsPage() {
 
             <Link
               href="/chat"
-              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-4 py-3 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-4 py-3 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
             >
               <UploadCloud className="h-4 w-4" />
               Upload in Assistant
@@ -506,10 +506,10 @@ export default function DocumentsPage() {
       {status && (
         <div
           className={cn(
-            "rounded-2xl border p-4 text-sm font-semibold",
+            "rounded-[var(--radius-2xl)] border p-4 text-sm font-semibold",
             status.toLowerCase().includes("failed") ||
               status.toLowerCase().includes("error")
-              ? "border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] text-[var(--danger)]"
+              ? "border-[var(--danger-border)] bg-[var(--danger-soft)] text-[var(--danger)]"
               : status.startsWith("✅")
                 ? "border-[color-mix(in_srgb,var(--success)_34%,transparent)] bg-[var(--success-soft)] text-[var(--success)]"
                 : "border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)]"
@@ -582,7 +582,7 @@ export default function DocumentsPage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Search filename, file type, document ID, or date..."
-                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+                className="w-full rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
               />
             </label>
 
@@ -614,7 +614,7 @@ export default function DocumentsPage() {
 
               <Link
                 href="/chat"
-                className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+                className="mt-5 inline-flex items-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
               >
                 <UploadCloud className="h-4 w-4" />
                 Upload Documents

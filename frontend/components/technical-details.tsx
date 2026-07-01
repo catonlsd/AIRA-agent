@@ -45,7 +45,7 @@ export function TechnicalDetailRow({
 }) {
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-      <p className="text-[10px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
+      <p className="text-11 font-black uppercase tracking-[var(--tracking-label)] text-[var(--text-subtle)]">
         {label}
       </p>
       <p

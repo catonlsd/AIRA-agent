@@ -114,6 +114,7 @@
   --radius-lg:   14px;   /* standard cards, panels */
   --radius-xl:   20px;   /* hero cards, modals, large surfaces */
   --radius-full: 9999px; /* pills, avatars */
+  --radius-2xl:  24px;   /* large inputs, alert containers, code blocks — Phase 4 */
 
   /* Back-compat aliases — old rem names → nearest new px token */
   --radius-xs:   var(--radius-sm);   /* was 0.375rem ≈ 6px — matches exactly */
@@ -160,6 +161,13 @@
   --status-alert: var(--alert);
   --status-alert-soft: var(--alert-soft);
 
+  /* Semantic border and on-color tokens — Phase 4 */
+  --danger-border:  color-mix(in srgb, var(--danger)  34%, transparent);
+  --warning-border: color-mix(in srgb, var(--warning) 34%, transparent);
+  --accent-border:  color-mix(in srgb, var(--accent)  22%, transparent);
+  --on-danger:  #ffffff;
+  --on-warning: #ffffff;
+
   /* ── Typography Scale — frozen after Phase 2 ──────────────────────────
      All values derived from Step 0 audit. Zero visual change: these tokens
      canonicalize what currently renders. New roles require explicit approval.
@@ -194,6 +202,8 @@
   --leading-body:     1.65;   /* p element rule: line-height: 1.65                     */
   --leading-caption:  1.4;    /* metadata, badge labels, timestamps                    */
   --leading-metric:   1.1;    /* tight for numeric displays                            */
+  --leading-code:     1.5rem; /* ABSOLUTE — pre/code blocks; 24px at any font size     */
+  --leading-alert:    1.25rem;/* ABSOLUTE — alert prose; 20px fixed rhythm             */
 
   /* Letter spacing */
   --tracking-display:  -0.025em;  /* tracking-tight class (0-1-0) on display headings   */
@@ -1180,8 +1190,8 @@ html[data-scheme="dark"] .aira-gradient-text {
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-strong) 4%, transparent);
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  font-size: 0.68rem;
-  font-weight: 800;
+  font-size: var(--type-caption);
+  font-weight: var(--weight-heading);
   padding: var(--space-1) var(--space-3);
   line-height: 1;
 }

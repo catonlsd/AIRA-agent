@@ -164,7 +164,7 @@ function NavLink({
               {item.badge && (
                 <span
                   className={cn(
-                    "rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide",
+                    "rounded-full border px-2 py-0.5 text-11 font-black uppercase tracking-[var(--tracking-label)]",
                     active
                       ? "border-[var(--border-strong)] bg-[var(--accent-soft)] text-[var(--accent)]"
                       : "border-[var(--border)] bg-[var(--secondary-soft)] text-[var(--secondary)]"

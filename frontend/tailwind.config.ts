@@ -11,6 +11,12 @@ const config: Config = {
         accent: "#2563eb",
         amber: "#b66a12",
       },
+      fontWeight: {
+        'black': 'var(--weight-heading)',
+      },
+      fontSize: {
+        '11': ['var(--type-caption)', { lineHeight: 'var(--leading-caption)' }],
+      },
       spacing: {
         '1':   'var(--space-1)',    /*  4px */
         '1.5': 'var(--space-1-5)', /*  6px */

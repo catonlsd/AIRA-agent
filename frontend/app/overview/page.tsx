@@ -213,7 +213,7 @@ function WorkflowRunCard({ run }: { run: AiraXWorkflowRun }) {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span
           className={cn(
-            "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-black",
+            "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-11 font-black",
             getStatusClass(run.status)
           )}
         >
@@ -222,7 +222,7 @@ function WorkflowRunCard({ run }: { run: AiraXWorkflowRun }) {
         </span>
 
         {run.requires_approval && (
-          <span className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-black status-warning">
+          <span className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-11 font-black status-warning">
             <ShieldAlert className="h-3.5 w-3.5" />
             approval required
           </span>
@@ -382,7 +382,7 @@ export default function OverviewPage() {
               type="button"
               onClick={handleSafeCleanup}
               disabled={cleanupLoading || loading}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] px-4 py-3 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-3 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {cleanupLoading ? (
                 <RefreshCw className="h-4 w-4 animate-spin" />
@@ -407,7 +407,7 @@ export default function OverviewPage() {
       )}
 
       {error && (
-        <div className="rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-4 text-sm text-[var(--danger)]">
+        <div className="rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] p-4 text-sm text-[var(--danger)]">
           {error}
         </div>
       )}

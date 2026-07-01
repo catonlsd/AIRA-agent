@@ -255,14 +255,14 @@ function MessageCard({ message }: { message: Message }) {
             <div className="flex flex-wrap items-center gap-2">
               <span
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-full border border-[var(--border)] px-3 py-1 text-[11px] font-black uppercase tracking-wide",
+                  "inline-flex items-center gap-2 rounded-full border border-[var(--border)] px-3 py-1 text-11 font-black uppercase tracking-[var(--tracking-label)]",
                   roleClass
                 )}
               >
                 {getRoleLabel(message.role)}
               </span>
 
-              <span className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--text-muted)]">
+              <span className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1 text-11 font-bold text-[var(--text-muted)]">
                 <Clock className="h-3.5 w-3.5" />
                 {formatDateTime(message.created_at)}
               </span>
@@ -450,7 +450,7 @@ export default function HistoryPage() {
 
             <Link
               href="/chat"
-              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-4 py-3 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-4 py-3 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
             >
               <Sparkles className="h-4 w-4" />
               Assistant
@@ -469,10 +469,10 @@ export default function HistoryPage() {
       {status && (
         <div
           className={cn(
-            "rounded-2xl border p-4 text-sm font-semibold",
+            "rounded-[var(--radius-2xl)] border p-4 text-sm font-semibold",
             status.toLowerCase().includes("failed") ||
               status.toLowerCase().includes("error")
-              ? "border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] text-[var(--danger)]"
+              ? "border-[var(--danger-border)] bg-[var(--danger-soft)] text-[var(--danger)]"
               : "border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)]"
           )}
         >
@@ -541,7 +541,7 @@ export default function HistoryPage() {
                     type="button"
                     onClick={clearHistory}
                     disabled={clearing || messages.length === 0}
-                    className="inline-flex w-fit items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] px-4 py-2 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-2 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {clearing ? (
                       <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -563,7 +563,7 @@ export default function HistoryPage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Search role, message content, date, or message ID..."
-                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+                className="w-full rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
               />
             </label>
 
@@ -595,7 +595,7 @@ export default function HistoryPage() {
 
               <Link
                 href="/chat"
-                className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+                className="mt-5 inline-flex items-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
               >
                 <Sparkles className="h-4 w-4" />
                 Assistant

@@ -417,7 +417,7 @@ function RunBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-black",
+        "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-11 font-black",
         className
       )}
     >
@@ -533,7 +533,7 @@ function ApprovalRequiredPanel({
   const approvalButtonsDisabled = approvalProcessing || actionLoading || deleteLoading;
 
   return (
-    <div className="mt-5 rounded-2xl border border-[color-mix(in_srgb,var(--warning)_34%,transparent)] bg-[var(--warning-soft)] p-5">
+    <div className="mt-5 rounded-[var(--radius-2xl)] border border-[var(--warning-border)] bg-[var(--warning-soft)] p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h3 className="flex items-center gap-2 type-heading-xs text-[var(--warning)]">
@@ -564,7 +564,7 @@ function ApprovalRequiredPanel({
             type="button"
             onClick={onApprove}
             disabled={approvalButtonsDisabled}
-            className="rounded-xl bg-[var(--warning)] px-5 py-3 text-sm font-black text-white shadow-[var(--shadow-soft)] transition disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-xl bg-[var(--warning)] px-5 py-3 text-sm font-black text-[var(--on-warning)] shadow-[var(--shadow-soft)] transition disabled:cursor-not-allowed disabled:opacity-60"
           >
             {approvalProcessing
               ? "Processing..."
@@ -577,7 +577,7 @@ function ApprovalRequiredPanel({
             type="button"
             onClick={onReject}
             disabled={approvalButtonsDisabled}
-            className="inline-flex items-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--surface-soft)] px-5 py-3 text-sm font-black text-[var(--danger)] transition hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl border border-[var(--danger-border)] bg-[var(--surface-soft)] px-5 py-3 text-sm font-black text-[var(--danger)] transition hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <XCircle className="h-4 w-4" />
             {approvalProcessing
@@ -616,7 +616,7 @@ function ApprovalResolutionSection({ run }: { run: WorkflowRun }) {
       />
 
       {status === "stale_processing_recovered" && (
-        <div className="mb-4 rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-4 text-sm leading-6 text-[var(--danger)]">
+        <div className="mb-4 rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] p-4 text-sm leading-[var(--leading-code)] text-[var(--danger)]">
           <strong>Stale approval recovered:</strong> AIRA-X detected approval
           processing stayed active for too long and stopped the workflow safely
           to prevent duplicate execution.
@@ -648,7 +648,7 @@ function ApprovalResolutionSection({ run }: { run: WorkflowRun }) {
       </div>
 
       {resolution.error && (
-        <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-4 text-sm leading-6 text-[var(--danger)]">
+        <div className="mt-4 rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] p-4 text-sm leading-[var(--leading-code)] text-[var(--danger)]">
           <strong>Error:</strong> {resolution.error}
         </div>
       )}
@@ -687,21 +687,21 @@ function GitWritePreflightSection({ context }: { context: ApprovalContext }) {
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div>
-          <p className="mb-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="mb-2 text-xs font-black uppercase tracking-[var(--tracking-label)] text-[var(--text-subtle)]">
             Changed Files
           </p>
 
-          <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl p-4 text-xs leading-6">
+          <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-[var(--radius-2xl)] p-4 text-xs leading-[var(--leading-code)]">
             {context.changed_files?.trim() || "No changed files detected."}
           </pre>
         </div>
 
         <div>
-          <p className="mb-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="mb-2 text-xs font-black uppercase tracking-[var(--tracking-label)] text-[var(--text-subtle)]">
             Diff Summary
           </p>
 
-          <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl p-4 text-xs leading-6">
+          <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-[var(--radius-2xl)] p-4 text-xs leading-[var(--leading-code)]">
             {context.diff_summary?.trim() || "No diff summary available."}
           </pre>
         </div>
@@ -740,42 +740,42 @@ function GitPushPreflightSection({ context }: { context: ApprovalContext }) {
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div>
-          <p className="mb-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="mb-2 text-xs font-black uppercase tracking-[var(--tracking-label)] text-[var(--text-subtle)]">
             Branch Tracking Status
           </p>
 
-          <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-2xl p-4 text-xs leading-6">
+          <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-[var(--radius-2xl)] p-4 text-xs leading-[var(--leading-code)]">
             {context.status_branch?.trim() ||
               "No branch tracking status available."}
           </pre>
         </div>
 
         <div>
-          <p className="mb-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="mb-2 text-xs font-black uppercase tracking-[var(--tracking-label)] text-[var(--text-subtle)]">
             Remote Info
           </p>
 
-          <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-2xl p-4 text-xs leading-6">
+          <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-[var(--radius-2xl)] p-4 text-xs leading-[var(--leading-code)]">
             {context.remote_info?.trim() || "No remote info available."}
           </pre>
         </div>
 
         <div>
-          <p className="mb-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="mb-2 text-xs font-black uppercase tracking-[var(--tracking-label)] text-[var(--text-subtle)]">
             Latest Local Commit
           </p>
 
-          <pre className="max-h-36 overflow-auto whitespace-pre-wrap rounded-2xl p-4 text-xs leading-6">
+          <pre className="max-h-36 overflow-auto whitespace-pre-wrap rounded-[var(--radius-2xl)] p-4 text-xs leading-[var(--leading-code)]">
             {context.last_commit?.trim() || "No latest commit available."}
           </pre>
         </div>
 
         <div>
-          <p className="mb-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="mb-2 text-xs font-black uppercase tracking-[var(--tracking-label)] text-[var(--text-subtle)]">
             Recent Local Commits
           </p>
 
-          <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-2xl p-4 text-xs leading-6">
+          <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-[var(--radius-2xl)] p-4 text-xs leading-[var(--leading-code)]">
             {context.recent_commits?.trim() || "No recent commits available."}
           </pre>
         </div>
@@ -857,7 +857,7 @@ function CleanupActionsSection({ run }: { run: WorkflowRun }) {
             </div>
 
             {(cleanup.result?.output || cleanup.result?.error) && (
-              <pre className="mt-4 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl p-4 text-xs leading-6">
+              <pre className="mt-4 max-h-56 overflow-auto whitespace-pre-wrap rounded-[var(--radius-2xl)] p-4 text-xs leading-[var(--leading-code)]">
                 {cleanup.result?.output || cleanup.result?.error}
               </pre>
             )}
@@ -934,18 +934,18 @@ function ExecutionPlanSection({ steps }: { steps: WorkflowStep[] }) {
 
               {step.result && (
                 <div className="mt-4">
-                  <p className="mb-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+                  <p className="mb-2 text-xs font-black uppercase tracking-[var(--tracking-label)] text-[var(--text-subtle)]">
                     Result
                   </p>
 
-                  <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-2xl p-4 text-xs leading-6">
+                  <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-[var(--radius-2xl)] p-4 text-xs leading-[var(--leading-code)]">
                     {step.result}
                   </pre>
                 </div>
               )}
 
               {step.error && (
-                <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-4 text-sm leading-6 text-[var(--danger)]">
+                <div className="mt-4 rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] p-4 text-sm leading-[var(--leading-code)] text-[var(--danger)]">
                   <strong>Error:</strong> {step.error}
                 </div>
               )}
@@ -997,7 +997,7 @@ function WorkflowLogsSection({ logs }: { logs?: WorkflowLog[] }) {
               </p>
             </div>
 
-            <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl p-4 text-[11px] leading-5">
+            <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-[var(--radius-2xl)] p-4 text-11 leading-[var(--leading-alert)]">
               {prettyJson(log.details)}
             </pre>
           </article>
@@ -1028,7 +1028,7 @@ function RawExecutionOutputsSection({ outputs }: { outputs: any[] }) {
           </p>
         </div>
       ) : (
-        <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-2xl p-4 text-xs leading-6">
+        <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-[var(--radius-2xl)] p-4 text-xs leading-[var(--leading-code)]">
           {prettyJson(outputs)}
         </pre>
       )}
@@ -1332,7 +1332,7 @@ export default function WorkflowDetailPage() {
       )}
 
       {error && (
-        <div className="rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-4 text-sm text-[var(--danger)]">
+        <div className="rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] p-4 text-sm text-[var(--danger)]">
           {error}
         </div>
       )}
@@ -1400,7 +1400,7 @@ export default function WorkflowDetailPage() {
                   type="button"
                   onClick={handleDelete}
                   disabled={deleteButtonDisabled}
-                  className="inline-flex w-fit items-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] px-5 py-3 text-sm font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex w-fit items-center gap-2 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-soft)] px-5 py-3 text-sm font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {deleteLoading ? (
                     <RefreshCw className="h-4 w-4 animate-spin" />

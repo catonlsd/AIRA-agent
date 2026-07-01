@@ -276,7 +276,7 @@ function AgentCard({ agent }: { agent: Agent }) {
 
         <span
           className={cn(
-            "rounded-full border border-[var(--border)] px-3 py-1 text-[11px] font-black uppercase tracking-wide",
+            "rounded-full border border-[var(--border)] px-3 py-1 text-11 font-black uppercase tracking-[var(--tracking-label)]",
             getToneClass(tone)
           )}
         >
@@ -477,7 +477,7 @@ export default function AgentsPage() {
       )}
 
       {error && (
-        <div className="rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-4 text-sm text-[var(--danger)]">
+        <div className="rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] p-4 text-sm text-[var(--danger)]">
           {error}
         </div>
       )}
@@ -533,7 +533,7 @@ export default function AgentsPage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Search agent name, role, capability, or responsibility..."
-                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+                className="w-full rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
               />
             </label>
 

@@ -14,7 +14,7 @@ export function Button({ className, ...props }: ButtonHTMLAttributes<HTMLButtonE
 /** Tone-colored status pill with a leading dot. */
 export function Badge({ tone, children }: { tone: Tone; children: ReactNode }) {
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wide", toneText[tone])}>
+    <span className={cn("inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-0.5 text-11 font-black uppercase tracking-[var(--tracking-label)]", toneText[tone])}>
       <span className={cn("h-1.5 w-1.5 rounded-full", toneDot[tone])} aria-hidden="true" />
       {children}
     </span>
@@ -26,9 +26,9 @@ export const StatusPill = Badge;
 /** Big value over a caption (e.g. Overview counters). */
 export function StatTile({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2">
+    <div className="rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2">
       <p className="type-heading text-[var(--text-strong)]">{value}</p>
-      <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-subtle)]">{label}</p>
+      <p className="text-11 font-bold uppercase tracking-[var(--tracking-label)] text-[var(--text-subtle)]">{label}</p>
     </div>
   );
 }
@@ -39,7 +39,7 @@ export const Stat = StatTile;
 export function MetricTile({ label, value, tone = "muted" }: { label: string; value: ReactNode; tone?: Tone }) {
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
-      <p className="text-[11px] uppercase tracking-wide text-[var(--text-subtle)]">{label}</p>
+      <p className="text-11 uppercase tracking-[var(--tracking-label)] text-[var(--text-subtle)]">{label}</p>
       <p className={cn("type-heading", toneText[tone])}>{value}</p>
     </div>
   );
@@ -61,7 +61,7 @@ export function SectionHeader({ icon, title, sub, children, className }: {
   return (
     <div className={cn("mb-3 flex items-baseline gap-2", className)}>
       <p className={SECTION_LABEL}>{icon}{title}</p>
-      {sub ? <span className="text-[11px] text-[var(--text-muted)]">{sub}</span> : null}
+      {sub ? <span className="text-11 text-[var(--text-muted)]">{sub}</span> : null}
       {children}
     </div>
   );

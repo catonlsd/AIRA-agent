@@ -56,10 +56,10 @@ function AnswerCodeBlock({
   return (
     <pre
       className={cn(
-        "max-h-80 overflow-auto whitespace-pre-wrap rounded-xl border p-4 text-xs leading-6",
+        "max-h-80 overflow-auto whitespace-pre-wrap rounded-xl border p-4 text-xs leading-[var(--leading-code)]",
         variant === "output"
           ? "border-[var(--border)] bg-[var(--surface-muted)] font-mono text-[var(--text)]"
-          : "border-[color-mix(in_srgb,var(--accent)_22%,transparent)] bg-[color-mix(in_srgb,var(--accent)_6%,transparent)] font-mono text-[var(--text-strong)]"
+          : "border-[var(--accent-border)] bg-[color-mix(in_srgb,var(--accent)_6%,transparent)] font-mono text-[var(--text-strong)]"
       )}
     >
       {value.trim()}
@@ -235,7 +235,7 @@ function SectionBlock({ section }: { section: AnswerSection }) {
 
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-4">
-      <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[var(--text-subtle)]">
+      <p className="text-11 font-black uppercase tracking-[var(--tracking-label)] text-[var(--text-subtle)]">
         {section.title}
       </p>
 
@@ -273,7 +273,7 @@ function StructuredTechnicalSections({ sections }: { sections: AnswerSection[] }
             className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3"
           >
             {section.title && (
-              <p className="text-[10px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              <p className="text-11 font-black uppercase tracking-[var(--tracking-label)] text-[var(--text-subtle)]">
                 {section.title}
               </p>
             )}
@@ -359,7 +359,7 @@ function MultiTaskSummary({ summary }: { summary: string }) {
 
   return (
     <div className="rounded-xl border border-[color-mix(in_srgb,var(--success)_28%,transparent)] bg-[var(--success-soft)] p-4">
-      <div className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-[var(--success)]">
+      <div className="mb-2 flex items-center gap-2 text-11 font-black uppercase tracking-[var(--tracking-label)] text-[var(--success)]">
         <CheckCircle2 className="h-3.5 w-3.5" />
         Summary
       </div>
