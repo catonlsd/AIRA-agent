@@ -81,3 +81,23 @@ All entries use hardcoded typography, color, or sizing values that were intentio
 **Discovered:** Phase 2 — Typography migration (Step 3 residual scan)
 **Target phase:** Phase 4 — Component Polish
 **Description:** Ten `<pre className="... text-xs leading-6">` elements in `app/workflows/[run_id]/page.tsx` (lines 694, 704, 747, 758, 768, 778, 860, 941, 1031) and `components/assistant-answer.tsx` (line 59) use `text-xs leading-6` (12px, 1.5rem absolute line-height). The `type-mono` class uses `var(--leading-body): 1.65` (relative), which would change line spacing inside these code blocks. Pre elements also have browser-default `font-family: monospace`, making the `type-mono` font-family declaration redundant. These need a dedicated `type-code-block` class (or equivalent) with absolute line-height to preserve fixed-width grid alignment before migration.
+
+---
+
+## TD-009
+
+**Category:** `py-12` (48px) — upload drop-zone vertical padding
+**Instances:** 1
+**Discovered:** Phase 3 — Spacing (Step 0 audit)
+**Target phase:** Phase 4 — Component Polish
+**Description:** One instance of `py-12` (48px) in `app/upload/page.tsx`. This file is already out of scope for Phase 3 (TD-002 covers its raw Tailwind color tokens). The 48px value serves the drop-zone affordance specifically and has no parallel use elsewhere. It is not tokenized in the Phase 3 scale. Resolution: either add `--space-12: 3rem` to the scale in Phase 4 if other large drop-zone or modal contexts emerge, or keep as an explicit `py-12` utility in the upload component.
+
+---
+
+## TD-010
+
+**Category:** `mt-20` (80px) — page-level vertical offset
+**Instances:** 1
+**Discovered:** Phase 3 — Spacing (Step 0 audit)
+**Target phase:** Phase 4 — Component Polish
+**Description:** One instance of `mt-20` (80px) used as a page-level top-margin offset (likely empty-state or above-fold breathing room). This value has no parallel use anywhere else in the codebase and is intentionally left as a Tailwind utility rather than introducing a token for a single-use case. Review in Phase 4: if additional 80px offsets appear, add `--space-20: 5rem` to the scale; if the single instance is an outlier, remove or replace with a layout-level token instead.

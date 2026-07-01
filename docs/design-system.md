@@ -6,7 +6,7 @@
 |---|---|---|
 | Phase 1 | Surface contract (8 tokens) + radius scale | **Frozen** |
 | Phase 2 | Typography contract (12 size + 7 weight + 5 leading + 5 tracking tokens) + 13 utility classes | **Frozen** |
-| Phase 3 | Color token migration (raw Tailwind → semantic vars); button/component tokens; `font-bold` weight gap | Pending |
+| Phase 3 | Spacing contract (10 tokens, 8px-base scale with approved half-steps) | **Frozen** |
 | Phase 4 | Component polish; badge/pill refactor; `<pre>` block tokens; form input tokens | Pending |
 
 ---
@@ -242,3 +242,66 @@ Use exactly one `.type-*` class per text element. Never compose two. Text color 
 - **`workflows/[run_id]/page.tsx` run goal** — `type-heading leading-7`: explicit `leading-7` override on long user-supplied text for readability. Token sets 1.2; override is 1.75rem absolute.
 - **Conditional mono override** — `cn("type-body-strong ...", mono && "font-mono text-xs")`: component-level weight override cascade. Intentional; mono prop overrides size+family only, not role.
 - **`--tracking-display` vs `--tracking-heading` split**: see letter-spacing rationale above.
+
+---
+
+## Phase 3 — Spacing Contract
+
+### Governance Rules
+
+1. **Single responsibility** — only `padding`, `margin`, `gap`, and `space-between` values are in scope. Width, height, and layout sizing are separate.
+2. **No new tokens without approval** — the 10-token scale below is frozen. Half-steps beyond `--space-1-5` and `--space-2-5` require explicit sign-off.
+3. **Peripheral exclusions** — `48px` (`py-12`) and `80px` (`mt-20`) are intentionally not tokenized. They remain as Tailwind utilities. See TD-009 and TD-010 in `docs/technical-debt.md`.
+4. **Fractional harmonization** — globals.css component values that fall between token steps (e.g., 6.4px, 7.2px) are mapped to the nearest token by visual judgment, not arithmetic rounding alone.
+
+### Token Scale
+
+All values are 8px-base with two approved half-steps (6px, 10px) for badge/pill micro-spacing.
+
+| Token | Value | px | Tailwind equiv | Primary role |
+|---|---|---|---|---|
+| `--space-1` | `0.25rem` | 4px | `1` | Icon gutters, minimal chip vertical |
+| `--space-1-5` | `0.375rem` | 6px | `1.5` | Pill/badge vertical padding, icon-label gaps |
+| `--space-2` | `0.5rem` | 8px | `2` | Dense layout gap, tight follow-on margin |
+| `--space-2-5` | `0.625rem` | 10px | `2.5` | Badge/pill horizontal padding |
+| `--space-3` | `0.75rem` | 12px | `3` | Standard inter-element gap, compact padding |
+| `--space-4` | `1rem` | 16px | `4` | Standard card padding, section stack margin |
+| `--space-5` | `1.25rem` | 20px | `5` | Panel padding, section break margin |
+| `--space-6` | `1.5rem` | 24px | `6` | Generous section padding, grid column gap |
+| `--space-8` | `2rem` | 32px | `8` | Large section, hero inner padding |
+| `--space-10` | `2.5rem` | 40px | `10` | Hero emphasis, search-icon inset |
+
+### Fractional Value Harmonization Map
+
+globals.css component rules that used raw rem values — resolved to nearest token by visual judgment:
+
+| Original value | px equiv | Maps to | Token |
+|---|---|---|---|
+| `0.25rem` | 4px | exact | `--space-1` |
+| `0.3rem` | 4.8px | → 4px (chip vertical, tight) | `--space-1` |
+| `0.375rem` | 6px | exact | `--space-1-5` |
+| `0.4rem` | 6.4px | → 6px (status indicator gap) | `--space-1-5` |
+| `0.45rem` | 7.2px | → 6px (chip gap — visual match) | `--space-1-5` |
+| `0.5rem` | 8px | exact | `--space-2` |
+| `0.6rem` | 9.6px | → 10px (status badge horizontal) | `--space-2-5` |
+| `0.625rem` | 10px | exact | `--space-2-5` |
+| `0.75rem` | 12px | exact | `--space-3` |
+| `0.85rem` | 13.6px | → 12px (link pill horizontal — tight) | `--space-3` |
+| `0.9rem` | 14.4px | → 12px (quick action horizontal — tight) | `--space-3` |
+| `1rem` | 16px | exact | `--space-4` |
+| `2rem` | 32px | exact | `--space-8` |
+
+### Not Tokenized (TD)
+
+- `48px` (`py-12`) — upload drop zone only. TD-009, target Phase 4.
+- `80px` (`mt-20`) — single page-level offset. TD-010, target Phase 4.
+
+### Delivery Record
+
+**Step 1** — `--space-*` token block added to `:root` in `frontend/app/globals.css`. 10 tokens, zero visual change at delivery.
+
+**Step 2** — `frontend/tailwind.config.ts` extended with `spacing` block. All 10 scale keys override Tailwind defaults with `var(--space-*)` references. Every `gap-*`, `p-*`, `px-*`, `py-*`, `mt-*`, `mb-*`, `space-y-*` utility in `.tsx` files now resolves through the token layer automatically, with no `.tsx` files edited.
+
+**Step 3** — `frontend/app/globals.css` component-scoped rules migrated. 12 substitutions across 8 selectors (`.aira-chip`, `.pro-kicker`, `.status-success/warning/danger/info`, `.system-status-live`, `.pro-quick-action`, `.pro-link-row`, `.pro-link-pill`, `.assistant-empty-shell`, `.aira-focus-hint`). All fractional rem values replaced with nearest `var(--space-*)` per approved harmonization map. Visual delta: ≤2px on harmonized values; 6 exact matches with zero pixel change.
+
+**Visual QA** — confirmed across nav, operator, approvals, assistant-answer chips, and status badges. `system-status-live::before` dot confirmed as Lucide SVG (not CSS pseudo-element); no pseudo-element spacing to check.
