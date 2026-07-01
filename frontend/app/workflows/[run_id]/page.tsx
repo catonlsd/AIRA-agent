@@ -443,7 +443,7 @@ function FieldCard({
 
       <div
         className={cn(
-          "mt-2 break-words text-sm font-semibold text-[var(--text-strong)]",
+          "mt-2 break-words type-body-strong text-[var(--text-strong)]",
           mono && "font-mono text-xs"
         )}
       >
@@ -472,12 +472,12 @@ function SectionHeader({
         </div>
 
         <div>
-          <h2 className="text-lg font-black text-[var(--text-strong)]">
+          <h2 className="type-heading text-[var(--text-strong)]">
             {title}
           </h2>
 
           {description && (
-            <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
+            <p className="mt-1 type-body text-[var(--text-muted)]">
               {description}
             </p>
           )}
@@ -536,7 +536,7 @@ function ApprovalRequiredPanel({
     <div className="mt-5 rounded-2xl border border-[color-mix(in_srgb,var(--warning)_34%,transparent)] bg-[var(--warning-soft)] p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h3 className="flex items-center gap-2 text-sm font-black text-[var(--warning)]">
+          <h3 className="flex items-center gap-2 type-heading-xs text-[var(--warning)]">
             {approvalProcessing ? (
               <Clock className="h-4 w-4" />
             ) : (
@@ -545,7 +545,7 @@ function ApprovalRequiredPanel({
             {approvalProcessing ? "Approval is being processed" : "Approval Required"}
           </h3>
 
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+          <p className="mt-2 max-w-2xl type-body text-[var(--text-muted)]">
             {approvalProcessing
               ? "AIRA-X is already processing this approval-gated action. Controls are disabled to prevent duplicate execution."
               : "This workflow is paused before a risky action. Approve to continue, or reject to stop safely."}
@@ -906,7 +906,7 @@ function ExecutionPlanSection({ steps }: { steps: WorkflowStep[] }) {
                       {step.title}
                     </h3>
 
-                    <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
+                    <p className="mt-1 type-body text-[var(--text-muted)]">
                       {step.description}
                     </p>
                   </div>
@@ -983,7 +983,7 @@ function WorkflowLogsSection({ logs }: { logs?: WorkflowLog[] }) {
           >
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="text-sm font-black text-[var(--text-strong)]">
+                <p className="type-heading-xs text-[var(--text-strong)]">
                   {log.agent}
                 </p>
 
@@ -1265,23 +1265,23 @@ export default function WorkflowDetailPage() {
                 AIRA-X Workflow Detail
               </div>
 
-              <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
+              <h1 className="aira-gradient-text type-display">
                 Workflow Run
               </h1>
 
-              <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
+              <p className="mt-3 max-w-3xl type-body text-[var(--text-muted)]">
                 Trace, approvals, and outcomes for a single Assistant workflow
                 run. Open technical details below for run identifiers.
               </p>
 
               {run && (
-                <p className="mt-4 max-w-4xl text-lg font-black leading-7 text-[var(--text-strong)]">
+                <p className="mt-4 max-w-4xl type-heading leading-7 text-[var(--text-strong)]">
                   {run.user_goal}
                 </p>
               )}
 
               {run?.final_answer && (
-                <p className="mt-3 max-w-4xl text-sm leading-7 text-[var(--text-muted)]">
+                <p className="mt-3 max-w-4xl type-body text-[var(--text-muted)]">
                   {run.final_answer}
                 </p>
               )}
@@ -1358,11 +1358,11 @@ export default function WorkflowDetailPage() {
 
             {!isWaitingForApproval(run) && (
               <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-                <p className="text-sm font-black text-[var(--text-strong)]">
+                <p className="type-heading-xs text-[var(--text-strong)]">
                   No approval action is currently pending.
                 </p>
 
-                <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
+                <p className="mt-1 type-body text-[var(--text-muted)]">
                   This run can be inspected or removed from local workflow
                   history when no longer needed.
                 </p>
@@ -1380,11 +1380,11 @@ export default function WorkflowDetailPage() {
             <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h3 className="text-sm font-black text-[var(--text-strong)]">
+                  <h3 className="type-heading-xs text-[var(--text-strong)]">
                     History Maintenance
                   </h3>
 
-                  <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
+                  <p className="mt-1 type-body text-[var(--text-muted)]">
                     Delete this saved workflow run from local history after you
                     no longer need it.
                   </p>

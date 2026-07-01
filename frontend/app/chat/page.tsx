@@ -525,7 +525,7 @@ function PanelHeader({ icon, title, description }: { icon: ReactNode; title: str
       <div>
         <h2 className="text-sm font-bold text-[var(--text-strong)] leading-5">{title}</h2>
         {description && (
-          <p className="mt-0.5 text-xs leading-5 text-[var(--text-muted)]">{description}</p>
+          <p className="mt-0.5 type-body-sm text-[var(--text-muted)]">{description}</p>
         )}
       </div>
     </div>
@@ -550,11 +550,11 @@ function GitWritePreflight({ context }: { context: ApprovalContext }) {
         <div className="mt-3"><InfoTile label="Commit Message" value={context.commit_message} /></div>
       )}
       <div className="mt-3">
-        <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[var(--text-subtle)]">Changed Files</p>
+        <p className="mb-2 type-label text-[var(--text-subtle)]">Changed Files</p>
         <CodeBlock value={context.changed_files} fallback="No changed files detected." />
       </div>
       <div className="mt-3">
-        <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[var(--text-subtle)]">Diff Summary</p>
+        <p className="mb-2 type-label text-[var(--text-subtle)]">Diff Summary</p>
         <CodeBlock value={context.diff_summary} fallback="No diff summary available." />
       </div>
     </div>
@@ -582,7 +582,7 @@ function GitPushPreflight({ context }: { context: ApprovalContext }) {
         { label: "Recent Local Commits", value: context.recent_commits, fallback: "No recent commits available." },
       ].map(({ label, value, fallback }) => (
         <div className="mt-3" key={label}>
-          <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[var(--text-subtle)]">{label}</p>
+          <p className="mb-2 type-label text-[var(--text-subtle)]">{label}</p>
           <CodeBlock value={value} fallback={fallback} />
         </div>
       ))}
@@ -997,7 +997,7 @@ function ResearchTurnCard({ turn, liveState, liveLabel, busy = false, onClarify 
           </div>
           {turn.streamSources && turn.streamSources.length > 0 && (
             <div className="mt-4 aira-citations-block">
-              <p className="mb-2.5 text-xs font-bold uppercase tracking-widest text-[var(--text-subtle)]">Sources</p>
+              <p className="mb-2.5 type-label text-[var(--text-subtle)]">Sources</p>
               <CitationList citations={turn.streamSources} />
             </div>
           )}
@@ -1049,7 +1049,7 @@ function ResearchTurnCard({ turn, liveState, liveLabel, busy = false, onClarify 
           {/* Citations */}
           {turn.response.citations.length > 0 && (
             <div className="mt-4 aira-citations-block">
-              <p className="mb-2.5 text-xs font-bold uppercase tracking-widest text-[var(--text-subtle)]">Sources</p>
+              <p className="mb-2.5 type-label text-[var(--text-subtle)]">Sources</p>
               <CitationList citations={turn.response.citations} />
             </div>
           )}
@@ -1128,12 +1128,12 @@ function AiraHomeStage({
 
         <p className="aira-kicker mb-3">AIRA-X Assistant</p>
 
-        <h2 className="text-3xl font-black tracking-tight text-[var(--text-strong)] md:text-[2.6rem] md:leading-[1.1]">
+        <h2 className="type-display text-[var(--text-strong)] md:text-[2.6rem] md:leading-[1.1]">
           How can I help<br />
           <span className="aira-gradient-text">you today?</span>
         </h2>
 
-        <p className="mx-auto mt-3 max-w-lg text-sm leading-7 text-[var(--text-muted)]">
+        <p className="mx-auto mt-3 max-w-lg type-body text-[var(--text-muted)]">
           Ask anything, analyze documents, plan projects, or run a workflow.
           Routing is handled automatically.
         </p>
@@ -1224,7 +1224,7 @@ function WorkflowResultCard({ response, approvalLoading, rejectionLoading, onApp
           <RunBadge className={cn("mb-1.5", getWorkflowStatusClass(response.status))}>
             {response.status || "unknown"}
           </RunBadge>
-          <h2 className="text-lg font-black tracking-tight text-[var(--text-strong)]">
+          <h2 className="type-heading text-[var(--text-strong)]">
             {isCompleted ? "Execution complete" : isFailed ? "Execution stopped" : "Execution in progress"}
           </h2>
           <p className="mt-0.5 text-xs text-[var(--text-muted)]">
@@ -3051,7 +3051,7 @@ export default function ChatPage() {
         {/* Upload feedback */}
         {(uploadMessage || uploadError) && (
           <div className={cn(
-            "rounded-xl border px-4 py-2.5 text-sm font-semibold",
+            "rounded-xl border px-4 py-2.5 type-body-strong",
             uploadError
               ? "border-[color-mix(in_srgb,var(--danger)_30%,transparent)] bg-[var(--danger-soft)] text-[var(--danger)]"
               : "border-[color-mix(in_srgb,var(--success)_30%,transparent)] bg-[var(--success-soft)] text-[var(--success)]"

@@ -173,7 +173,7 @@ function MetricCard({
   return (
     <div className="sarvam-card rounded-[1.35rem] p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+        <p className="type-label text-[var(--text-subtle)]">
           {label}
         </p>
 
@@ -187,11 +187,11 @@ function MetricCard({
         </div>
       </div>
 
-      <h2 className="text-3xl font-black text-[var(--text-strong)]">
+      <h2 className="type-metric text-[var(--text-strong)]">
         {value}
       </h2>
 
-      <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+      <p className="mt-2 type-body-sm text-[var(--text-muted)]">
         {description}
       </p>
     </div>
@@ -217,11 +217,11 @@ function SectionHeader({
         </div>
 
         <div>
-          <h2 className="text-lg font-black text-[var(--text-strong)]">
+          <h2 className="type-heading text-[var(--text-strong)]">
             {title}
           </h2>
 
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+          <p className="mt-1 max-w-2xl type-body text-[var(--text-muted)]">
             {description}
           </p>
         </div>
@@ -276,20 +276,20 @@ function MessageCard({ message }: { message: Message }) {
       </div>
 
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-        <p className="mb-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+        <p className="mb-2 type-label text-[var(--text-subtle)]">
           Preview
         </p>
 
-        <p className="text-sm leading-7 text-[var(--text)]">{previewText}</p>
+        <p className="type-body text-[var(--text)]">{previewText}</p>
       </div>
 
       {hasLongContent && (
         <details className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-          <summary className="cursor-pointer text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <summary className="cursor-pointer type-label text-[var(--text-subtle)]">
             View full message
           </summary>
 
-          <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[var(--text)]">
+          <div className="mt-3 whitespace-pre-wrap type-body text-[var(--text)]">
             {message.content}
           </div>
         </details>
@@ -428,22 +428,22 @@ export default function HistoryPage() {
               AIRA-X Conversation History
             </div>
 
-            <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
+            <h1 className="aira-gradient-text type-display">
               Interactions
             </h1>
 
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
+            <p className="mt-3 max-w-3xl type-body text-[var(--text-muted)]">
               Review stored conversation turns used for recent context,
               follow-up continuity, and assistant-session traceability.
             </p>
           </div>
 
           <div className="rounded-[1.5rem] border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+            <p className="type-label text-[var(--text-subtle)]">
               Continue in Assistant
             </p>
 
-            <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+            <p className="mt-2 type-body text-[var(--text-muted)]">
               Return to Assistant for chat, document-backed answers, and
               workflow follow-ups.
             </p>
@@ -584,11 +584,11 @@ export default function HistoryPage() {
                 <History className="h-5 w-5" />
               </div>
 
-              <h2 className="text-xl font-black text-[var(--text-strong)]">
+              <h2 className="type-heading-xl text-[var(--text-strong)]">
                 No interactions yet
               </h2>
 
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
+              <p className="mx-auto mt-2 max-w-md type-body text-[var(--text-muted)]">
                 Start a conversation in Assistant and stored turns will appear
                 here.
               </p>
@@ -607,11 +607,11 @@ export default function HistoryPage() {
                 <Search className="h-5 w-5" />
               </div>
 
-              <h2 className="text-xl font-black text-[var(--text-strong)]">
+              <h2 className="type-heading-xl text-[var(--text-strong)]">
                 No matching interactions
               </h2>
 
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
+              <p className="mx-auto mt-2 max-w-md type-body text-[var(--text-muted)]">
                 Try searching a different role, phrase, date, or message ID.
               </p>
             </section>

@@ -393,13 +393,13 @@ function FieldCard({
 }) {
   return (
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
-      <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+      <p className="type-label text-[var(--text-subtle)]">
         {label}
       </p>
 
       <div
         className={cn(
-          "mt-1 break-words text-sm font-semibold text-[var(--text-strong)]",
+          "mt-1 break-words type-body-strong text-[var(--text-strong)]",
           mono && "font-mono text-xs"
         )}
       >
@@ -425,7 +425,7 @@ function ApprovalMetricCard({
   return (
     <div className="sarvam-card rounded-[1.35rem] p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+        <p className="type-label text-[var(--text-subtle)]">
           {label}
         </p>
 
@@ -434,12 +434,12 @@ function ApprovalMetricCard({
         </div>
       </div>
 
-      <h2 className={cn("text-3xl font-black", getMetricToneClass(tone))}>
+      <h2 className={cn("type-metric", getMetricToneClass(tone))}>
         {formatNumber(value)}
       </h2>
 
       {description && (
-        <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+        <p className="mt-2 type-body-sm text-[var(--text-muted)]">
           {description}
         </p>
       )}
@@ -485,7 +485,7 @@ function PreflightPreview({ run }: { run: AiraXWorkflowRun }) {
 
   return (
     <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-black text-[var(--text-strong)]">
+      <div className="mb-3 flex items-center gap-2 type-heading-xs text-[var(--text-strong)]">
         {gitPushPreflight ? (
           <UploadCloud className="h-4 w-4 text-[var(--danger)]" />
         ) : (
@@ -587,7 +587,7 @@ function ApprovalCard({
           </div>
 
           <Link href={`/workflows/${run.run_id}`} className="group block">
-            <h2 className="line-clamp-1 text-base font-black text-[var(--text-strong)] group-hover:text-[var(--accent)]">
+            <h2 className="line-clamp-1 type-heading-sm text-[var(--text-strong)] group-hover:text-[var(--accent)]">
               {run.user_goal || "Untitled workflow"}
             </h2>
 
@@ -618,7 +618,7 @@ function ApprovalCard({
           )}
 
           {run.final_answer && (
-            <p className="mt-4 line-clamp-2 text-sm leading-6 text-[var(--text-muted)]">
+            <p className="mt-4 line-clamp-2 type-body text-[var(--text-muted)]">
               <strong className="text-[var(--text-strong)]">Final answer:</strong>{" "}
               {run.final_answer}
             </p>
@@ -636,7 +636,7 @@ function ApprovalCard({
 
           {showControls && (
             <div className="rounded-2xl border border-[color-mix(in_srgb,var(--warning)_34%,transparent)] bg-[var(--warning-soft)] p-4">
-              <p className="flex items-center gap-2 text-sm font-black text-[var(--warning)]">
+              <p className="flex items-center gap-2 type-heading-xs text-[var(--warning)]">
                 {approvalProcessing ? (
                   <Clock className="h-4 w-4" />
                 ) : (
@@ -645,7 +645,7 @@ function ApprovalCard({
                 {approvalProcessing ? "Approval processing" : "Approval required"}
               </p>
 
-              <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+              <p className="mt-2 type-body-sm text-[var(--text-muted)]">
                 {approvalProcessing
                   ? "AIRA-X is already processing this approval-gated action."
                   : "Approve to continue this workflow, or reject to stop it safely."}
@@ -882,11 +882,11 @@ export default function ApprovalsPage() {
               AIRA-X Safety
             </div>
 
-            <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
+            <h1 className="aira-gradient-text type-display">
               Approvals
             </h1>
 
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
+            <p className="mt-3 max-w-3xl type-body text-[var(--text-muted)]">
               Review risky actions requested by Assistant that can modify your
               environment, write Git history, or push to a remote repository.
               Pending, processing, and resolved approvals stay separated for
@@ -969,7 +969,7 @@ export default function ApprovalsPage() {
             </div>
 
             <div>
-              <h2 className="text-lg font-black text-[var(--text-strong)]">
+              <h2 className="type-heading text-[var(--text-strong)]">
                 Approval Queue
               </h2>
 
@@ -1089,11 +1089,11 @@ export default function ApprovalsPage() {
             <CheckCircle2 className="h-5 w-5" />
           </div>
 
-          <h2 className="text-xl font-black text-[var(--text-strong)]">
+          <h2 className="type-heading-xl text-[var(--text-strong)]">
             No approvals in this view
           </h2>
 
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
+          <p className="mx-auto mt-2 max-w-md type-body text-[var(--text-muted)]">
             Pending approvals, processing approvals, resolved decisions,
             rejected actions, and stale approval recoveries will appear here
             when matching this view.

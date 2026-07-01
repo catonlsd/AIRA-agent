@@ -187,7 +187,7 @@ function MetricsPanel({ metrics, window }: { metrics: IncidentMetrics | null; wi
         {indicators.map((s) => (
           <div key={s.key} className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
             <p className="text-[11px] uppercase tracking-wide text-[var(--text-subtle)]">{s.label}</p>
-            <p className={cn("text-lg font-black", TONE_TEXT[s.tone])}>{s.value}</p>
+            <p className={cn("type-heading", TONE_TEXT[s.tone])}>{s.value}</p>
           </div>
         ))}
       </div>
@@ -482,7 +482,7 @@ function IncidentRow({ inc, operatorName, onChanged }: {
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3.5">
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={incidentTone(inc.state)}>{inc.state}</Badge>
-        <span className="text-sm font-black text-[var(--text-strong)]">{inc.classification}</span>
+        <span className="type-heading-xs text-[var(--text-strong)]">{inc.classification}</span>
         <span className="text-xs text-[var(--text-muted)]">· {inc.subject}</span>
         {inc.severity ? <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-subtle)]">{inc.severity}</span> : null}
         <span className="ml-auto text-[11px] text-[var(--text-subtle)]">×{inc.occurrences} · last {relTime(inc.last_seen)}</span>
@@ -906,7 +906,7 @@ export default function OperatorConsole() {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--accent-soft)] text-[var(--accent)]">
             <LockKeyhole className="h-6 w-6" />
           </div>
-          <h1 className="text-lg font-black tracking-tight text-[var(--text-strong)]">Operator console</h1>
+          <h1 className="type-heading text-[var(--text-strong)]">Operator console</h1>
           <p className="mt-1 text-sm text-[var(--text-muted)]">
             Delivery operations. Enter your service key — this area is operator-only and never shown in the product.
           </p>
@@ -949,7 +949,7 @@ export default function OperatorConsole() {
             <ShieldCheck className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-lg font-black tracking-tight text-[var(--text-strong)]">Delivery console</h1>
+            <h1 className="type-heading text-[var(--text-strong)]">Delivery console</h1>
             <p className="text-xs text-[var(--text-muted)]">
               Operator-only · health, history, tuning, and recovery
               {operatorName ? <span className="ml-1 font-semibold text-[var(--text-strong)]">· acting as {operatorName}</span> : null}
@@ -1018,7 +1018,7 @@ export default function OperatorConsole() {
                   <div key={d.destination_id} className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-black text-[var(--text-strong)]">
+                        <p className="truncate type-heading-xs text-[var(--text-strong)]">
                           {d.name || "Destination"}
                           <span className="ml-2 rounded-md border border-[var(--border)] bg-[var(--surface-muted)] px-1.5 py-0.5 text-[11px] font-black uppercase text-[var(--text-subtle)]">{d.kind}</span>
                           {d.is_escalation ? <span className="ml-1.5 text-[11px] font-black uppercase text-[var(--secondary)]">escalation</span> : null}
@@ -1133,7 +1133,7 @@ export default function OperatorConsole() {
           {incidents.length === 0 ? (
             <section className="sarvam-card rounded-[1.5rem] p-8 text-center">
               <CheckCircle2 className="mx-auto mb-2 h-7 w-7 text-[var(--success)]" />
-              <p className="text-sm font-black text-[var(--text-strong)]">No incidents.</p>
+              <p className="type-heading-xs text-[var(--text-strong)]">No incidents.</p>
               <p className="mt-1 text-xs text-[var(--text-muted)]">Recurring alert conditions appear here for acknowledge / silence / recovery.</p>
             </section>
           ) : (
@@ -1233,7 +1233,7 @@ export default function OperatorConsole() {
                 <div key={dl.id}>
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3.5">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[var(--text-strong)]">
+                      <p className="truncate type-body-strong text-[var(--text-strong)]">
                         {dl.event_type || dl.source_type}
                         {dl.severity ? <span className="ml-2 text-[11px] font-bold uppercase text-[var(--text-subtle)]">{dl.severity}</span> : null}
                       </p>

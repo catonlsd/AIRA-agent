@@ -279,7 +279,7 @@ export function Nav() {
           {!collapsed && (
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="truncate text-xl font-black tracking-tight text-[var(--text-strong)]">
+                <h1 className="truncate type-heading-xl text-[var(--text-strong)]">
                   AIRA-X
                 </h1>
               </div>
@@ -294,7 +294,7 @@ export function Nav() {
         {!collapsed && (
           
 
-            <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+            <p className="mt-2 type-body-sm text-[var(--text-muted)]">
               AI powered assistant with document retrieval, web research, workflow
             execution, and approval gates.
           </p>

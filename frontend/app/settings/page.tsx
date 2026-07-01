@@ -301,11 +301,11 @@ function SectionHeading({
         </div>
 
         <div>
-          <h2 className="text-lg font-black tracking-tight text-[var(--text-strong)]">
+          <h2 className="type-heading text-[var(--text-strong)]">
             {title}
           </h2>
 
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+          <p className="mt-1 max-w-2xl type-body text-[var(--text-muted)]">
             {description}
           </p>
         </div>
@@ -381,7 +381,7 @@ function RuntimeHealthCard() {
 
       <div className="grid gap-3 md:grid-cols-3">
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-          <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="type-label text-[var(--text-subtle)]">
             Backend API
           </p>
 
@@ -397,21 +397,21 @@ function RuntimeHealthCard() {
         </div>
 
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-          <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="type-label text-[var(--text-subtle)]">
             Last Checked
           </p>
 
-          <p className="mt-2 text-sm font-semibold text-[var(--text-strong)]">
+          <p className="mt-2 type-body-strong text-[var(--text-strong)]">
             {formatDateTime(lastCheckedAt)}
           </p>
         </div>
 
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-          <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="type-label text-[var(--text-subtle)]">
             Used By
           </p>
 
-          <p className="mt-2 text-sm font-semibold text-[var(--text-strong)]">
+          <p className="mt-2 type-body-strong text-[var(--text-strong)]">
             AIRA-X Assistant
           </p>
         </div>
@@ -486,7 +486,7 @@ function AccountCard() {
               {(account.display_name || account.email).slice(0, 1).toUpperCase()}
             </div>
             <div>
-              <p className="text-sm font-black text-[var(--text-strong)]">{account.display_name}</p>
+              <p className="type-heading-xs text-[var(--text-strong)]">{account.display_name}</p>
               <p className="text-xs text-[var(--text-muted)]">{account.email}</p>
               <p className="mt-0.5 text-[11px] font-semibold text-[var(--text-subtle)]">
                 Scope: {PERSONAL_SCOPE_LABEL}
@@ -700,7 +700,7 @@ function WorkspaceCard() {
       {/* Members — only when a workspace is active */}
       {active && (
         <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-          <p className="mb-3 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="mb-3 type-label text-[var(--text-subtle)]">
             {active.name} · Members
           </p>
 
@@ -708,7 +708,7 @@ function WorkspaceCard() {
             {members.map((m) => (
               <div key={m.account_id} className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-[var(--text-strong)]">{m.display_name}</p>
+                  <p className="truncate type-body-strong text-[var(--text-strong)]">{m.display_name}</p>
                   <p className="truncate text-xs text-[var(--text-muted)]">{m.email}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -933,7 +933,7 @@ function LibraryCard() {
       <div className="grid gap-3">
         {query.trim() && (
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-            <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Results</p>
+            <p className="mb-2.5 type-label text-[var(--text-subtle)]">Results</p>
             {results.length === 0 ? (
               <p className="text-xs text-[var(--text-muted)]">No matches in {scopeLabel}. Try another term.</p>
             ) : (
@@ -945,7 +945,7 @@ function LibraryCard() {
                         {r.result_type}
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-[var(--text-strong)]">{r.title}</p>
+                        <p className="truncate type-body-strong text-[var(--text-strong)]">{r.title}</p>
                         <p className="truncate text-xs text-[var(--text-muted)]">
                           {r.summary}{r.created_at ? ` · ${relativeTime(r.created_at)}` : ""}
                         </p>
@@ -973,14 +973,14 @@ function LibraryCard() {
 
         {pins.length > 0 && (
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-            <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Pinned</p>
+            <p className="mb-2.5 type-label text-[var(--text-subtle)]">Pinned</p>
             <div className="grid gap-2">
               {pins.map((p) => (
                 <div key={p.id} className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-2.5">
                     <Bookmark className="h-4 w-4 shrink-0 text-[var(--accent)]" />
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[var(--text-strong)]">{p.title}</p>
+                      <p className="truncate type-body-strong text-[var(--text-strong)]">{p.title}</p>
                       {p.subtitle ? <p className="truncate text-xs text-[var(--text-muted)]">{p.subtitle}</p> : null}
                     </div>
                   </div>
@@ -1019,14 +1019,14 @@ function LibraryCard() {
 
         {bundles.length > 0 && (
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-            <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Handoff packs</p>
+            <p className="mb-2.5 type-label text-[var(--text-subtle)]">Handoff packs</p>
             <div className="grid gap-2">
               {bundles.map((b) => (
                 <div key={b.id} className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-2.5">
                     <Layers3 className="h-4 w-4 shrink-0 text-[var(--accent)]" />
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[var(--text-strong)]">{b.name}</p>
+                      <p className="truncate type-body-strong text-[var(--text-strong)]">{b.name}</p>
                       <p className="truncate text-xs text-[var(--text-muted)]">
                         {b.count} item{b.count === 1 ? "" : "s"}{b.items.length ? ` · ${b.items.map((i) => i.title).join(", ")}` : ""}
                       </p>
@@ -1158,7 +1158,7 @@ function RecentResourcesCard() {
         <div className="grid gap-3">
           {bgJobs.length > 0 && (
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-              <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Background work</p>
+              <p className="mb-2.5 type-label text-[var(--text-subtle)]">Background work</p>
               <div className="grid gap-2">
                 {bgJobs.map((j) => {
                   const phase = jobLivePhase(j);
@@ -1210,7 +1210,7 @@ function RecentResourcesCard() {
           )}
           {events.length > 0 && (
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-              <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Activity</p>
+              <p className="mb-2.5 type-label text-[var(--text-subtle)]">Activity</p>
               <div className="grid gap-1.5">
                 {events.slice(0, 8).map((e, i) => (
                   <p key={i} className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
@@ -1232,14 +1232,14 @@ function RecentResourcesCard() {
           )}
           {data.artifacts.length > 0 && (
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-              <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Artifacts</p>
+              <p className="mb-2.5 type-label text-[var(--text-subtle)]">Artifacts</p>
               <div className="grid gap-2">
                 {data.artifacts.map((a) => (
                   <div key={a.filename} className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2.5">
                       <FileText className="h-4 w-4 shrink-0 text-[var(--accent)]" />
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-[var(--text-strong)]">{a.title}</p>
+                        <p className="truncate type-body-strong text-[var(--text-strong)]">{a.title}</p>
                         <p className="truncate text-xs text-[var(--text-muted)]">
                           {a.type}{a.size ? ` · ${a.size}` : ""} · {relativeTime(a.created_at)}
                         </p>
@@ -1259,13 +1259,13 @@ function RecentResourcesCard() {
 
           {data.documents.length > 0 && (
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-              <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Documents</p>
+              <p className="mb-2.5 type-label text-[var(--text-subtle)]">Documents</p>
               <div className="grid gap-2">
                 {data.documents.map((d, i) => (
                   <div key={`${d.name}-${i}`} className="flex items-center gap-2.5">
                     <Database className="h-4 w-4 shrink-0 text-[var(--secondary)]" />
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[var(--text-strong)]">{d.name}</p>
+                      <p className="truncate type-body-strong text-[var(--text-strong)]">{d.name}</p>
                       <p className="truncate text-xs text-[var(--text-muted)]">
                         {d.type} · {d.chunks} chunk{d.chunks === 1 ? "" : "s"}{d.created_at ? ` · ${relativeTime(d.created_at)}` : ""}
                       </p>
@@ -1278,7 +1278,7 @@ function RecentResourcesCard() {
 
           {runItems.length > 0 && (
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-              <p className="mb-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Continue your work</p>
+              <p className="mb-2.5 type-label text-[var(--text-subtle)]">Continue your work</p>
               <div className="grid gap-2">
                 {runItems.map((r) => (
                   <div key={r.id} className="flex items-center justify-between gap-3">
@@ -1291,7 +1291,7 @@ function RecentResourcesCard() {
                         aria-hidden="true"
                       />
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-[var(--text-strong)]">{r.title}</p>
+                        <p className="truncate type-body-strong text-[var(--text-strong)]">{r.title}</p>
                         <p className="truncate text-xs text-[var(--text-muted)]">
                           {r.summary}{r.created_at ? ` · ${relativeTime(r.created_at)}` : ""}
                         </p>
@@ -1475,8 +1475,8 @@ function PreferencesCard() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-black text-[var(--text-strong)]">{item.label}</p>
-                    <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">{item.description}</p>
+                    <p className="type-heading-xs text-[var(--text-strong)]">{item.label}</p>
+                    <p className="mt-1 type-body-sm text-[var(--text-muted)]">{item.description}</p>
                   </div>
                   {item.value != null && (
                     <button
@@ -1535,7 +1535,7 @@ function AppearanceCard() {
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
         <TimeThemeControl />
 
-        <p className="mt-4 text-xs leading-5 text-[var(--text-muted)]">
+        <p className="mt-4 type-body-sm text-[var(--text-muted)]">
           Auto cycles through six palettes across the day — pre-dawn, sunrise, daytime,
           dusk, sunset, and night — with a smooth crossfade at each boundary. Pinning a
           period overrides the clock until you switch back to Auto.
@@ -1578,9 +1578,9 @@ function ModuleLinkCard({
         <ArrowRight className="h-4 w-4 text-[var(--text-subtle)] transition group-hover:translate-x-1 group-hover:text-[var(--accent)]" />
       </div>
 
-      <h2 className="text-lg font-black text-[var(--text-strong)]">{title}</h2>
+      <h2 className="type-heading text-[var(--text-strong)]">{title}</h2>
 
-      <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+      <p className="mt-2 type-body text-[var(--text-muted)]">
         {description}
       </p>
 
@@ -1616,14 +1616,14 @@ function WorkspaceSection() {
               </div>
 
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-black text-[var(--text-strong)]">
+                <p className="type-heading-xs text-[var(--text-strong)]">
                   {module.title}
                 </p>
 
                 <ArrowRight className="h-3.5 w-3.5 text-[var(--text-subtle)] transition group-hover:translate-x-1 group-hover:text-[var(--accent)]" />
               </div>
 
-              <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+              <p className="mt-2 type-body text-[var(--text-muted)]">
                 {module.description}
               </p>
             </Link>
@@ -1652,11 +1652,11 @@ function SafetyPoliciesSection() {
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[var(--success)]" />
 
             <div>
-              <p className="text-sm font-black text-[var(--text-strong)]">
+              <p className="type-heading-xs text-[var(--text-strong)]">
                 {policy.title}
               </p>
 
-              <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
+              <p className="mt-1 type-body text-[var(--text-muted)]">
                 {policy.description}
               </p>
             </div>
@@ -1690,12 +1690,12 @@ function ExecutionBoundariesSection() {
                   <Icon className="h-4 w-4" />
                 </div>
 
-                <p className="text-sm font-black text-[var(--text-strong)]">
+                <p className="type-heading-xs text-[var(--text-strong)]">
                   {boundary.title}
                 </p>
               </div>
 
-              <p className="text-sm leading-6 text-[var(--text-muted)]">
+              <p className="type-body text-[var(--text-muted)]">
                 {boundary.description}
               </p>
             </div>
@@ -1720,11 +1720,11 @@ export default function SettingsPage() {
               Platform settings
             </div>
 
-            <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
+            <h1 className="aira-gradient-text type-display">
               Settings
             </h1>
 
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
+            <p className="mt-3 max-w-3xl type-body text-[var(--text-muted)]">
               Configure appearance, runtime health, workspace modules, agent
               policies, tool boundaries, and approval-aware execution rules.
             </p>

@@ -114,7 +114,7 @@ function MetricCard({
   return (
     <div className="sarvam-card rounded-[1.35rem] p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+        <p className="type-label text-[var(--text-subtle)]">
           {label}
         </p>
 
@@ -128,11 +128,11 @@ function MetricCard({
         </div>
       </div>
 
-      <h2 className="text-3xl font-black text-[var(--text-strong)]">
+      <h2 className="type-metric text-[var(--text-strong)]">
         {value}
       </h2>
 
-      <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+      <p className="mt-2 type-body-sm text-[var(--text-muted)]">
         {description}
       </p>
     </div>
@@ -158,11 +158,11 @@ function SectionHeader({
         </div>
 
         <div>
-          <h2 className="text-lg font-black text-[var(--text-strong)]">
+          <h2 className="type-heading text-[var(--text-strong)]">
             {title}
           </h2>
 
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+          <p className="mt-1 max-w-2xl type-body text-[var(--text-muted)]">
             {description}
           </p>
         </div>
@@ -196,7 +196,7 @@ function DocumentCard({
             </div>
 
             <div className="min-w-0">
-              <h3 className="line-clamp-1 text-lg font-black text-[var(--text-strong)]">
+              <h3 className="line-clamp-1 type-heading text-[var(--text-strong)]">
                 {doc.filename}
               </h3>
 
@@ -208,37 +208,37 @@ function DocumentCard({
 
           <div className="grid gap-3 md:grid-cols-3">
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
-              <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              <p className="type-label text-[var(--text-subtle)]">
                 File Type
               </p>
 
-              <p className="mt-1 text-sm font-semibold text-[var(--text-strong)]">
+              <p className="mt-1 type-body-strong text-[var(--text-strong)]">
                 {getFileTypeLabel(doc.file_type)}
               </p>
             </div>
 
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
-              <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              <p className="type-label text-[var(--text-subtle)]">
                 Indexed Chunks
               </p>
 
-              <p className="mt-1 text-sm font-semibold text-[var(--text-strong)]">
+              <p className="mt-1 type-body-strong text-[var(--text-strong)]">
                 {formatNumber(doc.chunk_count)}
               </p>
             </div>
 
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
-              <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              <p className="type-label text-[var(--text-subtle)]">
                 Added
               </p>
 
-              <p className="mt-1 text-sm font-semibold text-[var(--text-strong)]">
+              <p className="mt-1 type-body-strong text-[var(--text-strong)]">
                 {formatDateTime(doc.created_at)}
               </p>
             </div>
           </div>
 
-          <p className="mt-4 text-sm leading-6 text-[var(--text-muted)]">
+          <p className="mt-4 type-body text-[var(--text-muted)]">
             This source is indexed into your AIRA-X knowledge layer and can be used
             for document-backed answers, summaries, retrieval, and citations.
           </p>
@@ -465,11 +465,11 @@ export default function DocumentsPage() {
               AIRA-X Knowledge
             </div>
 
-            <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
+            <h1 className="aira-gradient-text type-display">
               Knowledge
             </h1>
 
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
+            <p className="mt-3 max-w-3xl type-body text-[var(--text-muted)]">
               Manage uploaded sources, inspect indexed chunks, summarize
               documents, and keep your library ready for grounded AIRA-X
               answers in Assistant.
@@ -477,11 +477,11 @@ export default function DocumentsPage() {
           </div>
 
           <div className="rounded-[1.5rem] border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+            <p className="type-label text-[var(--text-subtle)]">
               Source Intake
             </p>
 
-            <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+            <p className="mt-2 type-body text-[var(--text-muted)]">
               Upload documents from Assistant, then manage indexed sources here.
             </p>
 
@@ -603,11 +603,11 @@ export default function DocumentsPage() {
                 <Library className="h-5 w-5" />
               </div>
 
-              <h2 className="text-xl font-black text-[var(--text-strong)]">
+              <h2 className="type-heading-xl text-[var(--text-strong)]">
                 No documents indexed yet
               </h2>
 
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
+              <p className="mx-auto mt-2 max-w-md type-body text-[var(--text-muted)]">
                 Upload documents in Assistant to build a searchable knowledge
                 layer for citation-backed answers.
               </p>
@@ -626,11 +626,11 @@ export default function DocumentsPage() {
                 <Search className="h-5 w-5" />
               </div>
 
-              <h2 className="text-xl font-black text-[var(--text-strong)]">
+              <h2 className="type-heading-xl text-[var(--text-strong)]">
                 No matching documents
               </h2>
 
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
+              <p className="mx-auto mt-2 max-w-md type-body text-[var(--text-muted)]">
                 Try searching a different filename, file type, document ID, or
                 upload date.
               </p>
@@ -671,13 +671,13 @@ export default function DocumentsPage() {
                 }
               />
 
-              <div className="whitespace-pre-wrap rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-5 text-sm leading-7 text-[var(--text)]">
+              <div className="whitespace-pre-wrap rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-5 type-body text-[var(--text)]">
                 {sanitizeSummaryText(summary.text)}
               </div>
 
               {summary.citations.length > 0 && (
                 <div className="mt-5 rounded-[1.25rem] border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-                  <p className="mb-3 text-sm font-black text-[var(--text-strong)]">
+                  <p className="mb-3 type-heading-xs text-[var(--text-strong)]">
                     Sources
                   </p>
 

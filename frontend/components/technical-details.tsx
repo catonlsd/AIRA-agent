@@ -21,7 +21,7 @@ export function TechnicalDetailsPanel({
         className
       )}
     >
-      <summary className="cursor-pointer select-none text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+      <summary className="cursor-pointer select-none type-label text-[var(--text-subtle)]">
         {summary}
       </summary>
 
@@ -50,7 +50,7 @@ export function TechnicalDetailRow({
       </p>
       <p
         className={cn(
-          "mt-1 break-words text-sm font-semibold text-[var(--text-strong)]",
+          "mt-1 break-words type-body-strong text-[var(--text-strong)]",
           mono && "font-mono text-xs"
         )}
       >

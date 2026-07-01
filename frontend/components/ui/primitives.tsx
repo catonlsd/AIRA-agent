@@ -27,7 +27,7 @@ export const StatusPill = Badge;
 export function StatTile({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2">
-      <p className="text-lg font-black text-[var(--text-strong)]">{value}</p>
+      <p className="type-heading text-[var(--text-strong)]">{value}</p>
       <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-subtle)]">{label}</p>
     </div>
   );
@@ -40,7 +40,7 @@ export function MetricTile({ label, value, tone = "muted" }: { label: string; va
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
       <p className="text-[11px] uppercase tracking-wide text-[var(--text-subtle)]">{label}</p>
-      <p className={cn("text-lg font-black", toneText[tone])}>{value}</p>
+      <p className={cn("type-heading", toneText[tone])}>{value}</p>
     </div>
   );
 }
@@ -111,8 +111,8 @@ export function EmptyState({ icon, title, description, action, className }: {
   return (
     <div className={cn("flex flex-col items-center justify-center gap-2 rounded-[1.25rem] border border-dashed border-[var(--border)] bg-[var(--surface-muted)] px-6 py-12 text-center", className)}>
       {icon ? <div className="mb-1 text-[var(--text-subtle)]" aria-hidden="true">{icon}</div> : null}
-      <p className="text-sm font-semibold text-[var(--text-strong)]">{title}</p>
-      {description ? <p className="max-w-sm text-xs leading-relaxed text-[var(--text-muted)]">{description}</p> : null}
+      <p className="type-body-strong text-[var(--text-strong)]">{title}</p>
+      {description ? <p className="max-w-sm type-body-sm text-[var(--text-muted)]">{description}</p> : null}
       {action ? <div className="mt-2">{action}</div> : null}
     </div>
   );

@@ -287,7 +287,7 @@ function MetricCard({
   return (
     <div className="sarvam-card rounded-[1.35rem] p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+        <p className="type-label text-[var(--text-subtle)]">
           {label}
         </p>
 
@@ -301,11 +301,11 @@ function MetricCard({
         </div>
       </div>
 
-      <h2 className="text-3xl font-black text-[var(--text-strong)]">
+      <h2 className="type-metric text-[var(--text-strong)]">
         {value}
       </h2>
 
-      <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+      <p className="mt-2 type-body-sm text-[var(--text-muted)]">
         {description}
       </p>
     </div>
@@ -331,11 +331,11 @@ function SectionHeader({
         </div>
 
         <div>
-          <h2 className="text-lg font-black text-[var(--text-strong)]">
+          <h2 className="type-heading text-[var(--text-strong)]">
             {title}
           </h2>
 
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+          <p className="mt-1 max-w-2xl type-body text-[var(--text-muted)]">
             {description}
           </p>
         </div>
@@ -415,7 +415,7 @@ function PolicyPanel({ tool }: { tool: Tool }) {
             </div>
           </div>
 
-          <p className="text-sm leading-6 text-[var(--text-muted)]">
+          <p className="type-body text-[var(--text-muted)]">
             {policy.description || "No policy description recorded."}
           </p>
         </div>
@@ -438,7 +438,7 @@ function ExamplesPanel({ examples }: { examples: string[] }) {
       {examples.map((example) => (
         <pre
           key={example}
-          className="overflow-auto whitespace-pre-wrap rounded-2xl p-3 font-mono text-xs leading-6"
+          className="overflow-auto whitespace-pre-wrap rounded-2xl p-3 type-mono"
         >
           {example}
         </pre>
@@ -469,7 +469,7 @@ function ToolCard({ tool }: { tool: Tool }) {
           </div>
 
           <div>
-            <h3 className="text-lg font-black text-[var(--text-strong)]">
+            <h3 className="type-heading text-[var(--text-strong)]">
               {getToolDisplayName(tool)}
             </h3>
 
@@ -495,12 +495,12 @@ function ToolCard({ tool }: { tool: Tool }) {
         </RunBadge>
       </div>
 
-      <p className="text-sm leading-7 text-[var(--text-muted)]">
+      <p className="type-body text-[var(--text-muted)]">
         {tool.description || "No description available for this tool."}
       </p>
 
       <div className="mt-5">
-        <p className="mb-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+        <p className="mb-2 type-label text-[var(--text-subtle)]">
           Actions
         </p>
 
@@ -508,7 +508,7 @@ function ToolCard({ tool }: { tool: Tool }) {
       </div>
 
       <div className="mt-5">
-        <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+        <div className="mb-2 flex items-center gap-2 type-label text-[var(--text-subtle)]">
           <ShieldCheck className="h-3.5 w-3.5" />
           Risk Policy
         </div>
@@ -517,7 +517,7 @@ function ToolCard({ tool }: { tool: Tool }) {
       </div>
 
       <div className="mt-5">
-        <p className="mb-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+        <p className="mb-2 type-label text-[var(--text-subtle)]">
           Example Usage
         </p>
 
@@ -632,11 +632,11 @@ export default function ToolsPage() {
                 AIRA-X Execution Capability Layer
               </div>
 
-              <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
+              <h1 className="aira-gradient-text type-display">
                 Tool Layer
               </h1>
 
-              <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
+              <p className="mt-3 max-w-3xl type-body text-[var(--text-muted)]">
                 Inspect the tools AIRA-X can use to complete real tasks. Each
                 module exposes allowed actions, example calls, approval
                 requirements, and risk policies before execution.
@@ -664,7 +664,7 @@ export default function ToolsPage() {
             </div>
 
             <div className="rounded-[1.5rem] border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+              <p className="type-label text-[var(--text-subtle)]">
                 Registry Status
               </p>
 
@@ -673,7 +673,7 @@ export default function ToolsPage() {
                 Loaded from backend
               </div>
 
-              <p className="mt-3 text-xs leading-5 text-[var(--text-muted)]">
+              <p className="mt-3 type-body-sm text-[var(--text-muted)]">
                 Tool definitions and risk policies are pulled from the AIRA-X
                 backend registry.
               </p>
@@ -805,11 +805,11 @@ export default function ToolsPage() {
                 <Search className="h-5 w-5" />
               </div>
 
-              <h2 className="text-xl font-black text-[var(--text-strong)]">
+              <h2 className="type-heading-xl text-[var(--text-strong)]">
                 No matching tools
               </h2>
 
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
+              <p className="mx-auto mt-2 max-w-md type-body text-[var(--text-muted)]">
                 Try searching a different tool name, action, risk level, policy,
                 or example.
               </p>

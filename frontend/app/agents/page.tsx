@@ -162,7 +162,7 @@ function MetricCard({
   return (
     <div className="sarvam-card rounded-[1.35rem] p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+        <p className="type-label text-[var(--text-subtle)]">
           {label}
         </p>
 
@@ -171,11 +171,11 @@ function MetricCard({
         </div>
       </div>
 
-      <h2 className="text-3xl font-black text-[var(--text-strong)]">
+      <h2 className="type-metric text-[var(--text-strong)]">
         {value}
       </h2>
 
-      <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+      <p className="mt-2 type-body-sm text-[var(--text-muted)]">
         {description}
       </p>
     </div>
@@ -201,11 +201,11 @@ function SectionHeader({
         </div>
 
         <div>
-          <h2 className="text-lg font-black text-[var(--text-strong)]">
+          <h2 className="type-heading text-[var(--text-strong)]">
             {title}
           </h2>
 
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+          <p className="mt-1 max-w-2xl type-body text-[var(--text-muted)]">
             {description}
           </p>
         </div>
@@ -225,7 +225,7 @@ function AgentCapabilityChips({ agent }: { agent: Agent }) {
 
   return (
     <div className="mt-4">
-      <p className="mb-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+      <p className="mb-2 type-label text-[var(--text-subtle)]">
         Capabilities
       </p>
 
@@ -264,7 +264,7 @@ function AgentCard({ agent }: { agent: Agent }) {
           </div>
 
           <div>
-            <h3 className="text-lg font-black text-[var(--text-strong)]">
+            <h3 className="type-heading text-[var(--text-strong)]">
               {getAgentDisplayName(agent)}
             </h3>
 
@@ -285,23 +285,23 @@ function AgentCard({ agent }: { agent: Agent }) {
       </div>
 
       <div className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-        <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+        <p className="type-label text-[var(--text-subtle)]">
           Role
         </p>
 
-        <p className="mt-1 text-sm font-semibold text-[var(--text-strong)]">
+        <p className="mt-1 type-body-strong text-[var(--text-strong)]">
           {agent.role || "No role recorded"}
         </p>
       </div>
 
-      <p className="text-sm leading-7 text-[var(--text-muted)]">
+      <p className="type-body text-[var(--text-muted)]">
         {agent.description || "No description available for this agent."}
       </p>
 
       <AgentCapabilityChips agent={agent} />
 
       <div className="mt-5">
-        <p className="mb-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+        <p className="mb-2 type-label text-[var(--text-subtle)]">
           Responsibilities
         </p>
 
@@ -318,7 +318,7 @@ function AgentCard({ agent }: { agent: Agent }) {
               >
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[var(--success)]" />
 
-                <p className="text-sm leading-6 text-[var(--text-muted)]">
+                <p className="type-body text-[var(--text-muted)]">
                   {responsibility}
                 </p>
               </div>
@@ -421,11 +421,11 @@ export default function AgentsPage() {
                 AIRA-X Multi-Agent System
               </div>
 
-              <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
+              <h1 className="aira-gradient-text type-display">
                 Agent Modules
               </h1>
 
-              <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
+              <p className="mt-3 max-w-3xl type-body text-[var(--text-muted)]">
                 Inspect the specialist modules that plan, decide, execute,
                 validate, reflect, remember, and enforce approval-aware safety
                 across AIRA-X workflows.
@@ -453,7 +453,7 @@ export default function AgentsPage() {
             </div>
 
             <div className="rounded-[1.5rem] border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+              <p className="type-label text-[var(--text-subtle)]">
                 Registry Status
               </p>
 
@@ -462,7 +462,7 @@ export default function AgentsPage() {
                 Loaded from backend
               </div>
 
-              <p className="mt-3 text-xs leading-5 text-[var(--text-muted)]">
+              <p className="mt-3 type-body-sm text-[var(--text-muted)]">
                 Agent definitions are pulled from the AIRA-X backend registry.
               </p>
             </div>
@@ -554,11 +554,11 @@ export default function AgentsPage() {
                 <Search className="h-5 w-5" />
               </div>
 
-              <h2 className="text-xl font-black text-[var(--text-strong)]">
+              <h2 className="type-heading-xl text-[var(--text-strong)]">
                 No matching agents
               </h2>
 
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
+              <p className="mx-auto mt-2 max-w-md type-body text-[var(--text-muted)]">
                 Try searching a different agent name, role, capability, or
                 responsibility.
               </p>
