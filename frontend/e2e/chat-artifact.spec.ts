@@ -18,7 +18,7 @@ test("chat: a build request renders an artifact card with a download link", asyn
   await fillInteractiveForm(
     composer,
     "Build me a quarterly review deck",
-    page.locator("button.aira-send-btn:visible"),
+    composer.locator("xpath=ancestor::form[1]").getByRole("button", { name: "Send" }),
   );
   await composer.press("Enter");
 

@@ -16,7 +16,11 @@ test("chat: ask a question and see the streamed answer resolve", async ({ page }
   await page.goto("/chat");
   const composer = page.getByPlaceholder("Message AIRA-X...");
   await expect(composer).toBeVisible();
-  await fillInteractiveForm(composer, "Are you online?", page.locator("button.aira-send-btn:visible"));
+  await fillInteractiveForm(
+    composer,
+    "Are you online?",
+    composer.locator("xpath=ancestor::form[1]").getByRole("button", { name: "Send" }),
+  );
   await composer.press("Enter");
 
   // The user's question echoes, and the streamed answer renders in the answer card.

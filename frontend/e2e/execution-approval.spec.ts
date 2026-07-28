@@ -26,7 +26,7 @@ test("chat: plan-ready turn shows approval and resolves after approving", async 
   await fillInteractiveForm(
     composer,
     "Generate and validate a deck",
-    page.locator("button.aira-send-btn:visible"),
+    composer.locator("xpath=ancestor::form[1]").getByRole("button", { name: "Send" }),
   );
   await composer.press("Enter");
 
