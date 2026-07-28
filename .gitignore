@@ -24,20 +24,29 @@ backend/storage/*.db
 backend/storage/*.log
 backend/storage/uvicorn*.log
 backend/storage/workflow_runs.json
+backend/storage/artifacts/**
 backend/storage/uploads/**
 !backend/storage/uploads/.gitkeep
 backend/storage/vector_index/**
 !backend/storage/vector_index/.gitkeep
+
+# Legacy/root runtime storage
+/storage/
 
 # Backend temp / generated test output
 backend/tmp/
 
 # Diagnostics, snapshots, and local test artifacts
 diagnostics/
+.pytest_cache/
 *.zip
 AIRA-agent-clean-snapshot.zip
 airax_*.txt
 step13_*.txt
+
+# Local agent state and linked worktrees
+.claude/
+frontend/.claude/
 
 # Node / Next.js
 frontend/node_modules/
