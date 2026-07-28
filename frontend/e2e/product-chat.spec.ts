@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { seedFallback, mockStream, answerFinal } from "./helpers";
+import { seedFallback, mockStream, answerFinal, fillInteractiveForm } from "./helpers";
 
 /**
  * Core product flow (Step D): a user asks a question in the real browser app, the
@@ -16,7 +16,7 @@ test("chat: ask a question and see the streamed answer resolve", async ({ page }
   await page.goto("/chat");
   const composer = page.getByPlaceholder("Message AIRA-X...");
   await expect(composer).toBeVisible();
-  await composer.fill("Are you online?");
+  await fillInteractiveForm(composer, "Are you online?", page.locator("button.aira-send-btn:visible"));
   await composer.press("Enter");
 
   // The user's question echoes, and the streamed answer renders in the answer card.

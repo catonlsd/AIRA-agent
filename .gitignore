@@ -51,6 +51,7 @@ frontend/.claude/
 # Node / Next.js
 frontend/node_modules/
 frontend/.next/
+frontend/debug.log
 frontend/dist/
 frontend/out/
 frontend/.turbo/

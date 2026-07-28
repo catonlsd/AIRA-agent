@@ -35,12 +35,14 @@ backend wall (`backend/tests`, 900+ tests) and the pure frontend unit tests
 ```bash
 cd frontend
 npm run e2e:install   # one-time: download the chromium browser
-npm run e2e           # runs the suite (boots `next dev -p 3100` automatically)
+npm run e2e           # runs the suite (boots a managed local Next server on port 3100)
 npm run e2e:ui        # interactive debugging
 ```
 
-The Playwright `webServer` starts the dev server itself; locally it reuses an existing
-one if you already have `next dev` running on port 3100.
+Playwright starts a dedicated local Next process and closes it through an explicit
+shutdown endpoint after the suite. Port 3100 must be free before the run. This avoids
+platform-specific process-tree termination and guarantees that a completed suite
+releases the port.
 
 ## CI strategy (stratified)
 

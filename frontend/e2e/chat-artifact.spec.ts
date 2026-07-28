@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { seedFallback, mockStream, artifactFinal } from "./helpers";
+import { seedFallback, mockStream, artifactFinal, fillInteractiveForm } from "./helpers";
 
 /**
  * Core artifact flow (Step H): a build request resolves to a downloadable artifact
@@ -15,7 +15,11 @@ test("chat: a build request renders an artifact card with a download link", asyn
 
   await page.goto("/chat");
   const composer = page.getByPlaceholder("Message AIRA-X...");
-  await composer.fill("Build me a quarterly review deck");
+  await fillInteractiveForm(
+    composer,
+    "Build me a quarterly review deck",
+    page.locator("button.aira-send-btn:visible"),
+  );
   await composer.press("Enter");
 
   // The artifact card renders with its title and a download link to the real endpoint.

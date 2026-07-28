@@ -1,4 +1,4 @@
-import { type Page, type Route, expect } from "@playwright/test";
+import { type Locator, type Page, type Route, expect } from "@playwright/test";
 
 /**
  * Deterministic API stubbing for the E2E suite.
@@ -10,6 +10,18 @@ import { type Page, type Route, expect } from "@playwright/test";
  */
 
 export const API = "http://localhost:8000";
+
+/**
+ * A fast dev-server response can expose server-rendered controls before React has
+ * attached input handlers. Refill until the related action reflects client state.
+ */
+export async function fillInteractiveForm(field: Locator, value: string, action: Locator) {
+  await expect.poll(async () => {
+    await field.fill("");
+    await field.fill(value);
+    return action.isEnabled();
+  }, { message: "waiting for the form to hydrate" }).toBe(true);
+}
 
 function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
@@ -163,8 +175,9 @@ export async function mockOperator(page: Page, opts: {
 /** Connect the operator console with a seeded key (overview must already be stubbed). */
 export async function connectOperator(page: Page) {
   await page.goto("/operator");
-  await page.getByPlaceholder("Service key").fill("seed-operator-key");
-  await page.getByRole("button", { name: "Connect" }).click();
+  const connect = page.getByRole("button", { name: "Connect" });
+  await fillInteractiveForm(page.getByPlaceholder("Service key"), "seed-operator-key", connect);
+  await connect.click();
   // Console header appears once verifyOperator() succeeds.
   await expect(page.getByRole("heading", { name: "Delivery console" })).toBeVisible();
 }

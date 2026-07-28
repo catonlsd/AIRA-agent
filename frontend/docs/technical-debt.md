@@ -144,3 +144,43 @@ Deferred to: Phase 6
 **Discovered:** Phase 5 — Motion System
 **Target phase:** Phase 6
 **Description:** `app/chat/chat.css` line: `.chat-button { transition: all 0.2s ease; }` uses a hardcoded `0.2s` duration that is not wired to any `--duration-*` token. The `.chat-button` CSS class was out of scope for the Phase 5 TSX sweep (it is a CSS rule, not a TSX className string). Resolution: replace with `transition: all var(--duration-fast) var(--ease-out);` once a Phase 6 CSS sweep is approved, or deprecate `.chat-button` in favour of Tailwind utilities on the relevant elements in `chat/page.tsx`.
+
+---
+
+## TD-015
+
+**Category:** React effect-driven state and data-loading patterns
+**Instances:** 21 warnings after the Phase 1 release-stabilization fix
+**Rule:** `react-hooks/set-state-in-effect`
+**Severity:** Warning
+**Discovered:** Release stabilization — Phase 1
+**Target phase:** Phase 7 — frontend state/data-fetching cleanup, except the three
+hydration/UI-state entries explicitly assigned to Phase 6B below
+
+The original inventory contained 22 warnings: 21
+`react-hooks/set-state-in-effect` warnings and one
+`react-hooks/exhaustive-deps` warning. The missing dependency in
+`app/settings/page.tsx` was release-relevant and fixed during stabilization. The
+remaining warnings are exact below.
+
+| File | Lines | Count | Release impact | Proposed resolution | Phase |
+|---|---:|---:|---|---|---|
+| `app/agents/page.tsx` | 360 | 1 | Low — initial list load; no loop observed | Move initial loading to a route/data boundary or a query hook | Phase 7 (neither 6A nor 6B) |
+| `app/approvals/page.tsx` | 783, 848 | 2 | Medium — initial load and polling-state transition | Encapsulate polling in a reducer/query hook and derive idle state | Phase 7 (neither 6A nor 6B) |
+| `app/chat/page.tsx` | 2701 | 1 | Low — one-time continuation hydration | Initialize continuation state before render or via an external-store hook | Phase 6B |
+| `app/documents/page.tsx` | 335 | 1 | Low — initial list load; no repeated request observed | Move initial loading to a route/data boundary or query hook | Phase 7 (neither 6A nor 6B) |
+| `app/history/page.tsx` | 338 | 1 | Low — initial list load; no repeated request observed | Move initial loading to a route/data boundary or query hook | Phase 7 (neither 6A nor 6B) |
+| `app/operator/page.tsx` | 770, 778 | 2 | Medium — operator identity/auth verification and tab loading | Model verification/loading as an explicit reducer or query state machine | Phase 7 (neither 6A nor 6B) |
+| `app/overview/page.tsx` | 314 | 1 | Low — initial metrics load | Move initial loading to a route/data boundary or query hook | Phase 7 (neither 6A nor 6B) |
+| `app/settings/page.tsx` | 350, 586, 805, 1345 | 4 | Medium — health polling and four initial resource loads | Extract reusable polling/query hooks with cancellation and derived status | Phase 7 (neither 6A nor 6B) |
+| `app/tools/page.tsx` | 558 | 1 | Low — initial list load | Move initial loading to a route/data boundary or query hook | Phase 7 (neither 6A nor 6B) |
+| `app/workflows/[run_id]/page.tsx` | 1164, 1211 | 2 | Medium — run load and approval polling-state transition | Encapsulate run polling in a reducer/query hook and derive idle state | Phase 7 (neither 6A nor 6B) |
+| `app/workflows/page.tsx` | 1106, 1148 | 2 | Medium — list load and approval polling-state transition | Encapsulate workflow polling in a reducer/query hook and derive idle state | Phase 7 (neither 6A nor 6B) |
+| `components/nav.tsx` | 202 | 1 | Low — stored sidebar preference hydration | Use a lazy client-state source with a hydration-safe snapshot | Phase 6B |
+| `components/theme-provider.tsx` | 62 | 1 | Low — stored theme override hydration | Use a hydration-safe external-store snapshot for the override | Phase 6B |
+| `components/time-theme-control.tsx` | 14 | 1 | Low — mounted-state visual gate | Replace the mounted flag with a hydration-safe rendering strategy | Phase 6B |
+
+These warnings are safe to defer because the complete TypeScript, logic-test,
+production-build, and repeated browser-E2E walls pass; no request loop, stale
+authentication decision, unbounded poller, or user-visible state failure was
+observed. They remain visible warnings and must not be globally disabled.

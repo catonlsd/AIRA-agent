@@ -1396,7 +1396,7 @@ function PreferencesCard() {
     } finally {
       setBusyKey(null);
     }
-  }, []);
+  }, [onMutationError]);
 
   const count = savedCount(items);
 
