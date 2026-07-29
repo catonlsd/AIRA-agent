@@ -16,7 +16,10 @@ class Settings(BaseSettings):
 
     llm_provider: Literal["groq", "openai", "gemini", "local"] = "groq"
     groq_api_key: str | None = None
-    groq_model: str = "llama-3.3-70b-versatile"
+    # Groq deprecated llama-3.3-70b-versatile for the free/developer tier with
+    # shutdown scheduled for 2026-08-16. Keep the production default on a
+    # production-listed model; Qwen 3.6 remains an opt-in Preview alternative.
+    groq_model: str = "openai/gpt-oss-120b"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
     gemini_api_key: str | None = None
@@ -354,6 +357,12 @@ class Settings(BaseSettings):
 
         if self.web_search_provider == "brave" and not self.brave_api_key:
             raise RuntimeError("BRAVE_API_KEY is required when WEB_SEARCH_PROVIDER=brave.")
+
+        if self.environment == "production":
+            if not self.api_key:
+                raise RuntimeError("API_KEY is required when ENVIRONMENT=production.")
+            if not self.auth_secret:
+                raise RuntimeError("AUTH_SECRET is required when ENVIRONMENT=production.")
 
 
 @lru_cache

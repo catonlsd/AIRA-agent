@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from uuid import uuid4
 
@@ -22,6 +23,7 @@ from app.rag.schemas import RetrievedChunk
 from app.rag.vector_store import VectorStore
 
 router = APIRouter()
+logger = logging.getLogger("aira_x.documents")
 
 
 class ChatRequest(BaseModel):
@@ -99,6 +101,35 @@ def save_upload_file(file: UploadFile, stored_path: Path) -> int:
             buffer.write(chunk)
 
     return total_size
+
+
+def remove_document_indexes(
+    document_id: int,
+    legacy_store: VectorStore | None = None,
+) -> None:
+    """Remove a document from both retrieval indexes.
+
+    The application currently dual-writes a legacy JSON index and Chroma. A
+    successful mutation must update both; callers use this helper for normal
+    deletion and compensating cleanup after interrupted ingestion.
+    """
+    errors: list[Exception] = []
+    try:
+        (legacy_store or VectorStore()).delete_document(document_id)
+    except Exception as error:
+        errors.append(error)
+
+    try:
+        from app.services.document_qa_service import get_document_qa_service
+
+        get_document_qa_service().delete_document(document_id)
+    except Exception as error:
+        errors.append(error)
+
+    if errors:
+        raise RuntimeError(
+            f"Failed to remove document {document_id} from {len(errors)} index(es)."
+        ) from errors[0]
 
 
 def normalize_message_text(text: str) -> str:
@@ -397,6 +428,7 @@ def upload_documents(
 
         stored_name = f"{uuid4().hex}{suffix}"
         stored_path = Path(settings.upload_dir) / stored_name
+        document_id: int | None = None
 
         try:
             file_size = save_upload_file(file, stored_path)
@@ -431,6 +463,7 @@ def upload_documents(
 
             db.add(document)
             db.flush()
+            document_id = document.id
 
             texts, metadatas, vector_ids = [], [], []
 
@@ -462,24 +495,17 @@ def upload_documents(
 
             vector_store.add_chunks(texts, metadatas, vector_ids)
 
-            # Dual-write into the ChromaDB-backed store that powers the
-            # supervisor's document-first Q&A. Best-effort: the legacy store
-            # above remains the source of truth for /assistant until parity is
-            # verified, so a Chroma failure must not fail the upload.
-            try:
-                from app.services.document_qa_service import get_document_qa_service
+            # Dual-write into Chroma, which powers the supervisor's
+            # document-first Q&A. Do not report success with only one index
+            # updated; the exception path compensates both writes.
+            from app.services.document_qa_service import get_document_qa_service
 
-                # Scope ingested chunks to the resolved owner (account when
-                # authenticated, else session) so document-first retrieval stays
-                # within the same scope the chat turn uses.
-                get_document_qa_service().ingest(
-                    document_id=document.id,
-                    document_name=document.original_filename,
-                    pages=pages,
-                    owner=owner,
-                )
-            except Exception:
-                pass
+            get_document_qa_service().ingest(
+                document_id=document.id,
+                document_name=document.original_filename,
+                pages=pages,
+                owner=owner,
+            )
 
             db.commit()
 
@@ -511,6 +537,15 @@ def upload_documents(
 
         except Exception as error:
             db.rollback()
+
+            if document_id is not None:
+                try:
+                    remove_document_indexes(document_id, vector_store)
+                except Exception:
+                    logger.exception(
+                        "Compensating index cleanup failed for document %s",
+                        document_id,
+                    )
 
             if stored_path.exists():
                 stored_path.unlink()
@@ -631,7 +666,7 @@ def delete_document(document_id: int, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status_code=404, detail="Document not found.")
 
     try:
-        VectorStore().delete_document(document_id)
+        remove_document_indexes(document_id)
 
         path = Path(document.path)
 

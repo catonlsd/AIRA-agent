@@ -1,0 +1,16 @@
+# Production host override. Preparation artifact only; do not run without the
+# Phase 3 deployment authorization and a populated host-only backend env file.
+services:
+  backend:
+    env_file:
+      - /srv/aira-x/secrets/backend.env
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - /srv/aira-x/storage:/app/storage
+    stop_grace_period: 45s
+
+  frontend:
+    ports:
+      - "127.0.0.1:3000:3000"
+

@@ -19,12 +19,19 @@ services:
       CHROMA_DIR: /app/storage/chroma
       VECTOR_DB_DIR: /app/storage/vector_index
       UPLOAD_DIR: /app/storage/uploads
+      ARTIFACTS_DIR: /app/storage/artifacts
       DATABASE_URL: sqlite:///./storage/research_assistant.db
       AIRA_TRACE_LOG: /app/storage/traces.jsonl
     ports:
       - "8000:8000"
     volumes:
       - aira_storage:/app/storage
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/ready"]
+      interval: 30s
+      timeout: 5s
+      start_period: 90s
+      retries: 3
     restart: unless-stopped
 
   frontend:

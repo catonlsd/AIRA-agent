@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.middleware as mw
-from app.core.config import settings
+from app.core.config import Settings, settings
 from app.main import app, unhandled_exception_handler
 
 
@@ -39,6 +39,56 @@ def test_liveness_and_readiness(client):
     assert "ready" in body
     assert "database" in body["checks"]
     assert "llm" in body["checks"]
+    assert "storage" in body["checks"]
+
+
+def test_readiness_fails_when_llm_is_unconfigured(client, monkeypatch):
+    monkeypatch.setattr(settings, "llm_provider", "groq")
+    monkeypatch.setattr(settings, "groq_api_key", None)
+
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    assert response.json()["ready"] is False
+    assert response.json()["checks"]["llm"] == "unconfigured"
+
+
+def test_readiness_fails_when_storage_is_unwritable(client, monkeypatch, tmp_path):
+    missing = tmp_path / "missing"
+    monkeypatch.setattr(settings, "upload_dir", str(missing))
+
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    assert response.json()["checks"]["storage"] == "error"
+
+
+def test_supported_groq_model_is_the_default():
+    config = Settings(
+        _env_file=None,
+        llm_provider="local",
+        web_search_provider="none",
+    )
+
+    assert config.groq_model == "openai/gpt-oss-120b"
+
+
+def test_production_requires_operator_and_auth_secrets():
+    config = Settings(
+        _env_file=None,
+        environment="production",
+        llm_provider="local",
+        web_search_provider="none",
+        api_key=None,
+        auth_secret=None,
+    )
+
+    with pytest.raises(RuntimeError, match="API_KEY"):
+        config.validate_runtime_config()
+
+    config.api_key = "operator-key"
+    with pytest.raises(RuntimeError, match="AUTH_SECRET"):
+        config.validate_runtime_config()
 
 
 # ── API-key auth ──────────────────────────────────────────────────────────────
