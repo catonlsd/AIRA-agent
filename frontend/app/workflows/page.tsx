@@ -459,7 +459,7 @@ function MetricCard({
   return (
     <div className="sarvam-card rounded-[1.35rem] p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+        <p className="type-label text-[var(--text-subtle)]">
           {label}
         </p>
 
@@ -470,12 +470,12 @@ function MetricCard({
         )}
       </div>
 
-      <h2 className={cn("text-3xl font-black", getMetricToneClass(tone))}>
+      <h2 className={cn("type-metric", getMetricToneClass(tone))}>
         {formatNumber(value)}
       </h2>
 
       {description && (
-        <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+        <p className="mt-2 type-body-sm text-[var(--text-muted)]">
           {description}
         </p>
       )}
@@ -499,7 +499,7 @@ function FilterTabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-full border px-3 py-1.5 text-xs font-black transition",
+        "rounded-full border px-3 py-1.5 text-xs font-black transition duration-fast active:scale-[0.985]",
         active
           ? "border-[var(--border-strong)] bg-[var(--accent)] text-[var(--accent-foreground)] shadow-[var(--shadow-soft)]"
           : "border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
@@ -520,7 +520,7 @@ function RunBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-black",
+        "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-11 font-black",
         className
       )}
     >
@@ -540,7 +540,7 @@ function PreflightPreview({ run }: { run: WorkflowRunSummary }) {
 
   return (
     <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-black text-[var(--text-strong)]">
+      <div className="mb-3 flex items-center gap-2 type-heading-xs text-[var(--text-strong)]">
         {gitPushPreflight ? (
           <UploadCloud className="h-4 w-4 text-[var(--danger)]" />
         ) : (
@@ -551,21 +551,21 @@ function PreflightPreview({ run }: { run: WorkflowRunSummary }) {
 
       <div className="grid gap-3 md:grid-cols-2">
         <div>
-          <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="type-label text-[var(--text-subtle)]">
             Current Branch
           </p>
 
-          <p className="mt-1 text-sm font-semibold text-[var(--text)]">
+          <p className="mt-1 type-body-strong text-[var(--text)]">
             {context.branch || "Unknown branch"}
           </p>
         </div>
 
         <div>
-          <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="type-label text-[var(--text-subtle)]">
             Target
           </p>
 
-          <p className="mt-1 break-words text-sm font-semibold text-[var(--text)]">
+          <p className="mt-1 break-words type-body-strong text-[var(--text)]">
             {gitPushPreflight
               ? `${context.target_remote || "origin"} / ${
                   context.target_branch || context.branch || "unknown"
@@ -577,11 +577,11 @@ function PreflightPreview({ run }: { run: WorkflowRunSummary }) {
 
       {gitPushPreflight && context.last_commit && (
         <div className="mt-3">
-          <p className="mb-1 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="mb-1 type-label text-[var(--text-subtle)]">
             Latest Local Commit
           </p>
 
-          <pre className="max-h-24 overflow-auto whitespace-pre-wrap rounded-xl p-3 text-[11px] leading-5">
+          <pre className="max-h-24 overflow-auto whitespace-pre-wrap rounded-xl p-3 text-11 leading-[var(--leading-alert)]">
             {context.last_commit}
           </pre>
         </div>
@@ -631,7 +631,7 @@ function ApprovalResolutionPanel({ run }: { run: WorkflowRunSummary }) {
       </div>
 
       {approvalResolution.error && (
-        <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-3 text-xs leading-5 text-[var(--danger)]">
+        <div className="mt-3 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-soft)] p-3 text-xs leading-[var(--leading-alert)] text-[var(--danger)]">
           <strong>Error:</strong> {approvalResolution.error}
         </div>
       )}
@@ -648,7 +648,7 @@ function CleanupPanel({ run }: { run: WorkflowRunSummary }) {
 
   return (
     <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--success)_34%,transparent)] bg-[var(--success-soft)] p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-black text-[var(--success)]">
+      <div className="mb-3 flex items-center gap-2 type-heading-xs text-[var(--success)]">
         <CheckCircle2 className="h-4 w-4" />
         Cleanup Performed
       </div>
@@ -699,9 +699,9 @@ function ApprovalActionPanel({
   const actionButtonsDisabled = Boolean(actionRunId) || approvalProcessing;
 
   return (
-    <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--warning)_34%,transparent)] bg-[var(--warning-soft)] p-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="mt-4 flex flex-col gap-3 rounded-[var(--radius-2xl)] border border-[var(--warning-border)] bg-[var(--warning-soft)] p-4 lg:flex-row lg:items-center lg:justify-between">
       <div>
-        <p className="flex items-center gap-2 text-sm font-black text-[var(--warning)]">
+        <p className="flex items-center gap-2 type-heading-xs text-[var(--warning)]">
           {approvalProcessing ? (
             <Clock className="h-4 w-4" />
           ) : (
@@ -710,7 +710,7 @@ function ApprovalActionPanel({
           {approvalProcessing ? "Approval is being processed" : "Approval Required"}
         </p>
 
-        <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
+        <p className="mt-1 type-body-sm text-[var(--text-muted)]">
           {approvalProcessing
             ? "AIRA-X is already processing this action. Controls are disabled to prevent duplicate execution."
             : "Approve to continue this workflow, or reject to stop it safely."}
@@ -722,7 +722,7 @@ function ApprovalActionPanel({
           type="button"
           onClick={() => onApprove(run.run_id)}
           disabled={actionButtonsDisabled}
-          className="rounded-xl bg-[var(--warning)] px-4 py-2.5 text-xs font-black text-white shadow-[var(--shadow-soft)] transition disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-xl bg-[var(--warning)] px-4 py-2.5 text-xs font-black text-[var(--on-warning)] shadow-[var(--shadow-soft)] transition duration-fast active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {approvalProcessing
             ? "Processing..."
@@ -735,7 +735,7 @@ function ApprovalActionPanel({
           type="button"
           onClick={() => onReject(run.run_id)}
           disabled={actionButtonsDisabled}
-          className="inline-flex items-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-xl border border-[var(--danger-border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--danger)] transition duration-fast active:scale-[0.985] hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           <XCircle className="h-3.5 w-3.5" />
           {approvalProcessing
@@ -821,7 +821,7 @@ function WorkflowRunCard({
           </div>
 
           <Link href={`/workflows/${run.run_id}`} className="group block">
-            <h3 className="line-clamp-1 text-base font-black text-[var(--text-strong)] group-hover:text-[var(--accent)]">
+            <h3 className="line-clamp-1 type-heading-sm text-[var(--text-strong)] group-hover:text-[var(--accent)]">
               {run.user_goal || "Untitled workflow"}
             </h3>
 
@@ -832,41 +832,41 @@ function WorkflowRunCard({
 
           <div className="mt-4 grid gap-3 md:grid-cols-4">
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
-              <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              <p className="type-label text-[var(--text-subtle)]">
                 Decision
               </p>
 
-              <p className="mt-1 truncate text-sm font-semibold text-[var(--text-strong)]">
+              <p className="mt-1 truncate type-body-strong text-[var(--text-strong)]">
                 {run.decision || "Not recorded"}
               </p>
             </div>
 
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
-              <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              <p className="type-label text-[var(--text-subtle)]">
                 Steps
               </p>
 
-              <p className="mt-1 text-sm font-semibold text-[var(--text-strong)]">
+              <p className="mt-1 type-body-strong text-[var(--text-strong)]">
                 {run.step_count}
               </p>
             </div>
 
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
-              <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              <p className="type-label text-[var(--text-subtle)]">
                 Logs
               </p>
 
-              <p className="mt-1 text-sm font-semibold text-[var(--text-strong)]">
+              <p className="mt-1 type-body-strong text-[var(--text-strong)]">
                 {run.log_count}
               </p>
             </div>
 
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
-              <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              <p className="type-label text-[var(--text-subtle)]">
                 Retries
               </p>
 
-              <p className="mt-1 text-sm font-semibold text-[var(--text-strong)]">
+              <p className="mt-1 type-body-strong text-[var(--text-strong)]">
                 {run.retry_count}
               </p>
             </div>
@@ -889,13 +889,13 @@ function WorkflowRunCard({
             </p>
           </div>
 
-          <p className="mt-4 line-clamp-2 text-sm leading-6 text-[var(--text-muted)]">
+          <p className="mt-4 line-clamp-2 type-body text-[var(--text-muted)]">
             <strong className="text-[var(--text-strong)]">Final Answer:</strong>{" "}
             {run.final_answer || "No final answer recorded yet."}
           </p>
 
           {run.pending_action && (
-            <p className="mt-2 line-clamp-2 text-sm leading-6 text-[var(--text-muted)]">
+            <p className="mt-2 line-clamp-2 type-body text-[var(--text-muted)]">
               <strong className="text-[var(--text-strong)]">
                 {getActionLabel(run.status)}:
               </strong>{" "}
@@ -918,7 +918,7 @@ function WorkflowRunCard({
         <div className="flex shrink-0 flex-col gap-3 xl:w-48">
           <Link
             href={`/workflows/${run.run_id}`}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
           >
             Open Details
             <ArrowRight className="h-3.5 w-3.5" />
@@ -928,7 +928,7 @@ function WorkflowRunCard({
             type="button"
             onClick={() => onDelete(run)}
             disabled={deleteDisabled}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] px-4 py-2.5 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-2.5 text-xs font-black text-[var(--danger)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {deleteInProgress ? (
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -1173,11 +1173,11 @@ export default function WorkflowsPage() {
               AIRA-X Workflows
             </div>
 
-            <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
+            <h1 className="aira-gradient-text type-display">
               Workflow Runs
             </h1>
 
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
+            <p className="mt-3 max-w-3xl type-body text-[var(--text-muted)]">
               Review execution traces from Assistant: approval states, Git
               preflights, cleanup actions, recovery events, and final outcomes
               for every workflow run.
@@ -1186,7 +1186,7 @@ export default function WorkflowsPage() {
             <div className="mt-5 flex flex-wrap gap-3">
               <Link
                 href="/chat"
-                className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+                className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985]"
               >
                 <Workflow className="h-3.5 w-3.5" />
                 Open Assistant
@@ -1195,7 +1195,7 @@ export default function WorkflowsPage() {
 
               <Link
                 href="/approvals"
-                className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
               >
                 <ShieldCheck className="h-3.5 w-3.5" />
                 Review Approvals
@@ -1211,7 +1211,7 @@ export default function WorkflowsPage() {
             )}
 
             {safeCleanupSummary && (
-              <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--success)_34%,transparent)] bg-[var(--success-soft)] p-3 text-sm font-semibold text-[var(--success)]">
+              <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--success)_34%,transparent)] bg-[var(--success-soft)] p-3 type-body-strong text-[var(--success)]">
                 {safeCleanupSummary}
               </div>
             )}
@@ -1224,11 +1224,11 @@ export default function WorkflowsPage() {
               </div>
 
               <div>
-                <h2 className="text-sm font-black text-[var(--text-strong)]">
+                <h2 className="type-heading-xs text-[var(--text-strong)]">
                   History Maintenance
                 </h2>
 
-                <p className="text-xs leading-5 text-[var(--text-muted)]">
+                <p className="type-body-sm text-[var(--text-muted)]">
                   Remove completed, failed, and rejected runs safely.
                 </p>
               </div>
@@ -1240,7 +1240,7 @@ export default function WorkflowsPage() {
               disabled={
                 safeCleanupLoading || Boolean(actionRunId) || Boolean(deleteRunId)
               }
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] px-4 py-3 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-3 text-xs font-black text-[var(--danger)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {safeCleanupLoading ? (
                 <RefreshCw className="h-4 w-4 animate-spin" />
@@ -1250,7 +1250,7 @@ export default function WorkflowsPage() {
               {safeCleanupLoading ? "Cleaning history..." : "Safe Cleanup"}
             </button>
 
-            <p className="mt-3 text-xs leading-5 text-[var(--text-subtle)]">
+            <p className="mt-3 type-body-sm text-[var(--text-subtle)]">
               Active, approval-processing, retrying, and executing workflows are
               skipped automatically.
             </p>
@@ -1265,7 +1265,7 @@ export default function WorkflowsPage() {
       )}
 
       {error && (
-        <div className="rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-4 text-sm text-[var(--danger)]">
+        <div className="rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] p-4 text-sm text-[var(--danger)]">
           {error}
         </div>
       )}
@@ -1336,7 +1336,7 @@ export default function WorkflowsPage() {
                 </div>
 
                 <div>
-                  <h2 className="text-lg font-black text-[var(--text-strong)]">
+                  <h2 className="type-heading text-[var(--text-strong)]">
                     Workflow Explorer
                   </h2>
 
@@ -1350,7 +1350,7 @@ export default function WorkflowsPage() {
               <button
                 type="button"
                 onClick={() => loadRuns({ showLoading: false })}
-                className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
                 Refresh
@@ -1379,7 +1379,7 @@ export default function WorkflowsPage() {
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
                   placeholder="Search goal, run ID, decision, action..."
-                  className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+                  className="w-full rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition duration-base placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
                 />
               </label>
 
@@ -1390,7 +1390,7 @@ export default function WorkflowsPage() {
                 <select
                   value={preflightFilter}
                   onChange={(event) => setPreflightFilter(event.target.value)}
-                  className="w-full appearance-none rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm font-semibold text-[var(--text-strong)] outline-none transition focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+                  className="w-full appearance-none rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm font-semibold text-[var(--text-strong)] outline-none transition duration-base focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
                 >
                   <option value="all">All run types</option>
                   <option value="any_git">Any Git preflight</option>
@@ -1408,7 +1408,7 @@ export default function WorkflowsPage() {
                 <select
                   value={sortMode}
                   onChange={(event) => setSortMode(event.target.value as SortMode)}
-                  className="w-full appearance-none rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm font-semibold text-[var(--text-strong)] outline-none transition focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+                  className="w-full appearance-none rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm font-semibold text-[var(--text-strong)] outline-none transition duration-base focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
                 >
                   <option value="updated_desc">Newest activity</option>
                   <option value="created_asc">Oldest created</option>
@@ -1433,7 +1433,7 @@ export default function WorkflowsPage() {
                   setPreflightFilter("all");
                   setSortMode("updated_desc");
                 }}
-                className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
               >
                 Clear Filters
               </button>
@@ -1447,18 +1447,18 @@ export default function WorkflowsPage() {
                   <Workflow className="h-5 w-5" />
                 </div>
 
-                <h2 className="text-xl font-black text-[var(--text-strong)]">
+                <h2 className="type-heading-xl text-[var(--text-strong)]">
                   No workflow runs yet
                 </h2>
 
-                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
+                <p className="mx-auto mt-2 max-w-md type-body text-[var(--text-muted)]">
                   Run tasks from Assistant and every traceable workflow will
                   appear here.
                 </p>
 
                 <Link
                   href="/chat"
-                  className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+                  className="mt-5 inline-flex items-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985]"
                 >
                   <Workflow className="h-4 w-4" />
                   Open Assistant
@@ -1471,11 +1471,11 @@ export default function WorkflowsPage() {
                   <Search className="h-5 w-5" />
                 </div>
 
-                <h2 className="text-xl font-black text-[var(--text-strong)]">
+                <h2 className="type-heading-xl text-[var(--text-strong)]">
                   No matching runs
                 </h2>
 
-                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
+                <p className="mx-auto mt-2 max-w-md type-body text-[var(--text-muted)]">
                   Try clearing filters or searching a different goal, run ID,
                   decision, status, or pending action.
                 </p>

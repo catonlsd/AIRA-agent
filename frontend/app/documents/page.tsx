@@ -114,7 +114,7 @@ function MetricCard({
   return (
     <div className="sarvam-card rounded-[1.35rem] p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+        <p className="type-label text-[var(--text-subtle)]">
           {label}
         </p>
 
@@ -128,11 +128,11 @@ function MetricCard({
         </div>
       </div>
 
-      <h2 className="text-3xl font-black text-[var(--text-strong)]">
+      <h2 className="type-metric text-[var(--text-strong)]">
         {value}
       </h2>
 
-      <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+      <p className="mt-2 type-body-sm text-[var(--text-muted)]">
         {description}
       </p>
     </div>
@@ -158,11 +158,11 @@ function SectionHeader({
         </div>
 
         <div>
-          <h2 className="text-lg font-black text-[var(--text-strong)]">
+          <h2 className="type-heading text-[var(--text-strong)]">
             {title}
           </h2>
 
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+          <p className="mt-1 max-w-2xl type-body text-[var(--text-muted)]">
             {description}
           </p>
         </div>
@@ -196,7 +196,7 @@ function DocumentCard({
             </div>
 
             <div className="min-w-0">
-              <h3 className="line-clamp-1 text-lg font-black text-[var(--text-strong)]">
+              <h3 className="line-clamp-1 type-heading text-[var(--text-strong)]">
                 {doc.filename}
               </h3>
 
@@ -208,37 +208,37 @@ function DocumentCard({
 
           <div className="grid gap-3 md:grid-cols-3">
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
-              <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              <p className="type-label text-[var(--text-subtle)]">
                 File Type
               </p>
 
-              <p className="mt-1 text-sm font-semibold text-[var(--text-strong)]">
+              <p className="mt-1 type-body-strong text-[var(--text-strong)]">
                 {getFileTypeLabel(doc.file_type)}
               </p>
             </div>
 
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
-              <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              <p className="type-label text-[var(--text-subtle)]">
                 Indexed Chunks
               </p>
 
-              <p className="mt-1 text-sm font-semibold text-[var(--text-strong)]">
+              <p className="mt-1 type-body-strong text-[var(--text-strong)]">
                 {formatNumber(doc.chunk_count)}
               </p>
             </div>
 
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
-              <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              <p className="type-label text-[var(--text-subtle)]">
                 Added
               </p>
 
-              <p className="mt-1 text-sm font-semibold text-[var(--text-strong)]">
+              <p className="mt-1 type-body-strong text-[var(--text-strong)]">
                 {formatDateTime(doc.created_at)}
               </p>
             </div>
           </div>
 
-          <p className="mt-4 text-sm leading-6 text-[var(--text-muted)]">
+          <p className="mt-4 type-body text-[var(--text-muted)]">
             This source is indexed into your AIRA-X knowledge layer and can be used
             for document-backed answers, summaries, retrieval, and citations.
           </p>
@@ -249,7 +249,7 @@ function DocumentCard({
             type="button"
             onClick={() => onSummarize(doc)}
             disabled={summarizing || deleting}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {summarizing ? (
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -263,7 +263,7 @@ function DocumentCard({
             type="button"
             onClick={() => onDelete(doc)}
             disabled={summarizing || deleting}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] px-4 py-2.5 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-2.5 text-xs font-black text-[var(--danger)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {deleting ? (
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -465,11 +465,11 @@ export default function DocumentsPage() {
               AIRA-X Knowledge
             </div>
 
-            <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
+            <h1 className="aira-gradient-text type-display">
               Knowledge
             </h1>
 
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
+            <p className="mt-3 max-w-3xl type-body text-[var(--text-muted)]">
               Manage uploaded sources, inspect indexed chunks, summarize
               documents, and keep your library ready for grounded AIRA-X
               answers in Assistant.
@@ -477,17 +477,17 @@ export default function DocumentsPage() {
           </div>
 
           <div className="rounded-[1.5rem] border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+            <p className="type-label text-[var(--text-subtle)]">
               Source Intake
             </p>
 
-            <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+            <p className="mt-2 type-body text-[var(--text-muted)]">
               Upload documents from Assistant, then manage indexed sources here.
             </p>
 
             <Link
               href="/chat"
-              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-4 py-3 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-4 py-3 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985]"
             >
               <UploadCloud className="h-4 w-4" />
               Upload in Assistant
@@ -506,10 +506,10 @@ export default function DocumentsPage() {
       {status && (
         <div
           className={cn(
-            "rounded-2xl border p-4 text-sm font-semibold",
+            "rounded-[var(--radius-2xl)] border p-4 text-sm font-semibold",
             status.toLowerCase().includes("failed") ||
               status.toLowerCase().includes("error")
-              ? "border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] text-[var(--danger)]"
+              ? "border-[var(--danger-border)] bg-[var(--danger-soft)] text-[var(--danger)]"
               : status.startsWith("✅")
                 ? "border-[color-mix(in_srgb,var(--success)_34%,transparent)] bg-[var(--success-soft)] text-[var(--success)]"
                 : "border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)]"
@@ -565,7 +565,7 @@ export default function DocumentsPage() {
                 <button
                   type="button"
                   onClick={() => loadDocuments({ showLoading: false })}
-                  className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                  className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
                   Refresh
@@ -582,7 +582,7 @@ export default function DocumentsPage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Search filename, file type, document ID, or date..."
-                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+                className="w-full rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition duration-base placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
               />
             </label>
 
@@ -590,7 +590,7 @@ export default function DocumentsPage() {
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
               >
                 Clear Search
               </button>
@@ -603,18 +603,18 @@ export default function DocumentsPage() {
                 <Library className="h-5 w-5" />
               </div>
 
-              <h2 className="text-xl font-black text-[var(--text-strong)]">
+              <h2 className="type-heading-xl text-[var(--text-strong)]">
                 No documents indexed yet
               </h2>
 
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
+              <p className="mx-auto mt-2 max-w-md type-body text-[var(--text-muted)]">
                 Upload documents in Assistant to build a searchable knowledge
                 layer for citation-backed answers.
               </p>
 
               <Link
                 href="/chat"
-                className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+                className="mt-5 inline-flex items-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985]"
               >
                 <UploadCloud className="h-4 w-4" />
                 Upload Documents
@@ -626,11 +626,11 @@ export default function DocumentsPage() {
                 <Search className="h-5 w-5" />
               </div>
 
-              <h2 className="text-xl font-black text-[var(--text-strong)]">
+              <h2 className="type-heading-xl text-[var(--text-strong)]">
                 No matching documents
               </h2>
 
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
+              <p className="mx-auto mt-2 max-w-md type-body text-[var(--text-muted)]">
                 Try searching a different filename, file type, document ID, or
                 upload date.
               </p>
@@ -664,20 +664,20 @@ export default function DocumentsPage() {
                   <button
                     type="button"
                     onClick={() => setSummary(null)}
-                    className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                    className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
                   >
                     Close
                   </button>
                 }
               />
 
-              <div className="whitespace-pre-wrap rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-5 text-sm leading-7 text-[var(--text)]">
+              <div className="whitespace-pre-wrap rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-5 type-body text-[var(--text)]">
                 {sanitizeSummaryText(summary.text)}
               </div>
 
               {summary.citations.length > 0 && (
                 <div className="mt-5 rounded-[1.25rem] border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-                  <p className="mb-3 text-sm font-black text-[var(--text-strong)]">
+                  <p className="mb-3 type-heading-xs text-[var(--text-strong)]">
                     Sources
                   </p>
 

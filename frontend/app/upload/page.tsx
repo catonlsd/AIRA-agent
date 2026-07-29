@@ -60,7 +60,7 @@ export default function UploadPage() {
         onSubmit={onSubmit}
         className="sarvam-card fade-up rounded-[2rem] p-6"
       >
-        <label className="block text-sm font-semibold text-slate-800">
+        <label htmlFor="document-files" className="block text-sm font-semibold text-slate-800">
           Documents
         </label>
 
@@ -78,6 +78,7 @@ export default function UploadPage() {
           </p>
 
           <input
+            id="document-files"
             name="files"
             type="file"
             multiple
@@ -88,14 +89,18 @@ export default function UploadPage() {
 
         <button
           disabled={loading}
-          className="group mt-5 inline-flex items-center gap-2 rounded-full bg-accent px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-600/25 disabled:cursor-not-allowed disabled:opacity-60"
+          className="group mt-5 inline-flex items-center gap-2 rounded-full bg-accent px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition-all duration-300 hover:-translate-y-px active:scale-[0.985] hover:shadow-xl hover:shadow-blue-600/25 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <Upload className="h-4 w-4 transition-transform duration-300 group-hover:-translate-y-1 group-hover:scale-110" />
+          <Upload className="h-4 w-4 transition-transform duration-300 group-hover:-translate-y-px group-hover:scale-110" />
           {loading ? "Processing documents..." : "Upload and index"}
         </button>
 
         {status && (
-          <div className="fade-up mt-5 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-medium text-slate-700">
+          <div
+            role="status"
+            aria-live="polite"
+            className="fade-up mt-5 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-medium text-slate-700"
+          >
             {status}
           </div>
         )}

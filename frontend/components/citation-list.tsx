@@ -13,7 +13,7 @@ export function CitationList({ citations }: { citations: Citation[] }) {
         return (
           <div
             key={`${citation.title}-${index}`}
-            className="group rounded-[1.25rem] border border-blue-100 bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-lg hover:shadow-blue-100/70"
+            className="group rounded-[1.25rem] border border-blue-100 bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-px hover:border-blue-200 hover:shadow-lg hover:shadow-blue-100/70"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex items-start gap-3">
@@ -43,7 +43,7 @@ export function CitationList({ citations }: { citations: Citation[] }) {
                   href={citation.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-accent transition-all duration-300 hover:-translate-y-0.5 hover:bg-blue-100"
+                  className="inline-flex items-center gap-1 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-accent transition-all duration-300 hover:-translate-y-px active:scale-[0.985] hover:bg-blue-100"
                 >
                   Open
                   <ExternalLink className="h-3 w-3" />

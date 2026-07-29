@@ -510,7 +510,7 @@ function CodeBlock({ value, fallback = "No data available." }: { value?: string;
 
 function RunBadge({ children, className }: { children: ReactNode; className: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-bold tracking-wide uppercase", className)}>
+    <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-11 font-bold tracking-[var(--tracking-label)] uppercase", className)}>
       {children}
     </span>
   );
@@ -525,7 +525,7 @@ function PanelHeader({ icon, title, description }: { icon: ReactNode; title: str
       <div>
         <h2 className="text-sm font-bold text-[var(--text-strong)] leading-5">{title}</h2>
         {description && (
-          <p className="mt-0.5 text-xs leading-5 text-[var(--text-muted)]">{description}</p>
+          <p className="mt-0.5 type-body-sm text-[var(--text-muted)]">{description}</p>
         )}
       </div>
     </div>
@@ -550,11 +550,11 @@ function GitWritePreflight({ context }: { context: ApprovalContext }) {
         <div className="mt-3"><InfoTile label="Commit Message" value={context.commit_message} /></div>
       )}
       <div className="mt-3">
-        <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[var(--text-subtle)]">Changed Files</p>
+        <p className="mb-2 type-label text-[var(--text-subtle)]">Changed Files</p>
         <CodeBlock value={context.changed_files} fallback="No changed files detected." />
       </div>
       <div className="mt-3">
-        <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[var(--text-subtle)]">Diff Summary</p>
+        <p className="mb-2 type-label text-[var(--text-subtle)]">Diff Summary</p>
         <CodeBlock value={context.diff_summary} fallback="No diff summary available." />
       </div>
     </div>
@@ -582,7 +582,7 @@ function GitPushPreflight({ context }: { context: ApprovalContext }) {
         { label: "Recent Local Commits", value: context.recent_commits, fallback: "No recent commits available." },
       ].map(({ label, value, fallback }) => (
         <div className="mt-3" key={label}>
-          <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[var(--text-subtle)]">{label}</p>
+          <p className="mb-2 type-label text-[var(--text-subtle)]">{label}</p>
           <CodeBlock value={value} fallback={fallback} />
         </div>
       ))}
@@ -997,7 +997,7 @@ function ResearchTurnCard({ turn, liveState, liveLabel, busy = false, onClarify 
           </div>
           {turn.streamSources && turn.streamSources.length > 0 && (
             <div className="mt-4 aira-citations-block">
-              <p className="mb-2.5 text-xs font-bold uppercase tracking-widest text-[var(--text-subtle)]">Sources</p>
+              <p className="mb-2.5 type-label text-[var(--text-subtle)]">Sources</p>
               <CitationList citations={turn.streamSources} />
             </div>
           )}
@@ -1049,7 +1049,7 @@ function ResearchTurnCard({ turn, liveState, liveLabel, busy = false, onClarify 
           {/* Citations */}
           {turn.response.citations.length > 0 && (
             <div className="mt-4 aira-citations-block">
-              <p className="mb-2.5 text-xs font-bold uppercase tracking-widest text-[var(--text-subtle)]">Sources</p>
+              <p className="mb-2.5 type-label text-[var(--text-subtle)]">Sources</p>
               <CitationList citations={turn.response.citations} />
             </div>
           )}
@@ -1128,12 +1128,12 @@ function AiraHomeStage({
 
         <p className="aira-kicker mb-3">AIRA-X Assistant</p>
 
-        <h2 className="text-3xl font-black tracking-tight text-[var(--text-strong)] md:text-[2.6rem] md:leading-[1.1]">
+        <h1 className="type-display text-[var(--text-strong)] md:text-[2.6rem] md:leading-[1.1]">
           How can I help<br />
           <span className="aira-gradient-text">you today?</span>
-        </h2>
+        </h1>
 
-        <p className="mx-auto mt-3 max-w-lg text-sm leading-7 text-[var(--text-muted)]">
+        <p className="mx-auto mt-3 max-w-lg type-body text-[var(--text-muted)]">
           Ask anything, analyze documents, plan projects, or run a workflow.
           Routing is handled automatically.
         </p>
@@ -1224,7 +1224,7 @@ function WorkflowResultCard({ response, approvalLoading, rejectionLoading, onApp
           <RunBadge className={cn("mb-1.5", getWorkflowStatusClass(response.status))}>
             {response.status || "unknown"}
           </RunBadge>
-          <h2 className="text-lg font-black tracking-tight text-[var(--text-strong)]">
+          <h2 className="type-heading text-[var(--text-strong)]">
             {isCompleted ? "Execution complete" : isFailed ? "Execution stopped" : "Execution in progress"}
           </h2>
           <p className="mt-0.5 text-xs text-[var(--text-muted)]">
@@ -1382,7 +1382,7 @@ function AttachButton({ onClick, uploading, disabled }: {
 
 function FocusComposerOverlay({
   question, setQuestion, busy, loading, airaXLoading, onSubmit, onClose,
-  onAttach, uploading, uploadedDocs, onRemoveDoc,
+  onAttach, uploading, uploadedDocs, onRemoveDoc, returnFocusTo,
 }: {
   question: string;
   setQuestion: (v: string) => void;
@@ -1395,18 +1395,78 @@ function FocusComposerOverlay({
   uploading: boolean;
   uploadedDocs: string[];
   onRemoveDoc: (index: number) => void;
+  returnFocusTo: HTMLElement | null;
 }) {
+  const dialogRef = useRef<HTMLFormElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const activeDialog = dialog;
+
+    const focusableSelector =
+      'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
+
+    function handleDialogKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+
+      const focusable = Array.from(
+        activeDialog.querySelectorAll<HTMLElement>(focusableSelector)
+      ).filter((element) => !element.hasAttribute("disabled"));
+
+      if (focusable.length === 0) {
+        event.preventDefault();
+        activeDialog.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    activeDialog.addEventListener("keydown", handleDialogKeyDown);
+    textareaRef.current?.focus();
+
+    return () => {
+      activeDialog.removeEventListener("keydown", handleDialogKeyDown);
+      returnFocusTo?.focus();
+    };
+  }, [onClose, returnFocusTo]);
+
   return (
     <>
-      <button type="button" aria-label="Close focus composer" onClick={onClose}
+      <button type="button" tabIndex={-1} aria-hidden="true" onClick={onClose}
         className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm" />
 
-      <form onSubmit={onSubmit}
+      <form
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="focus-composer-title"
+        tabIndex={-1}
+        onSubmit={onSubmit}
         className="fixed left-1/2 top-1/2 z-50 w-[min(780px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 aira-focus-form research-composer chatgpt-composer">
         <div className="mb-3 flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
             <AiraLogo size="sm" />
-            <span className="text-xs font-bold text-[var(--text-muted)]">Focused prompt</span>
+            <h2 id="focus-composer-title" className="text-xs font-bold text-[var(--text-muted)]">
+              Focused prompt
+            </h2>
           </div>
           <button type="button" onClick={onClose}
             className="aira-icon-btn" aria-label="Close">
@@ -1417,9 +1477,11 @@ function FocusComposerOverlay({
         <DocChips docs={uploadedDocs} onRemove={onRemoveDoc} />
 
         <textarea
+          ref={textareaRef}
           autoFocus
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
+          aria-label="Focused prompt"
           placeholder="Message AIRA-X…"
           className="aira-focus-textarea"
         />
@@ -1497,7 +1559,7 @@ const AIRA_STYLES = `
 }
 .octa-companion--lg { flex-direction: column; align-items: center; text-align: center; }
 .octa-companion--sm { flex-direction: row; align-items: center; }
-html[data-theme="dark"] .octa-companion {
+html[data-scheme="dark"] .octa-companion {
   --octa-eye: #00d4ff;
   --octa-glow: rgba(0, 212, 255, 0.7);
 }
@@ -1581,7 +1643,7 @@ html[data-theme="dark"] .octa-companion {
 .octa-svg .o-accent { fill: #aee4ff; }
 .octa-svg .o-eye { fill: var(--octa-eye); filter: drop-shadow(0 0 1.5px var(--octa-glow)); }
 .octa-svg .o-scan { fill: var(--octa-eye); opacity: 0; }
-html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
+html[data-scheme="light"] .octa-svg .o-visor { fill: #1c2d49; }
 
 /* idle motion: gentle blink, antenna pulse, slow tentacle wave */
 .octa-svg .o-blink { transform-box: fill-box; transform-origin: center; animation: octa-blink 5s infinite; }
@@ -2080,7 +2142,7 @@ html[data-theme="light"] .octa-svg .o-visor { fill: #1c2d49; }
   --octa-glow: rgba(110, 193, 255, 0.55);
   --octa-accent: #6ec1ff;
 }
-html[data-theme="dark"] .octa-inline { --octa-eye: #00d4ff; --octa-glow: rgba(0, 212, 255, 0.7); }
+html[data-scheme="dark"] .octa-inline { --octa-eye: #00d4ff; --octa-glow: rgba(0, 212, 255, 0.7); }
 .octa-inline .octa-svg { width: 18px; height: 18px; animation: octa-breathe 5s ease-in-out infinite; }
 .octa-inline-label { font-size: 0.8rem; color: var(--text-muted); }
 
@@ -2114,7 +2176,7 @@ html[data-theme="dark"] .octa-inline { --octa-eye: #00d4ff; --octa-glow: rgba(0,
   border-color: color-mix(in srgb, var(--danger) 30%, transparent);
   background: var(--danger-soft);
 }
-html[data-theme="dark"] .aira-card::before {
+html[data-scheme="dark"] .aira-card::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -2138,7 +2200,7 @@ html[data-theme="dark"] .aira-card::before {
   box-shadow: var(--shadow-card);
   padding: 1.25rem;
 }
-html[data-theme="dark"] .aira-answer-card {
+html[data-scheme="dark"] .aira-answer-card {
   background: linear-gradient(180deg,
     color-mix(in srgb, var(--surface) 90%, white 5%),
     var(--surface));
@@ -2599,6 +2661,8 @@ function AiraStyles() {
 export default function ChatPage() {
   const [question, setQuestion]             = useState("");
   const [composerFocused, setComposerFocused] = useState(false);
+  const suppressComposerFocusRef = useRef(false);
+  const [composerReturnFocus, setComposerReturnFocus] = useState<HTMLElement | null>(null);
   const [loading, setLoading]               = useState(false);
   const [airaXLoading, setAiraXLoading]     = useState(false);
   const [approvalLoading, setApprovalLoading] = useState(false);
@@ -2636,6 +2700,22 @@ export default function ChatPage() {
   const [lastRunId, setLastRunId] = useState<string | null>(null);
   const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
   const turnStartRef = useRef<number | null>(null);
+
+  const openFocusComposer = useCallback(() => {
+    if (suppressComposerFocusRef.current) {
+      suppressComposerFocusRef.current = false;
+      return;
+    }
+    setComposerReturnFocus(
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    );
+    setComposerFocused(true);
+  }, []);
+
+  const closeFocusComposer = useCallback(() => {
+    suppressComposerFocusRef.current = true;
+    setComposerFocused(false);
+  }, []);
 
   // Flash a brief Supervisor event message through Octa, then clear it.
   const flashOcta = (msg: string) => {
@@ -2678,14 +2758,6 @@ export default function ChatPage() {
     sessionId,
     lastLatencyMs,
   };
-
-  // Escape to close focus overlay
-  useEffect(() => {
-    if (!composerFocused) return;
-    const handleKeyDown = (e: KeyboardEvent) => { if (e.key === "Escape") setComposerFocused(false); };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [composerFocused]);
 
   // Scroll to bottom after new turn
   useEffect(() => {
@@ -2781,7 +2853,7 @@ export default function ChatPage() {
     const trimmed = (overrideText ?? question).trim();
     if (!trimmed) return;
 
-    setComposerFocused(false);
+    closeFocusComposer();
     if (!overrideText) setQuestion("");
     // Attached context is single-use for this message (the server consumes it),
     // so the pills clear as the turn is sent — never lingering, never hidden.
@@ -3035,7 +3107,7 @@ export default function ChatPage() {
       <AiraStyles />
 
       <div className={cn(
-        "mx-auto flex min-h-[calc(100vh-64px)] w-full flex-col gap-4 px-4 pb-6",
+        "mx-auto flex h-full min-h-0 w-full flex-col gap-4 px-4 py-4",
         threadIsEmpty ? "max-w-2xl" : "max-w-3xl",
         "aira-chat-page"
       )}>
@@ -3051,7 +3123,7 @@ export default function ChatPage() {
         {/* Upload feedback */}
         {(uploadMessage || uploadError) && (
           <div className={cn(
-            "rounded-xl border px-4 py-2.5 text-sm font-semibold",
+            "rounded-xl border px-4 py-2.5 type-body-strong",
             uploadError
               ? "border-[color-mix(in_srgb,var(--danger)_30%,transparent)] bg-[var(--danger-soft)] text-[var(--danger)]"
               : "border-[color-mix(in_srgb,var(--success)_30%,transparent)] bg-[var(--success-soft)] text-[var(--success)]"
@@ -3062,11 +3134,11 @@ export default function ChatPage() {
 
         {/* Main content */}
         <div
-          className="aira-focus-content flex flex-1 flex-col gap-4"
+          className="aira-focus-content flex min-h-0 flex-1 flex-col gap-4"
           data-composer-focused={composerFocused ? "true" : "false"}
         >
           {threadIsEmpty && !loading && !airaXLoading ? (
-            <div className="flex flex-1 flex-col">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
               <AiraHomeStage
                 question={question}
                 setQuestion={setQuestion}
@@ -3077,7 +3149,7 @@ export default function ChatPage() {
                 octaProgress={octaProgress}
                 octaInspector={octaInspector}
                 onSubmit={handleSubmit}
-                onComposerFocus={() => setComposerFocused(true)}
+                onComposerFocus={openFocusComposer}
                 attachedItems={attachedItems}
                 onRemoveItem={onRemoveItem}
                 onClearContext={onClearContext}
@@ -3086,7 +3158,7 @@ export default function ChatPage() {
               <AssistantWorkspaceLinks onUploadClick={() => uploadInputRef.current?.click()} />
             </div>
           ) : (
-            <div className="flex flex-1 flex-col gap-4 pt-2">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1 pt-2">
               {/* Thread */}
               {turns.map((turn, index) => (
                 <ResearchTurnCard
@@ -3114,9 +3186,9 @@ export default function ChatPage() {
             </div>
           )}
 
-          {/* Sticky composer */}
+          {/* Composer — pinned as the static last child below the scrolling thread */}
           {!threadIsEmpty && (
-            <div className="sticky bottom-4 flex flex-col gap-2">
+            <div className="flex flex-col gap-2 pt-1">
               <OctaStatus
                 state={octaState}
                 message={octaMessage}
@@ -3139,7 +3211,7 @@ export default function ChatPage() {
               <textarea
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
-                onFocus={() => setComposerFocused(true)}
+                onFocus={openFocusComposer}
                 placeholder="Message AIRA-X…"
                 className="aira-home-textarea"
                 style={{ minHeight: "5rem" }}
@@ -3184,11 +3256,12 @@ export default function ChatPage() {
             loading={loading}
             airaXLoading={airaXLoading}
             onSubmit={handleSubmit}
-            onClose={() => setComposerFocused(false)}
+            onClose={closeFocusComposer}
             onAttach={() => uploadInputRef.current?.click()}
             uploading={uploadLoading}
             uploadedDocs={uploadedDocs}
             onRemoveDoc={removeUploadedDocChip}
+            returnFocusTo={composerReturnFocus}
           />
         )}
       </div>

@@ -40,6 +40,7 @@ import {
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TONE_DOT, TONE_TEXT, Badge, Stat, INC_BTN, PANEL, SECTION_LABEL } from "@/components/ui";
 import {
   ackIncident,
   assignIncident,
@@ -125,36 +126,8 @@ import {
   type Tone,
 } from "@/lib/operator";
 
-const TONE_DOT: Record<Tone, string> = {
-  good: "bg-[var(--success)]",
-  warn: "bg-[var(--warning)]",
-  bad: "bg-[var(--danger)]",
-  muted: "bg-[var(--text-subtle)]",
-};
-const TONE_TEXT: Record<Tone, string> = {
-  good: "text-[var(--success)]",
-  warn: "text-[var(--warning)]",
-  bad: "text-[var(--danger)]",
-  muted: "text-[var(--text-subtle)]",
-};
-
-function Badge({ tone, children }: { tone: Tone; children: ReactNode }) {
-  return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wide", TONE_TEXT[tone])}>
-      <span className={cn("h-1.5 w-1.5 rounded-full", TONE_DOT[tone])} aria-hidden="true" />
-      {children}
-    </span>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2">
-      <p className="text-lg font-black text-[var(--text-strong)]">{value}</p>
-      <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-subtle)]">{label}</p>
-    </div>
-  );
-}
+// Status colors (TONE_DOT/TONE_TEXT), Badge, and Stat now come from the shared
+// design system (@/components/ui) — see the import above. No visual change.
 
 function relTime(iso: string | null): string {
   if (!iso) return "";
@@ -180,7 +153,7 @@ function relTimeUntil(iso: string | null): string {
 }
 
 // ── external incident sync (Incidents tab) — targets + recent attempts ────────
-const INC_BTN = "inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-strong)] transition hover:border-[var(--border-strong)] disabled:opacity-50";
+// INC_BTN now comes from @/components/ui (shared button base).
 
 const METRIC_LABELS: Record<MetricCategory, string> = {
   validation: "Validation", reconciliation: "Reconciliation", refresh: "Refresh",
@@ -201,9 +174,9 @@ function MetricsPanel({ metrics, window }: { metrics: IncidentMetrics | null; wi
     return { cat, label: METRIC_LABELS[cat], pass_pct: w?.pass_pct ?? null, total: w?.total ?? 0 };
   });
   return (
-    <section className="sarvam-card rounded-[1.5rem] p-5">
+    <section className={PANEL}>
       <div className="mb-3 flex items-baseline gap-2">
-        <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+        <p className={SECTION_LABEL}>
           <Activity className="h-3.5 w-3.5" /> Sync observability
         </p>
         <span className="text-[11px] text-[var(--text-muted)]">· deterministic, computed from audit history</span>
@@ -213,8 +186,8 @@ function MetricsPanel({ metrics, window }: { metrics: IncidentMetrics | null; wi
       <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {indicators.map((s) => (
           <div key={s.key} className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-[var(--text-subtle)]">{s.label}</p>
-            <p className={cn("text-lg font-black", TONE_TEXT[s.tone])}>{s.value}</p>
+            <p className="text-[11px] uppercase tracking-wide text-[var(--text-subtle)]">{s.label}</p>
+            <p className={cn("type-heading", TONE_TEXT[s.tone])}>{s.value}</p>
           </div>
         ))}
       </div>
@@ -222,7 +195,7 @@ function MetricsPanel({ metrics, window }: { metrics: IncidentMetrics | null; wi
       {/* Targets by state */}
       <div className="mb-3 flex flex-wrap items-center gap-1.5" aria-label="Targets by state">
         {healthRows.map((r) => (
-          <span key={r.key} className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 text-[10px]">
+          <span key={r.key} className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 text-[11px]">
             <Badge tone={r.tone}>{r.count}</Badge>
             <span className="font-black text-[var(--text-strong)]">{r.label}</span>
           </span>
@@ -276,7 +249,7 @@ function DemoPanel({ demo, busy, onSeed, onReset }: {
   return (
     <section className="sarvam-card rounded-[1.5rem] border border-dashed border-[var(--border-strong)] p-5">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+        <p className={SECTION_LABEL}>
           <LayoutGrid className="h-3.5 w-3.5" /> Demo data
         </p>
         <span className="text-[11px] text-[var(--text-muted)]">
@@ -330,20 +303,20 @@ function SyncPanel({ targets, records, onRedrive, onValidate, onTest, busyId, fl
   }, {});
   const rollup = attentionRollupRows({ by_state: byState });
   return (
-    <section className="sarvam-card rounded-[1.5rem] p-5">
+    <section className={PANEL}>
       <div className="mb-3 flex items-baseline gap-2">
-        <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+        <p className={SECTION_LABEL}>
           <Share2 className="h-3.5 w-3.5" /> External sync
         </p>
         <span className="text-[11px] text-[var(--text-muted)]">· outbound incident export</span>
-        {attention.length > 0 ? <span className="rounded-full border border-[var(--warning)] px-1.5 text-[10px] font-black text-[var(--warning)]">{attention.length} need{attention.length === 1 ? "s" : ""} attention</span> : null}
-        {failed.length > 0 ? <span className="ml-auto rounded-full bg-[var(--danger)] px-1.5 text-[10px] font-black text-white">{failed.length} failed</span> : null}
+        {attention.length > 0 ? <span className="rounded-full border border-[var(--warning)] px-1.5 text-[11px] font-black text-[var(--warning)]">{attention.length} need{attention.length === 1 ? "s" : ""} attention</span> : null}
+        {failed.length > 0 ? <span className="ml-auto rounded-full bg-[var(--danger)] px-1.5 text-[11px] font-black text-white">{failed.length} failed</span> : null}
       </div>
 
       {rollup.length > 0 ? (
         <div className="mb-3 flex flex-wrap items-center gap-1.5" aria-label="Attention rollup">
           {rollup.map((r) => (
-            <span key={r.state} className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 text-[10px]">
+            <span key={r.state} className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 text-[11px]">
               <Badge tone={r.tone}>{r.count}</Badge>
               <span className="font-black text-[var(--text-strong)]">{r.label}</span>
               {r.action ? <span className="text-[var(--text-subtle)]">→ {r.action}</span> : null}
@@ -359,12 +332,12 @@ function SyncPanel({ targets, records, onRedrive, onValidate, onTest, busyId, fl
               <span className={cn("h-1.5 w-1.5 rounded-full", t.enabled ? "bg-[var(--success)]" : "bg-[var(--text-subtle)]")} aria-hidden="true" />
               <span className={cn("font-black", t.enabled ? "text-[var(--text-strong)]" : "text-[var(--text-subtle)] line-through")}>{t.name}</span>
               <span className="text-[var(--text-subtle)]">· {t.kind}</span>
-              {t.profile && t.profile !== t.kind ? <span className="rounded-full border border-[var(--border)] px-1.5 text-[10px] uppercase tracking-wide text-[var(--text-subtle)]">{t.profile}</span> : null}
+              {t.profile && t.profile !== t.kind ? <span className="rounded-full border border-[var(--border)] px-1.5 text-[11px] uppercase tracking-wide text-[var(--text-subtle)]">{t.profile}</span> : null}
               <Badge tone={readinessTone(t.readiness.state)}>{readinessLabel(t.readiness.state)}</Badge>
               {t.readiness_facts.last_validated_at ? <span className="text-[var(--text-subtle)]">checked {relTime(t.readiness_facts.last_validated_at)}</span> : null}
               {t.readiness.state !== "ready" && t.readiness.reason ? <span className="text-[var(--text-subtle)]">· {t.readiness.reason}</span> : null}
               {recommendedActionLabel(t.readiness.recommended_action) ? (
-                <span className="rounded-full border border-[var(--warning)] px-1.5 text-[10px] font-black text-[var(--warning)]" title={t.readiness.next_step ?? undefined}>→ {recommendedActionLabel(t.readiness.recommended_action)}</span>
+                <span className="rounded-full border border-[var(--warning)] px-1.5 text-[11px] font-black text-[var(--warning)]" title={t.readiness.next_step ?? undefined}>→ {recommendedActionLabel(t.readiness.recommended_action)}</span>
               ) : null}
               {t.consecutive_failures > 0 ? <span className="text-[var(--danger)]">⚠ {t.consecutive_failures}</span> : null}
               <span className="ml-auto flex items-center gap-1.5">
@@ -509,7 +482,7 @@ function IncidentRow({ inc, operatorName, onChanged }: {
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3.5">
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={incidentTone(inc.state)}>{inc.state}</Badge>
-        <span className="text-sm font-black text-[var(--text-strong)]">{inc.classification}</span>
+        <span className="type-heading-xs text-[var(--text-strong)]">{inc.classification}</span>
         <span className="text-xs text-[var(--text-muted)]">· {inc.subject}</span>
         {inc.severity ? <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-subtle)]">{inc.severity}</span> : null}
         <span className="ml-auto text-[11px] text-[var(--text-subtle)]">×{inc.occurrences} · last {relTime(inc.last_seen)}</span>
@@ -581,7 +554,7 @@ function IncidentRow({ inc, operatorName, onChanged }: {
 
       {expanded ? (
         <div className="mt-2 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-          <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
             <History className="h-3 w-3" /> Action trail
           </p>
           {history === null ? (
@@ -603,7 +576,7 @@ function IncidentRow({ inc, operatorName, onChanged }: {
 
           {syncLine ? (
             <div className="mt-2.5 border-t border-[var(--border)] pt-2">
-              <p className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              <p className="mb-1 flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
                 <Share2 className="h-3 w-3" /> External sync
                 {sync ? <span className="ml-1 rounded-full border border-[var(--border)] px-1.5 py-0.5 text-[9px] font-bold normal-case tracking-normal text-[var(--text-muted)]">{supportLevelLabel(sync.summary.support_level)}</span> : null}
               </p>
@@ -620,7 +593,7 @@ function IncidentRow({ inc, operatorName, onChanged }: {
               ) : null}
 
               {link && (link.external_assignee || link.external_severity || link.external_comment_count != null) ? (
-                <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-[var(--text-subtle)]">
+                <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-[var(--text-subtle)]">
                   {link.external_assignee ? <span>external owner: {link.external_assignee}</span> : null}
                   {link.external_severity ? <span>severity: {link.external_severity}</span> : null}
                   {link.external_comment_count != null ? <span>{link.external_comment_count} note{link.external_comment_count === 1 ? "" : "s"}</span> : null}
@@ -629,19 +602,19 @@ function IncidentRow({ inc, operatorName, onChanged }: {
               ) : null}
 
               {link && hiddenInboundFields(link).length > 0 ? (
-                <p className="mb-1.5 text-[10px] text-[var(--text-subtle)]">
+                <p className="mb-1.5 text-[11px] text-[var(--text-subtle)]">
                   Hidden by target policy: {hiddenInboundFields(link).join(", ")}
                 </p>
               ) : null}
               {link && !link.suggestions_allowed ? (
-                <p className="mb-1.5 text-[10px] text-[var(--text-subtle)]">Suggestions disabled for this target.</p>
+                <p className="mb-1.5 text-[11px] text-[var(--text-subtle)]">Suggestions disabled for this target.</p>
               ) : null}
 
               <div className="flex flex-wrap items-center gap-2 text-[11px]">
                 <Badge tone={syncLine.tone}>{syncLine.label}</Badge>
                 {link?.target_name ? <span className="text-[var(--text-muted)]">{link.target_name}{link.target_kind ? ` · ${link.target_kind}` : ""}</span> : null}
                 {link?.profile && link.profile !== link.target_kind ? (
-                  <span className="rounded-full border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--text-subtle)]">{link.profile}</span>
+                  <span className="rounded-full border border-[var(--border)] px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-[var(--text-subtle)]">{link.profile}</span>
                 ) : null}
                 {link?.external_ref ? <span className="text-[var(--text-subtle)]">ref {link.external_ref}</span> : null}
                 {link?.external_url ? (
@@ -690,7 +663,7 @@ function IncidentRow({ inc, operatorName, onChanged }: {
                 ))}
               </div>
               {actions?.can_apply && actions.apply_action ? (
-                <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
+                <p className="mt-1 text-[11px] text-[var(--text-subtle)]">
                   {applyActionLabel(actions.apply_action)}
                   {" · "}
                   <span className="font-bold">{actionEffectLabel(actions.apply_action === "accept_resolved" ? "local" : "linkage")}</span>
@@ -705,7 +678,7 @@ function IncidentRow({ inc, operatorName, onChanged }: {
                 </div>
               ) : null}
 
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-[var(--text-subtle)]">
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-[var(--text-subtle)]">
                 {sync?.summary.reason ? <span>{sync.summary.reason}</span> : null}
                 {link?.external_status ? <span>external: {link.external_status}</span> : null}
                 {sync?.summary.last_synced_at ? <span>synced {relTime(sync.summary.last_synced_at)}</span> : null}
@@ -728,7 +701,7 @@ function IncidentRow({ inc, operatorName, onChanged }: {
 function LineageChain({ lineage }: { lineage: DeliveryLineage }) {
   return (
     <div className="mt-2 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-      <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
+      <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
         <GitBranch className="h-3 w-3" /> Redrive lineage · {lineage.attempts.length} attempt{lineage.attempts.length === 1 ? "" : "s"}
       </p>
       <div className="grid gap-1">
@@ -933,7 +906,7 @@ export default function OperatorConsole() {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--accent-soft)] text-[var(--accent)]">
             <LockKeyhole className="h-6 w-6" />
           </div>
-          <h1 className="text-lg font-black tracking-tight text-[var(--text-strong)]">Operator console</h1>
+          <h1 className="type-heading text-[var(--text-strong)]">Operator console</h1>
           <p className="mt-1 text-sm text-[var(--text-muted)]">
             Delivery operations. Enter your service key — this area is operator-only and never shown in the product.
           </p>
@@ -941,17 +914,17 @@ export default function OperatorConsole() {
             type="password" value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && keyInput.trim()) void connect(); }}
             placeholder="Service key"
-            className="mt-5 w-full rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-sm text-[var(--text-strong)] outline-none transition focus:border-[var(--border-strong)]"
+            className="mt-5 w-full rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-sm text-[var(--text-strong)] outline-none transition duration-base focus:border-[var(--border-strong)]"
           />
           <input
             type="text" value={nameInput} maxLength={80} onChange={(e) => setNameInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && keyInput.trim()) void connect(); }}
             placeholder="Your operator name (optional — for handoff)"
-            className="mt-2.5 w-full rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-sm text-[var(--text-strong)] outline-none transition focus:border-[var(--border-strong)]"
+            className="mt-2.5 w-full rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-sm text-[var(--text-strong)] outline-none transition duration-base focus:border-[var(--border-strong)]"
           />
           {keyError ? <p className="mt-2 text-xs font-semibold text-[var(--danger)]">{keyError}</p> : null}
           <button type="button" onClick={() => void connect()} disabled={!keyInput.trim() || status === "checking"}
-            className="mt-4 w-full rounded-full border border-transparent bg-[var(--accent)] px-4 py-2.5 text-sm font-black text-[var(--accent-contrast,#fff)] transition hover:opacity-90 disabled:opacity-60">
+            className="mt-4 w-full rounded-full border border-transparent bg-[var(--accent)] px-4 py-2.5 text-sm font-black text-[var(--accent-contrast,#fff)] transition duration-fast active:scale-[0.985] hover:opacity-90 disabled:opacity-60">
             {status === "checking" ? "Checking…" : "Connect"}
           </button>
         </div>
@@ -976,7 +949,7 @@ export default function OperatorConsole() {
             <ShieldCheck className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-lg font-black tracking-tight text-[var(--text-strong)]">Delivery console</h1>
+            <h1 className="type-heading text-[var(--text-strong)]">Delivery console</h1>
             <p className="text-xs text-[var(--text-muted)]">
               Operator-only · health, history, tuning, and recovery
               {operatorName ? <span className="ml-1 font-semibold text-[var(--text-strong)]">· acting as {operatorName}</span> : null}
@@ -986,15 +959,15 @@ export default function OperatorConsole() {
         <div className="flex items-center gap-2">
           {flash ? <span className="text-xs font-semibold text-[var(--success)]">{flash}</span> : null}
           <button type="button" onClick={() => void onSweep()} disabled={busy === "sweep"}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:text-[var(--text-strong)] disabled:opacity-60">
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:text-[var(--text-strong)] disabled:opacity-60">
             <Zap className="h-3.5 w-3.5" /> {busy === "sweep" ? "Sweeping…" : "Sweep"}
           </button>
           <button type="button" onClick={() => { void load(); if (tab === "history") void loadHistory(); }}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:text-[var(--text-strong)]">
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:text-[var(--text-strong)]">
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </button>
           <button type="button" onClick={disconnect}
-            className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition hover:text-[var(--danger)]">
+            className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:text-[var(--danger)]">
             Disconnect
           </button>
         </div>
@@ -1004,11 +977,11 @@ export default function OperatorConsole() {
       <div className="mb-5 flex gap-1.5">
         {TABS.map((t) => (
           <button key={t.id} type="button" onClick={() => setTab(t.id)}
-            className={cn("inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-black transition",
+            className={cn("inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-black transition duration-fast active:scale-[0.985]",
               tab === t.id ? "bg-[var(--accent)] text-[var(--accent-contrast,#fff)]" : "border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:text-[var(--text-strong)]")}>
             <t.icon className="h-3.5 w-3.5" /> {t.label}
-            {t.id === "recovery" && deadLetters.length > 0 ? <span className="ml-0.5 rounded-full bg-[var(--danger)] px-1.5 text-[10px] text-white">{deadLetters.length}</span> : null}
-            {t.id === "incidents" && t.badge ? <span className="ml-0.5 rounded-full bg-[var(--danger)] px-1.5 text-[10px] text-white">{t.badge}</span> : null}
+            {t.id === "recovery" && deadLetters.length > 0 ? <span className="ml-0.5 rounded-full bg-[var(--danger)] px-1.5 text-[11px] text-white">{deadLetters.length}</span> : null}
+            {t.id === "incidents" && t.badge ? <span className="ml-0.5 rounded-full bg-[var(--danger)] px-1.5 text-[11px] text-white">{t.badge}</span> : null}
           </button>
         ))}
       </div>
@@ -1017,8 +990,8 @@ export default function OperatorConsole() {
       {tab === "overview" ? (
         <div className="grid gap-5">
           {analytics ? (
-            <section className="sarvam-card rounded-[1.5rem] p-5">
-              <p className="mb-3 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Delivery summary · last {analytics.window_minutes}m</p>
+            <section className={PANEL}>
+              <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">Delivery summary · last {analytics.window_minutes}m</p>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
                 <Stat label="Attempted" value={analytics.totals.attempted} />
                 <Stat label="Delivered" value={analytics.totals.delivered} />
@@ -1035,8 +1008,8 @@ export default function OperatorConsole() {
             </section>
           ) : null}
 
-          <section className="sarvam-card rounded-[1.5rem] p-5">
-            <p className="mb-3 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Destinations</p>
+          <section className={PANEL}>
+            <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">Destinations</p>
             {destinations.length === 0 ? (
               <p className="text-sm text-[var(--text-muted)]">No destinations configured.</p>
             ) : (
@@ -1045,11 +1018,11 @@ export default function OperatorConsole() {
                   <div key={d.destination_id} className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-black text-[var(--text-strong)]">
+                        <p className="truncate type-heading-xs text-[var(--text-strong)]">
                           {d.name || "Destination"}
-                          <span className="ml-2 rounded-md border border-[var(--border)] bg-[var(--surface-muted)] px-1.5 py-0.5 text-[10px] font-black uppercase text-[var(--text-subtle)]">{d.kind}</span>
-                          {d.is_escalation ? <span className="ml-1.5 text-[10px] font-black uppercase text-[var(--secondary)]">escalation</span> : null}
-                          {!d.enabled ? <span className="ml-1.5 text-[10px] font-black uppercase text-[var(--text-subtle)]">disabled</span> : null}
+                          <span className="ml-2 rounded-md border border-[var(--border)] bg-[var(--surface-muted)] px-1.5 py-0.5 text-[11px] font-black uppercase text-[var(--text-subtle)]">{d.kind}</span>
+                          {d.is_escalation ? <span className="ml-1.5 text-[11px] font-black uppercase text-[var(--secondary)]">escalation</span> : null}
+                          {!d.enabled ? <span className="ml-1.5 text-[11px] font-black uppercase text-[var(--text-subtle)]">disabled</span> : null}
                         </p>
                         <p className="mt-0.5 truncate text-xs text-[var(--text-muted)]">{d.reason}</p>
                       </div>
@@ -1068,16 +1041,16 @@ export default function OperatorConsole() {
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
                       <button type="button" onClick={() => void onPreview(d.destination_id)}
-                        className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-muted)] transition hover:text-[var(--text-strong)]">
+                        className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:text-[var(--text-strong)]">
                         Why routed?
                       </button>
                       <button type="button" onClick={() => (editing === d.destination_id ? setEditing(null) : startEdit(d))}
-                        className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-muted)] transition hover:text-[var(--text-strong)]">
+                        className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:text-[var(--text-strong)]">
                         <SlidersHorizontal className="h-3 w-3" /> Tune
                       </button>
                       {d.cooling_down ? (
                         <button type="button" onClick={() => void onClearCooldown(d.destination_id)} disabled={busy === d.destination_id}
-                          className="rounded-full border border-transparent bg-[var(--accent)] px-3 py-1 text-[11px] font-black text-[var(--accent-contrast,#fff)] transition hover:opacity-90 disabled:opacity-60">
+                          className="rounded-full border border-transparent bg-[var(--accent)] px-3 py-1 text-[11px] font-black text-[var(--accent-contrast,#fff)] transition duration-fast active:scale-[0.985] hover:opacity-90 disabled:opacity-60">
                           {busy === d.destination_id ? "…" : "Clear cooldown"}
                         </button>
                       ) : null}
@@ -1112,19 +1085,19 @@ export default function OperatorConsole() {
                         </label>
                         <div className="flex items-center gap-2 sm:col-span-2">
                           <button type="button" onClick={() => void onSaveTuning(d.destination_id)} disabled={busy === d.destination_id}
-                            className="rounded-full border border-transparent bg-[var(--accent)] px-3 py-1 text-[11px] font-black text-[var(--accent-contrast,#fff)] transition hover:opacity-90 disabled:opacity-60">
+                            className="rounded-full border border-transparent bg-[var(--accent)] px-3 py-1 text-[11px] font-black text-[var(--accent-contrast,#fff)] transition duration-fast active:scale-[0.985] hover:opacity-90 disabled:opacity-60">
                             {busy === d.destination_id ? "Saving…" : "Save"}
                           </button>
                           <button type="button" onClick={() => setEditing(null)}
                             className="rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1 text-[11px] font-black text-[var(--text-muted)]">Cancel</button>
-                          <span className="text-[10px] text-[var(--text-subtle)]">Secrets are not editable here.</span>
+                          <span className="text-[11px] text-[var(--text-subtle)]">Secrets are not editable here.</span>
                         </div>
                       </div>
                     ) : null}
 
                     {preview[d.destination_id] ? (
                       <div className="mt-3 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-                        <p className="mb-1.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-subtle)]">Routing decisions (live alerts)</p>
+                        <p className="mb-1.5 text-[11px] font-black uppercase tracking-wide text-[var(--text-subtle)]">Routing decisions (live alerts)</p>
                         {preview[d.destination_id]!.decisions.length === 0 ? (
                           <p className="text-xs text-[var(--text-muted)]">No current alerts for this destination.</p>
                         ) : (
@@ -1160,7 +1133,7 @@ export default function OperatorConsole() {
           {incidents.length === 0 ? (
             <section className="sarvam-card rounded-[1.5rem] p-8 text-center">
               <CheckCircle2 className="mx-auto mb-2 h-7 w-7 text-[var(--success)]" />
-              <p className="text-sm font-black text-[var(--text-strong)]">No incidents.</p>
+              <p className="type-heading-xs text-[var(--text-strong)]">No incidents.</p>
               <p className="mt-1 text-xs text-[var(--text-muted)]">Recurring alert conditions appear here for acknowledge / silence / recovery.</p>
             </section>
           ) : (
@@ -1174,9 +1147,9 @@ export default function OperatorConsole() {
                 const rows = incidents.filter((i) => i.state === state);
                 if (rows.length === 0) return null;
                 return (
-                  <section key={state} className="sarvam-card rounded-[1.5rem] p-5">
+                  <section key={state} className={PANEL}>
                     <div className="mb-3 flex items-baseline gap-2">
-                      <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">{title}</p>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">{title}</p>
                       <span className="text-[11px] text-[var(--text-muted)]">· {hint}</span>
                       <span className="ml-auto text-[11px] font-black text-[var(--text-muted)]">{rows.length}</span>
                     </div>
@@ -1195,13 +1168,13 @@ export default function OperatorConsole() {
 
       {/* ── History ── */}
       {tab === "history" ? (
-        <section className="sarvam-card rounded-[1.5rem] p-5">
+        <section className={PANEL}>
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">Delivery history</p>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">Delivery history</p>
             <div className="ml-auto flex flex-wrap items-center gap-1.5">
               {["", "failed", "pending", "delivered"].map((s) => (
                 <button key={s || "all"} type="button" onClick={() => setFilter((f) => ({ ...f, status: s }))}
-                  className={cn("rounded-full px-3 py-1 text-[11px] font-black transition",
+                  className={cn("rounded-full px-3 py-1 text-[11px] font-black transition duration-fast active:scale-[0.985]",
                     filter.status === s ? "bg-[var(--accent)] text-[var(--accent-contrast,#fff)]" : "border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)] hover:text-[var(--text-strong)]")}>
                   {s || "all"}
                 </button>
@@ -1220,7 +1193,7 @@ export default function OperatorConsole() {
               {deliveries.map((d) => (
                 <div key={d.id}>
                   <button type="button" onClick={() => void onLineage(d.id)}
-                    className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-3.5 py-2.5 text-left transition hover:border-[var(--border-strong)]">
+                    className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-3.5 py-2.5 text-left transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)]">
                     <div className="flex min-w-0 items-center gap-2">
                       <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", TONE_DOT[deliveryStatusTone(d.status)])} aria-hidden="true" />
                       <span className="truncate text-xs">
@@ -1246,8 +1219,8 @@ export default function OperatorConsole() {
 
       {/* ── Recovery (dead-letters) ── */}
       {tab === "recovery" ? (
-        <section className="sarvam-card rounded-[1.5rem] p-5">
-          <p className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+        <section className={PANEL}>
+          <p className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">
             <AlertTriangle className="h-3.5 w-3.5 text-[var(--warning)]" /> Dead-letter recovery
           </p>
           {deadLetters.length === 0 ? (
@@ -1260,7 +1233,7 @@ export default function OperatorConsole() {
                 <div key={dl.id}>
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3.5">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[var(--text-strong)]">
+                      <p className="truncate type-body-strong text-[var(--text-strong)]">
                         {dl.event_type || dl.source_type}
                         {dl.severity ? <span className="ml-2 text-[11px] font-bold uppercase text-[var(--text-subtle)]">{dl.severity}</span> : null}
                       </p>
@@ -1270,11 +1243,11 @@ export default function OperatorConsole() {
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <button type="button" onClick={() => void onLineage(dl.id)}
-                        className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1 text-[11px] font-black text-[var(--text-muted)] transition hover:text-[var(--text-strong)]">Lineage</button>
+                        className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1 text-[11px] font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:text-[var(--text-strong)]">Lineage</button>
                       <Badge tone={deadLetterTone(dl.dead_letter_state)}>{deadLetterLabel(dl.dead_letter_state)}</Badge>
                       {canRedrive(dl) ? (
                         <button type="button" onClick={() => void onRedrive(dl.id)} disabled={busy === dl.id}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-transparent bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-[var(--accent-contrast,#fff)] transition hover:opacity-90 disabled:opacity-60">
+                          className="inline-flex items-center gap-1.5 rounded-full border border-transparent bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-[var(--accent-contrast,#fff)] transition duration-fast active:scale-[0.985] hover:opacity-90 disabled:opacity-60">
                           <Send className="h-3 w-3" /> {busy === dl.id ? "…" : "Redrive"}
                         </button>
                       ) : (

@@ -101,11 +101,11 @@ function PanelHeader({
         </div>
 
         <div>
-          <h2 className="text-lg font-black text-[var(--text-strong)]">
+          <h2 className="type-heading text-[var(--text-strong)]">
             {title}
           </h2>
 
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+          <p className="mt-1 max-w-2xl type-body text-[var(--text-muted)]">
             {description}
           </p>
         </div>
@@ -133,11 +133,11 @@ function MetricCard({
     <div className="sarvam-card rounded-[1.35rem] p-5">
       <div className="mb-5 flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+          <p className="type-label text-[var(--text-subtle)]">
             {label}
           </p>
 
-          <h3 className={cn("mt-2 text-3xl font-black", getToneTextClass(tone))}>
+          <h3 className={cn("mt-2 type-metric", getToneTextClass(tone))}>
             {formatNumber(value)}
           </h3>
         </div>
@@ -152,7 +152,7 @@ function MetricCard({
         </div>
       </div>
 
-      <p className="text-xs leading-5 text-[var(--text-muted)]">
+      <p className="type-body-sm text-[var(--text-muted)]">
         {description}
       </p>
     </div>
@@ -176,11 +176,11 @@ function SignalCard({
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="type-label text-[var(--text-subtle)]">
             {title}
           </p>
 
-          <p className={cn("mt-2 text-2xl font-black", getToneTextClass(tone))}>
+          <p className={cn("mt-2 type-metric-sm", getToneTextClass(tone))}>
             {formatNumber(value)}
           </p>
         </div>
@@ -197,7 +197,7 @@ function SignalCard({
         )}
       </div>
 
-      <p className="mt-3 text-xs leading-5 text-[var(--text-muted)]">
+      <p className="mt-3 type-body-sm text-[var(--text-muted)]">
         {subtitle}
       </p>
     </div>
@@ -208,12 +208,12 @@ function WorkflowRunCard({ run }: { run: AiraXWorkflowRun }) {
   return (
     <Link
       href={`/workflows/${run.run_id}`}
-      className="group block rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4 transition hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]"
+      className="group block rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4 transition duration-fast hover:-translate-y-px active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]"
     >
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span
           className={cn(
-            "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-black",
+            "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-11 font-black",
             getStatusClass(run.status)
           )}
         >
@@ -222,18 +222,18 @@ function WorkflowRunCard({ run }: { run: AiraXWorkflowRun }) {
         </span>
 
         {run.requires_approval && (
-          <span className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-black status-warning">
+          <span className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-11 font-black status-warning">
             <ShieldAlert className="h-3.5 w-3.5" />
             approval required
           </span>
         )}
       </div>
 
-      <h3 className="line-clamp-1 text-sm font-black text-[var(--text-strong)] group-hover:text-[var(--accent)]">
+      <h3 className="line-clamp-1 type-heading-xs text-[var(--text-strong)] group-hover:text-[var(--accent)]">
         {run.user_goal || "Untitled workflow"}
       </h3>
 
-      <p className="mt-2 line-clamp-2 text-xs leading-5 text-[var(--text-muted)]">
+      <p className="mt-2 line-clamp-2 type-body-sm text-[var(--text-muted)]">
         {run.final_answer || run.decision || "No final output recorded yet."}
       </p>
 
@@ -344,18 +344,18 @@ export default function OverviewPage() {
               AIRA-X Operations
             </div>
 
-            <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
+            <h1 className="aira-gradient-text type-display">
               Operations
             </h1>
 
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
+            <p className="mt-3 max-w-3xl type-body text-[var(--text-muted)]">
               Monitor workflow health, approval queues, Git preflights, cleanup
               activity, and recent execution history from a single operations
               view.
             </p>
 
             {cleanupMessage && (
-              <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--success)_34%,transparent)] bg-[var(--success-soft)] p-3 text-sm font-semibold text-[var(--success)]">
+              <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--success)_34%,transparent)] bg-[var(--success-soft)] p-3 type-body-strong text-[var(--success)]">
                 {cleanupMessage}
               </div>
             )}
@@ -368,11 +368,11 @@ export default function OverviewPage() {
               </div>
 
               <div>
-                <h2 className="text-sm font-black text-[var(--text-strong)]">
+                <h2 className="type-heading-xs text-[var(--text-strong)]">
                   History Maintenance
                 </h2>
 
-                <p className="text-xs leading-5 text-[var(--text-muted)]">
+                <p className="type-body-sm text-[var(--text-muted)]">
                   Remove only safe completed history.
                 </p>
               </div>
@@ -382,7 +382,7 @@ export default function OverviewPage() {
               type="button"
               onClick={handleSafeCleanup}
               disabled={cleanupLoading || loading}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] px-4 py-3 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-3 text-xs font-black text-[var(--danger)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {cleanupLoading ? (
                 <RefreshCw className="h-4 w-4 animate-spin" />
@@ -392,7 +392,7 @@ export default function OverviewPage() {
               {cleanupLoading ? "Cleaning history..." : "Safe Cleanup"}
             </button>
 
-            <p className="mt-3 text-xs leading-5 text-[var(--text-subtle)]">
+            <p className="mt-3 type-body-sm text-[var(--text-subtle)]">
               Active, approval-processing, retrying, and executing workflows are
               skipped automatically.
             </p>
@@ -407,7 +407,7 @@ export default function OverviewPage() {
       )}
 
       {error && (
-        <div className="rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-4 text-sm text-[var(--danger)]">
+        <div className="rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] p-4 text-sm text-[var(--danger)]">
           {error}
         </div>
       )}
@@ -456,11 +456,11 @@ export default function OverviewPage() {
                 description="Completion, failures, approvals, rejected runs, and active attention."
                 action={
                   <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-3 text-right">
-                    <p className="text-[11px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
+                    <p className="type-label text-[var(--text-subtle)]">
                       Completion
                     </p>
 
-                    <p className="mt-1 text-2xl font-black text-[var(--success)]">
+                    <p className="mt-1 type-metric-sm text-[var(--success)]">
                       {completionRate}%
                     </p>
                   </div>
@@ -632,7 +632,7 @@ export default function OverviewPage() {
               action={
                 <Link
                   href="/workflows"
-                  className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                  className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
                 >
                   View all workflows
                   <ArrowRight className="h-3.5 w-3.5" />
@@ -642,7 +642,7 @@ export default function OverviewPage() {
 
             {latestRuns.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface-soft)] p-8 text-center">
-                <p className="text-sm font-semibold text-[var(--text-muted)]">
+                <p className="type-body-strong text-[var(--text-muted)]">
                   No workflow runs recorded yet.
                 </p>
               </div>

@@ -173,7 +173,7 @@ function MetricCard({
   return (
     <div className="sarvam-card rounded-[1.35rem] p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+        <p className="type-label text-[var(--text-subtle)]">
           {label}
         </p>
 
@@ -187,11 +187,11 @@ function MetricCard({
         </div>
       </div>
 
-      <h2 className="text-3xl font-black text-[var(--text-strong)]">
+      <h2 className="type-metric text-[var(--text-strong)]">
         {value}
       </h2>
 
-      <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+      <p className="mt-2 type-body-sm text-[var(--text-muted)]">
         {description}
       </p>
     </div>
@@ -217,11 +217,11 @@ function SectionHeader({
         </div>
 
         <div>
-          <h2 className="text-lg font-black text-[var(--text-strong)]">
+          <h2 className="type-heading text-[var(--text-strong)]">
             {title}
           </h2>
 
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+          <p className="mt-1 max-w-2xl type-body text-[var(--text-muted)]">
             {description}
           </p>
         </div>
@@ -239,7 +239,7 @@ function MessageCard({ message }: { message: Message }) {
     message.content.replace(/\s+/g, " ").trim().length > 180;
 
   return (
-    <article className="sarvam-card rounded-[1.5rem] p-5 transition hover:-translate-y-0.5">
+    <article className="sarvam-card rounded-[1.5rem] p-5 transition duration-fast hover:-translate-y-px">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <div
@@ -255,14 +255,14 @@ function MessageCard({ message }: { message: Message }) {
             <div className="flex flex-wrap items-center gap-2">
               <span
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-full border border-[var(--border)] px-3 py-1 text-[11px] font-black uppercase tracking-wide",
+                  "inline-flex items-center gap-2 rounded-full border border-[var(--border)] px-3 py-1 text-11 font-black uppercase tracking-[var(--tracking-label)]",
                   roleClass
                 )}
               >
                 {getRoleLabel(message.role)}
               </span>
 
-              <span className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--text-muted)]">
+              <span className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1 text-11 font-bold text-[var(--text-muted)]">
                 <Clock className="h-3.5 w-3.5" />
                 {formatDateTime(message.created_at)}
               </span>
@@ -276,20 +276,20 @@ function MessageCard({ message }: { message: Message }) {
       </div>
 
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-        <p className="mb-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+        <p className="mb-2 type-label text-[var(--text-subtle)]">
           Preview
         </p>
 
-        <p className="text-sm leading-7 text-[var(--text)]">{previewText}</p>
+        <p className="type-body text-[var(--text)]">{previewText}</p>
       </div>
 
       {hasLongContent && (
         <details className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-          <summary className="cursor-pointer text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <summary className="cursor-pointer type-label text-[var(--text-subtle)]">
             View full message
           </summary>
 
-          <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[var(--text)]">
+          <div className="mt-3 whitespace-pre-wrap type-body text-[var(--text)]">
             {message.content}
           </div>
         </details>
@@ -428,29 +428,29 @@ export default function HistoryPage() {
               AIRA-X Conversation History
             </div>
 
-            <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
+            <h1 className="aira-gradient-text type-display">
               Interactions
             </h1>
 
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
+            <p className="mt-3 max-w-3xl type-body text-[var(--text-muted)]">
               Review stored conversation turns used for recent context,
               follow-up continuity, and assistant-session traceability.
             </p>
           </div>
 
           <div className="rounded-[1.5rem] border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+            <p className="type-label text-[var(--text-subtle)]">
               Continue in Assistant
             </p>
 
-            <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+            <p className="mt-2 type-body text-[var(--text-muted)]">
               Return to Assistant for chat, document-backed answers, and
               workflow follow-ups.
             </p>
 
             <Link
               href="/chat"
-              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-4 py-3 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-4 py-3 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985]"
             >
               <Sparkles className="h-4 w-4" />
               Assistant
@@ -469,10 +469,10 @@ export default function HistoryPage() {
       {status && (
         <div
           className={cn(
-            "rounded-2xl border p-4 text-sm font-semibold",
+            "rounded-[var(--radius-2xl)] border p-4 text-sm font-semibold",
             status.toLowerCase().includes("failed") ||
               status.toLowerCase().includes("error")
-              ? "border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] text-[var(--danger)]"
+              ? "border-[var(--danger-border)] bg-[var(--danger-soft)] text-[var(--danger)]"
               : "border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)]"
           )}
         >
@@ -531,7 +531,7 @@ export default function HistoryPage() {
                   <button
                     type="button"
                     onClick={() => loadMessages({ showLoading: false })}
-                    className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                    className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
                   >
                     <RefreshCw className="h-3.5 w-3.5" />
                     Refresh
@@ -541,7 +541,7 @@ export default function HistoryPage() {
                     type="button"
                     onClick={clearHistory}
                     disabled={clearing || messages.length === 0}
-                    className="inline-flex w-fit items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] px-4 py-2 text-xs font-black text-[var(--danger)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-2 text-xs font-black text-[var(--danger)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {clearing ? (
                       <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -563,7 +563,7 @@ export default function HistoryPage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Search role, message content, date, or message ID..."
-                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+                className="w-full rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition duration-base placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
               />
             </label>
 
@@ -571,7 +571,7 @@ export default function HistoryPage() {
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
               >
                 Clear Search
               </button>
@@ -584,18 +584,18 @@ export default function HistoryPage() {
                 <History className="h-5 w-5" />
               </div>
 
-              <h2 className="text-xl font-black text-[var(--text-strong)]">
+              <h2 className="type-heading-xl text-[var(--text-strong)]">
                 No interactions yet
               </h2>
 
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
+              <p className="mx-auto mt-2 max-w-md type-body text-[var(--text-muted)]">
                 Start a conversation in Assistant and stored turns will appear
                 here.
               </p>
 
               <Link
                 href="/chat"
-                className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+                className="mt-5 inline-flex items-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985]"
               >
                 <Sparkles className="h-4 w-4" />
                 Assistant
@@ -607,11 +607,11 @@ export default function HistoryPage() {
                 <Search className="h-5 w-5" />
               </div>
 
-              <h2 className="text-xl font-black text-[var(--text-strong)]">
+              <h2 className="type-heading-xl text-[var(--text-strong)]">
                 No matching interactions
               </h2>
 
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
+              <p className="mx-auto mt-2 max-w-md type-body text-[var(--text-muted)]">
                 Try searching a different role, phrase, date, or message ID.
               </p>
             </section>

@@ -56,10 +56,10 @@ function AnswerCodeBlock({
   return (
     <pre
       className={cn(
-        "max-h-80 overflow-auto whitespace-pre-wrap rounded-xl border p-4 text-xs leading-6",
+        "max-h-80 overflow-auto whitespace-pre-wrap rounded-xl border p-4 text-xs leading-[var(--leading-code)]",
         variant === "output"
           ? "border-[var(--border)] bg-[var(--surface-muted)] font-mono text-[var(--text)]"
-          : "border-[color-mix(in_srgb,var(--accent)_22%,transparent)] bg-[color-mix(in_srgb,var(--accent)_6%,transparent)] font-mono text-[var(--text-strong)]"
+          : "border-[var(--accent-border)] bg-[color-mix(in_srgb,var(--accent)_6%,transparent)] font-mono text-[var(--text-strong)]"
       )}
     >
       {value.trim()}
@@ -73,7 +73,7 @@ function BulletList({ items }: { items: string[] }) {
   return (
     <ul className="space-y-2 pl-1">
       {items.map((item, index) => (
-        <li key={index} className="flex gap-2 text-sm leading-6 text-[var(--text)]">
+        <li key={index} className="flex gap-2 type-body text-[var(--text)]">
           <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" />
           <span><InlineText text={cleanInline(item)} /></span>
         </li>
@@ -88,7 +88,7 @@ function OrderedList({ items }: { items: string[] }) {
   return (
     <ol className="space-y-2 pl-1">
       {items.map((item, index) => (
-        <li key={index} className="flex gap-2.5 text-sm leading-6 text-[var(--text)]">
+        <li key={index} className="flex gap-2.5 type-body text-[var(--text)]">
           <span className="mt-px min-w-[1.15rem] shrink-0 text-right font-bold text-[var(--accent)]">
             {index + 1}.
           </span>
@@ -192,7 +192,7 @@ function RichAnswer({ text }: { text: string }) {
       {blocks.map((block, index) => {
         if (block.type === "h") {
           return (
-            <p key={index} className="text-sm font-black text-[var(--text-strong)]">
+            <p key={index} className="type-heading-xs text-[var(--text-strong)]">
               <InlineText text={cleanInline(block.text)} />
             </p>
           );
@@ -215,7 +215,7 @@ function ParagraphBlock({ text }: { text: string }) {
   return (
     <div className="space-y-3">
       {paragraphs.map((paragraph, index) => (
-        <p key={index} className="text-sm leading-7 text-[var(--text)]">
+        <p key={index} className="type-body text-[var(--text)]">
           <InlineText text={formatInlineText(paragraph)} />
         </p>
       ))}
@@ -235,7 +235,7 @@ function SectionBlock({ section }: { section: AnswerSection }) {
 
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-4">
-      <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[var(--text-subtle)]">
+      <p className="text-11 font-black uppercase tracking-[var(--tracking-label)] text-[var(--text-subtle)]">
         {section.title}
       </p>
 
@@ -248,7 +248,7 @@ function SectionBlock({ section }: { section: AnswerSection }) {
             variant={section.variant === "output" ? "output" : "code"}
           />
         ) : section.variant === "meta" ? (
-          <p className="whitespace-pre-wrap font-mono text-xs leading-6 text-[var(--text-muted)]">
+          <p className="whitespace-pre-wrap type-mono text-[var(--text-muted)]">
             {section.content}
           </p>
         ) : (
@@ -273,7 +273,7 @@ function StructuredTechnicalSections({ sections }: { sections: AnswerSection[] }
             className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3"
           >
             {section.title && (
-              <p className="text-[10px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
+              <p className="text-11 font-black uppercase tracking-[var(--tracking-label)] text-[var(--text-subtle)]">
                 {section.title}
               </p>
             )}
@@ -281,7 +281,7 @@ function StructuredTechnicalSections({ sections }: { sections: AnswerSection[] }
               {sectionUsesList(section.title, section.content) ? (
                 <BulletList items={parseListItems(section.content)} />
               ) : (
-                <p className="whitespace-pre-wrap font-mono text-xs leading-6 text-[var(--text-muted)]">
+                <p className="whitespace-pre-wrap type-mono text-[var(--text-muted)]">
                   {section.content}
                 </p>
               )}
@@ -321,7 +321,7 @@ function MultiTaskIntro({ intro }: { intro: string }) {
 
   return (
     <div className="rounded-xl border border-[color-mix(in_srgb,var(--accent)_24%,transparent)] bg-[var(--accent-soft)] px-4 py-3">
-      <p className="text-sm font-semibold leading-6 text-[var(--text-strong)]">
+      <p className="type-body-strong text-[var(--text-strong)]">
         <InlineText text={intro} />
       </p>
     </div>
@@ -340,7 +340,7 @@ function MultiTaskCard({ task }: { task: ParsedMultiTask["tasks"][number] }) {
           {task.index}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-black text-[var(--text-strong)]">{task.title}</p>
+          <p className="type-heading-xs text-[var(--text-strong)]">{task.title}</p>
         </div>
       </div>
 
@@ -359,14 +359,14 @@ function MultiTaskSummary({ summary }: { summary: string }) {
 
   return (
     <div className="rounded-xl border border-[color-mix(in_srgb,var(--success)_28%,transparent)] bg-[var(--success-soft)] p-4">
-      <div className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-[var(--success)]">
+      <div className="mb-2 flex items-center gap-2 text-11 font-black uppercase tracking-[var(--tracking-label)] text-[var(--success)]">
         <CheckCircle2 className="h-3.5 w-3.5" />
         Summary
       </div>
       {hasList ? (
         <BulletList items={items} />
       ) : (
-        <p className="text-sm leading-6 text-[var(--text)]">
+        <p className="type-body text-[var(--text)]">
           <InlineText text={summary} />
         </p>
       )}

@@ -373,7 +373,7 @@ function RunBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-black",
+        "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-11 font-black",
         className
       )}
     >
@@ -393,13 +393,13 @@ function FieldCard({
 }) {
   return (
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
-      <p className="text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+      <p className="type-label text-[var(--text-subtle)]">
         {label}
       </p>
 
       <div
         className={cn(
-          "mt-1 break-words text-sm font-semibold text-[var(--text-strong)]",
+          "mt-1 break-words type-body-strong text-[var(--text-strong)]",
           mono && "font-mono text-xs"
         )}
       >
@@ -425,7 +425,7 @@ function ApprovalMetricCard({
   return (
     <div className="sarvam-card rounded-[1.35rem] p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--text-subtle)]">
+        <p className="type-label text-[var(--text-subtle)]">
           {label}
         </p>
 
@@ -434,12 +434,12 @@ function ApprovalMetricCard({
         </div>
       </div>
 
-      <h2 className={cn("text-3xl font-black", getMetricToneClass(tone))}>
+      <h2 className={cn("type-metric", getMetricToneClass(tone))}>
         {formatNumber(value)}
       </h2>
 
       {description && (
-        <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+        <p className="mt-2 type-body-sm text-[var(--text-muted)]">
           {description}
         </p>
       )}
@@ -463,7 +463,7 @@ function TabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-full border px-3 py-1.5 text-xs font-black transition",
+        "rounded-full border px-3 py-1.5 text-xs font-black transition duration-fast active:scale-[0.985]",
         active
           ? "border-[var(--border-strong)] bg-[var(--accent)] text-[var(--accent-foreground)] shadow-[var(--shadow-soft)]"
           : "border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
@@ -485,7 +485,7 @@ function PreflightPreview({ run }: { run: AiraXWorkflowRun }) {
 
   return (
     <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-black text-[var(--text-strong)]">
+      <div className="mb-3 flex items-center gap-2 type-heading-xs text-[var(--text-strong)]">
         {gitPushPreflight ? (
           <UploadCloud className="h-4 w-4 text-[var(--danger)]" />
         ) : (
@@ -510,11 +510,11 @@ function PreflightPreview({ run }: { run: AiraXWorkflowRun }) {
 
       {gitPushPreflight && context.last_commit && (
         <div className="mt-3">
-          <p className="mb-2 text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+          <p className="mb-2 text-xs font-black uppercase tracking-[var(--tracking-label)] text-[var(--text-subtle)]">
             Latest Local Commit
           </p>
 
-          <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded-2xl p-3 text-[11px] leading-5">
+          <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded-[var(--radius-2xl)] p-3 text-11 leading-[var(--leading-alert)]">
             {context.last_commit}
           </pre>
         </div>
@@ -587,7 +587,7 @@ function ApprovalCard({
           </div>
 
           <Link href={`/workflows/${run.run_id}`} className="group block">
-            <h2 className="line-clamp-1 text-base font-black text-[var(--text-strong)] group-hover:text-[var(--accent)]">
+            <h2 className="line-clamp-1 type-heading-sm text-[var(--text-strong)] group-hover:text-[var(--accent)]">
               {run.user_goal || "Untitled workflow"}
             </h2>
 
@@ -612,13 +612,13 @@ function ApprovalCard({
           <PreflightPreview run={run} />
 
           {resolution?.error && (
-            <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-3 text-sm leading-6 text-[var(--danger)]">
+            <div className="mt-4 rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] p-3 text-sm leading-[var(--leading-code)] text-[var(--danger)]">
               <strong>Error:</strong> {resolution.error}
             </div>
           )}
 
           {run.final_answer && (
-            <p className="mt-4 line-clamp-2 text-sm leading-6 text-[var(--text-muted)]">
+            <p className="mt-4 line-clamp-2 type-body text-[var(--text-muted)]">
               <strong className="text-[var(--text-strong)]">Final answer:</strong>{" "}
               {run.final_answer}
             </p>
@@ -628,15 +628,15 @@ function ApprovalCard({
         <div className="flex shrink-0 flex-col gap-3 xl:w-80">
           <Link
             href={`/workflows/${run.run_id}`}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
           >
             Open Workflow
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
 
           {showControls && (
-            <div className="rounded-2xl border border-[color-mix(in_srgb,var(--warning)_34%,transparent)] bg-[var(--warning-soft)] p-4">
-              <p className="flex items-center gap-2 text-sm font-black text-[var(--warning)]">
+            <div className="rounded-[var(--radius-2xl)] border border-[var(--warning-border)] bg-[var(--warning-soft)] p-4">
+              <p className="flex items-center gap-2 type-heading-xs text-[var(--warning)]">
                 {approvalProcessing ? (
                   <Clock className="h-4 w-4" />
                 ) : (
@@ -645,7 +645,7 @@ function ApprovalCard({
                 {approvalProcessing ? "Approval processing" : "Approval required"}
               </p>
 
-              <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+              <p className="mt-2 type-body-sm text-[var(--text-muted)]">
                 {approvalProcessing
                   ? "AIRA-X is already processing this approval-gated action."
                   : "Approve to continue this workflow, or reject to stop it safely."}
@@ -656,7 +656,7 @@ function ApprovalCard({
                   type="button"
                   onClick={() => onApprove(run.run_id)}
                   disabled={actionButtonsDisabled}
-                  className="rounded-xl bg-[var(--warning)] px-4 py-2.5 text-xs font-black text-white shadow-[var(--shadow-soft)] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-xl bg-[var(--warning)] px-4 py-2.5 text-xs font-black text-[var(--on-warning)] shadow-[var(--shadow-soft)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {approvalProcessing
                     ? "Processing..."
@@ -669,7 +669,7 @@ function ApprovalCard({
                   type="button"
                   onClick={() => onReject(run.run_id)}
                   disabled={actionButtonsDisabled}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--danger-border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <XCircle className="h-3.5 w-3.5" />
                   {approvalProcessing
@@ -882,11 +882,11 @@ export default function ApprovalsPage() {
               AIRA-X Safety
             </div>
 
-            <h1 className="aira-gradient-text text-4xl font-black tracking-tight">
+            <h1 className="aira-gradient-text type-display">
               Approvals
             </h1>
 
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
+            <p className="mt-3 max-w-3xl type-body text-[var(--text-muted)]">
               Review risky actions requested by Assistant that can modify your
               environment, write Git history, or push to a remote repository.
               Pending, processing, and resolved approvals stay separated for
@@ -896,7 +896,7 @@ export default function ApprovalsPage() {
             <div className="mt-5 flex flex-wrap gap-3">
               <Link
                 href="/chat"
-                className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+                className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985]"
               >
                 <Workflow className="h-3.5 w-3.5" />
                 Open Assistant
@@ -905,7 +905,7 @@ export default function ApprovalsPage() {
 
               <Link
                 href="/workflows"
-                className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2.5 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
               >
                 <GitBranch className="h-3.5 w-3.5" />
                 View Workflow Runs
@@ -969,7 +969,7 @@ export default function ApprovalsPage() {
             </div>
 
             <div>
-              <h2 className="text-lg font-black text-[var(--text-strong)]">
+              <h2 className="type-heading text-[var(--text-strong)]">
                 Approval Queue
               </h2>
 
@@ -983,7 +983,7 @@ export default function ApprovalsPage() {
           <button
             type="button"
             onClick={() => loadRuns({ showLoading: false })}
-            className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+            className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
@@ -1012,7 +1012,7 @@ export default function ApprovalsPage() {
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="Search goal, run ID, action, branch..."
-              className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+              className="w-full rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm text-[var(--text-strong)] outline-none transition duration-base placeholder:text-[var(--text-subtle)] focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
             />
           </label>
 
@@ -1025,7 +1025,7 @@ export default function ApprovalsPage() {
               onChange={(event) =>
                 setPreflightFilter(event.target.value as PreflightFilter)
               }
-              className="w-full appearance-none rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm font-semibold text-[var(--text-strong)] outline-none transition focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+              className="w-full appearance-none rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm font-semibold text-[var(--text-strong)] outline-none transition duration-base focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
             >
               <option value="all">All approval types</option>
               <option value="git_any">Any Git preflight</option>
@@ -1041,7 +1041,7 @@ export default function ApprovalsPage() {
             <select
               value={sortMode}
               onChange={(event) => setSortMode(event.target.value as SortMode)}
-              className="w-full appearance-none rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm font-semibold text-[var(--text-strong)] outline-none transition focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
+              className="w-full appearance-none rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-10 py-3 text-sm font-semibold text-[var(--text-strong)] outline-none transition duration-base focus:border-[var(--border-strong)] focus:shadow-[var(--shadow-soft)]"
             >
               <option value="newest">Newest activity</option>
               <option value="oldest">Oldest activity</option>
@@ -1064,7 +1064,7 @@ export default function ApprovalsPage() {
               setPreflightFilter("all");
               setSortMode("newest");
             }}
-            className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+            className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-2 text-xs font-black text-[var(--text-muted)] transition duration-fast active:scale-[0.985] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
           >
             Clear Filters
           </button>
@@ -1078,7 +1078,7 @@ export default function ApprovalsPage() {
       )}
 
       {error && (
-        <div className="rounded-2xl border border-[color-mix(in_srgb,var(--danger)_34%,transparent)] bg-[var(--danger-soft)] p-4 text-sm text-[var(--danger)]">
+        <div className="rounded-[var(--radius-2xl)] border border-[var(--danger-border)] bg-[var(--danger-soft)] p-4 text-sm text-[var(--danger)]">
           {error}
         </div>
       )}
@@ -1089,11 +1089,11 @@ export default function ApprovalsPage() {
             <CheckCircle2 className="h-5 w-5" />
           </div>
 
-          <h2 className="text-xl font-black text-[var(--text-strong)]">
+          <h2 className="type-heading-xl text-[var(--text-strong)]">
             No approvals in this view
           </h2>
 
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
+          <p className="mx-auto mt-2 max-w-md type-body text-[var(--text-muted)]">
             Pending approvals, processing approvals, resolved decisions,
             rejected actions, and stale approval recoveries will appear here
             when matching this view.
@@ -1102,7 +1102,7 @@ export default function ApprovalsPage() {
           <div className="mt-5 flex flex-wrap justify-center gap-3">
             <Link
               href="/chat"
-              className="inline-flex items-center gap-2 rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+              className="inline-flex items-center gap-2 rounded-[var(--radius-2xl)] bg-[var(--accent)] px-5 py-3 text-sm font-black text-[var(--accent-foreground)] shadow-[var(--shadow-soft)] transition duration-fast hover:-translate-y-px active:scale-[0.985]"
             >
               <Workflow className="h-4 w-4" />
               Open Assistant
@@ -1111,7 +1111,7 @@ export default function ApprovalsPage() {
 
             <Link
               href="/workflows"
-              className="inline-flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-5 py-3 text-sm font-black text-[var(--text-muted)] shadow-[var(--shadow-soft)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+              className="inline-flex items-center gap-2 rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-soft)] px-5 py-3 text-sm font-black text-[var(--text-muted)] shadow-[var(--shadow-soft)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
             >
               <GitBranch className="h-4 w-4" />
               View Workflows

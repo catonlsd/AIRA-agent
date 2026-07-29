@@ -9,6 +9,13 @@ const eslintConfig = [
     ignores: [
       ".next/**",
       "node_modules/**",
+      ".pytest_cache/",
+      "**/.pytest_cache/",
+      "test-results/",
+      "playwright-report/",
+      "blob-report/",
+      ".cache/",
+      "coverage/",
       "next-env.d.ts",
       "*.config.js",
       "*.config.mjs",

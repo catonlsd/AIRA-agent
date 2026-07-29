@@ -10,7 +10,32 @@ const config: Config = {
         line: "#dbeafe",
         accent: "#2563eb",
         amber: "#b66a12",
-      }
+      },
+      fontWeight: {
+        'black': 'var(--weight-heading)',
+      },
+      fontSize: {
+        '11': ['var(--type-caption)', { lineHeight: 'var(--leading-caption)' }],
+      },
+      transitionDuration: {
+        'instant':  'var(--duration-instant)',  /*  80ms */
+        'fast':     'var(--duration-fast)',     /* 120ms */
+        'base':     'var(--duration-base)',     /* 180ms */
+        'moderate': 'var(--duration-moderate)', /* 250ms */
+        'slow':     'var(--duration-slow)',     /* 350ms */
+      },
+      spacing: {
+        '1':   'var(--space-1)',    /*  4px */
+        '1.5': 'var(--space-1-5)', /*  6px */
+        '2':   'var(--space-2)',    /*  8px */
+        '2.5': 'var(--space-2-5)', /* 10px */
+        '3':   'var(--space-3)',    /* 12px */
+        '4':   'var(--space-4)',    /* 16px */
+        '5':   'var(--space-5)',    /* 20px */
+        '6':   'var(--space-6)',    /* 24px */
+        '8':   'var(--space-8)',    /* 32px */
+        '10':  'var(--space-10)',   /* 40px */
+      },
     }
   },
   plugins: []

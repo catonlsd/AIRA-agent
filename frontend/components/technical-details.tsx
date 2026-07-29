@@ -21,7 +21,7 @@ export function TechnicalDetailsPanel({
         className
       )}
     >
-      <summary className="cursor-pointer select-none text-xs font-black uppercase tracking-wide text-[var(--text-subtle)]">
+      <summary className="cursor-pointer select-none type-label text-[var(--text-subtle)]">
         {summary}
       </summary>
 
@@ -45,12 +45,12 @@ export function TechnicalDetailRow({
 }) {
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-      <p className="text-[10px] font-black uppercase tracking-wide text-[var(--text-subtle)]">
+      <p className="text-11 font-black uppercase tracking-[var(--tracking-label)] text-[var(--text-subtle)]">
         {label}
       </p>
       <p
         className={cn(
-          "mt-1 break-words text-sm font-semibold text-[var(--text-strong)]",
+          "mt-1 break-words type-body-strong text-[var(--text-strong)]",
           mono && "font-mono text-xs"
         )}
       >

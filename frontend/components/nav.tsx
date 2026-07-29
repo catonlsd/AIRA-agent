@@ -109,10 +109,11 @@ function NavLink({
   return (
     <Link
       href={item.href}
+      aria-label={`${item.label}: ${item.description}`}
       aria-current={active ? "page" : undefined}
       title={collapsed ? `${item.label} — ${item.description}` : undefined}
       className={cn(
-        "group relative flex items-center rounded-2xl border transition-all duration-200",
+        "aira-nav-link group relative flex items-center rounded-2xl border transition-all duration-200",
         collapsed
           ? "h-12 justify-center px-0 py-0"
           : "gap-3 px-3 py-3 hover:-translate-y-0.5",
@@ -150,7 +151,7 @@ function NavLink({
 
       {!collapsed && (
         <>
-          <div className="min-w-0 flex-1">
+          <div className="aira-nav-link-copy min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <p
                 className={cn(
@@ -164,7 +165,7 @@ function NavLink({
               {item.badge && (
                 <span
                   className={cn(
-                    "rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide",
+                    "rounded-full border px-2 py-0.5 text-11 font-black uppercase tracking-[var(--tracking-label)]",
                     active
                       ? "border-[var(--border-strong)] bg-[var(--accent-soft)] text-[var(--accent)]"
                       : "border-[var(--border)] bg-[var(--secondary-soft)] text-[var(--secondary)]"
@@ -182,7 +183,7 @@ function NavLink({
 
           <ChevronRight
             className={cn(
-              "h-4 w-4 shrink-0 transition-all duration-200",
+              "aira-nav-link-chevron h-4 w-4 shrink-0 transition-all duration-200",
               active
                 ? "translate-x-0 text-[var(--accent)] opacity-100"
                 : "-translate-x-1 text-[var(--text-subtle)] opacity-0 group-hover:translate-x-0 group-hover:opacity-100"
@@ -214,9 +215,14 @@ export function Nav() {
 
   return (
     <aside
+      style={{
+        width: collapsed
+          ? "var(--sidebar-width-collapsed)"
+          : "var(--sidebar-width-expanded)",
+      }}
       className={cn(
-        "sticky top-0 z-40 flex h-screen shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-card)] backdrop-blur-2xl transition-[width,padding] duration-300",
-        collapsed ? "w-20 px-3 py-5" : "w-80 px-4 py-5"
+        "aira-nav-shell relative z-40 flex h-[100dvh] shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-card)] backdrop-blur-2xl transition-[width,padding] duration-300",
+        collapsed ? "px-3 py-5" : "px-4 py-5"
       )}
     >
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
@@ -227,7 +233,7 @@ export function Nav() {
 
       <div
         className={cn(
-          "mb-3 flex",
+          "aira-nav-toggle mb-3 flex",
           collapsed ? "justify-center" : "justify-end"
         )}
       >
@@ -237,7 +243,7 @@ export function Nav() {
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-expanded={!collapsed}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)] shadow-[var(--shadow-soft)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--accent)]"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)] shadow-[var(--shadow-soft)] transition duration-fast active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--accent)]"
         >
           <ChevronRight
             className={cn(
@@ -250,15 +256,16 @@ export function Nav() {
 
       <Link
         href="/chat"
+        aria-label="AIRA-X home"
         title={collapsed ? "AIRA-X Home" : undefined}
         className={cn(
-          "group mb-5 block border border-[var(--border)] bg-[var(--surface-soft)] shadow-[var(--shadow-soft)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]",
+          "aira-nav-brand group mb-5 block border border-[var(--border)] bg-[var(--surface-soft)] shadow-[var(--shadow-soft)] transition-all duration-200 hover:-translate-y-px active:scale-[0.985] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]",
           collapsed ? "rounded-2xl p-2" : "rounded-[1.75rem] p-4"
         )}
       >
         <div
           className={cn(
-            "flex items-center gap-3",
+            "aira-nav-brand-row flex items-center gap-3",
             collapsed && "justify-center"
           )}
         >
@@ -272,11 +279,11 @@ export function Nav() {
           </div>
 
           {!collapsed && (
-            <div className="min-w-0">
+            <div className="aira-nav-brand-copy min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="truncate text-xl font-black tracking-tight text-[var(--text-strong)]">
+                <p className="truncate type-heading-xl text-[var(--text-strong)]">
                   AIRA-X
-                </h1>
+                </p>
               </div>
 
               <p className="mt-1 text-xs font-semibold text-[var(--text-muted)]">
@@ -289,7 +296,7 @@ export function Nav() {
         {!collapsed && (
           
 
-            <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+            <p className="aira-nav-brand-description mt-2 type-body-sm text-[var(--text-muted)]">
               AI powered assistant with document retrieval, web research, workflow
             execution, and approval gates.
           </p>
@@ -297,7 +304,7 @@ export function Nav() {
       </Link>
 
       {!collapsed && (
-        <div className="mb-3 flex items-center justify-between px-2">
+        <div className="aira-nav-section-label mb-3 flex items-center justify-between px-2">
           <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[var(--text-subtle)]">
             Workspace
           </p>

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { API, seedFallback, answerFinal, planFinal } from "./helpers";
+import { API, seedFallback, answerFinal, planFinal, fillInteractiveForm } from "./helpers";
 
 /**
  * Core execution / approval flow (Step E): a build request returns a plan awaiting
@@ -23,7 +23,11 @@ test("chat: plan-ready turn shows approval and resolves after approving", async 
 
   await page.goto("/chat");
   const composer = page.getByPlaceholder("Message AIRA-X...");
-  await composer.fill("Generate and validate a deck");
+  await fillInteractiveForm(
+    composer,
+    "Generate and validate a deck",
+    composer.locator("xpath=ancestor::form[1]").getByRole("button", { name: "Send" }),
+  );
   await composer.press("Enter");
 
   // The plan-approval affordance appears.

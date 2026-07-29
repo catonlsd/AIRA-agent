@@ -1,5 +1,12 @@
 import { test, expect } from "@playwright/test";
-import { seedFallback, mockOperator, connectOperator, seedTarget, API } from "./helpers";
+import {
+  seedFallback,
+  mockOperator,
+  connectOperator,
+  seedTarget,
+  API,
+  fillInteractiveForm,
+} from "./helpers";
 
 /**
  * Operator target-readiness flow (Step F) — the strongest commercial signal.
@@ -37,8 +44,9 @@ test("operator: console requires the service key (operator separation)", async (
   await page.route(`${API}/operator/overview`, (r) => r.fulfill({ status: 403, body: "{}" }));
   await page.goto("/operator");
   await expect(page.getByRole("heading", { name: "Operator console" })).toBeVisible();
-  await page.getByPlaceholder("Service key").fill("wrong-key");
-  await page.getByRole("button", { name: "Connect" }).click();
+  const connect = page.getByRole("button", { name: "Connect" });
+  await fillInteractiveForm(page.getByPlaceholder("Service key"), "wrong-key", connect);
+  await connect.click();
   await expect(page.getByText("That service key was not accepted.")).toBeVisible();
   // The delivery console (operator-only) is NOT reachable.
   await expect(page.getByRole("heading", { name: "Delivery console" })).toHaveCount(0);

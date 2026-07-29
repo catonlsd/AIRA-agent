@@ -11,6 +11,7 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -25,10 +26,4 @@ export default defineConfig({
     // tests intercept by URL glob, so the host is irrelevant.
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  webServer: {
-    command: "npx next dev -p 3100",
-    url: "http://localhost:3100/chat",
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
 });
