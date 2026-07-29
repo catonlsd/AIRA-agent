@@ -87,7 +87,7 @@ jobs:
           started_at=$(date +%s)
           docker compose -f docker-compose.yml build
           duration=$(( $(date +%s) - started_at ))
-          echo "Docker Compose build duration: ${duration}s" >> "$GITHUB_STEP_SUMMARY"
+          echo "Docker Compose build duration: ${duration}s" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Inspect backend image
         shell: bash
@@ -96,6 +96,7 @@ jobs:
           entrypoint=$(docker image inspect aira-x-backend --format '{{json .Config.Cmd}}')
           exposed_ports=$(docker image inspect aira-x-backend --format '{{json .Config.ExposedPorts}}')
           image_bytes=$(docker image inspect aira-x-backend --format '{{.Size}}')
+          architecture=$(docker image inspect aira-x-backend --format '{{.Architecture}}')
 
           test "$runtime_user" = "appuser"
           test "$exposed_ports" = '{"8000/tcp":{}}'
@@ -110,8 +111,9 @@ jobs:
             echo "Backend runtime user: ${runtime_user}"
             echo "Backend command: ${entrypoint}"
             echo "Backend exposed ports: ${exposed_ports}"
+            echo "Backend architecture: ${architecture}"
             echo "Backend image size: ${image_bytes} bytes"
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Start stack and verify health
         shell: bash
@@ -164,7 +166,7 @@ jobs:
           duration=$(( $(date +%s) - started_at ))
           docker compose -f docker-compose.yml ps --all
           test "$duration" -le 50
-          echo "Compose graceful stop duration: ${duration}s" >> "$GITHUB_STEP_SUMMARY"
+          echo "Compose graceful stop duration: ${duration}s" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Clean validation stack
         if: always()
