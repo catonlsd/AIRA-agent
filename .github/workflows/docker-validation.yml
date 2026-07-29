@@ -116,16 +116,40 @@ jobs:
       - name: Start stack and verify health
         shell: bash
         run: |
-          docker compose -f docker-compose.yml up -d
+          docker compose -f docker-compose.yml up -d backend
           for attempt in $(seq 1 90); do
             if curl --fail --silent http://127.0.0.1:8000/health >/dev/null \
-              && curl --fail --silent http://127.0.0.1:8000/ready >/dev/null \
-              && curl --fail --silent http://127.0.0.1:3000/ >/dev/null; then
+              && curl --fail --silent http://127.0.0.1:8000/ready >/dev/null; then
               break
             fi
+            if ! docker compose -f docker-compose.yml ps --status running --services \
+              | grep --quiet '^backend$'; then
+              docker compose -f docker-compose.yml ps --all
+              docker compose -f docker-compose.yml logs --no-color backend
+              exit 1
+            fi
             if [ "$attempt" -eq 90 ]; then
-              docker compose -f docker-compose.yml ps
-              docker compose -f docker-compose.yml logs --no-color
+              docker compose -f docker-compose.yml ps --all
+              docker compose -f docker-compose.yml logs --no-color backend
+              exit 1
+            fi
+            sleep 2
+          done
+
+          docker compose -f docker-compose.yml up -d frontend
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3000/ >/dev/null; then
+              break
+            fi
+            if ! docker compose -f docker-compose.yml ps --status running --services \
+              | grep --quiet '^frontend$'; then
+              docker compose -f docker-compose.yml ps --all
+              docker compose -f docker-compose.yml logs --no-color frontend
+              exit 1
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              docker compose -f docker-compose.yml ps --all
+              docker compose -f docker-compose.yml logs --no-color frontend
               exit 1
             fi
             sleep 2
