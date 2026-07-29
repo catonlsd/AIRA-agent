@@ -363,6 +363,23 @@ class Settings(BaseSettings):
                 raise RuntimeError("API_KEY is required when ENVIRONMENT=production.")
             if not self.auth_secret:
                 raise RuntimeError("AUTH_SECRET is required when ENVIRONMENT=production.")
+            if self.cors_origin_regex:
+                raise RuntimeError(
+                    "CORS_ORIGIN_REGEX must be empty when ENVIRONMENT=production; "
+                    "configure exact CORS_ORIGINS instead."
+                )
+            if not self.cors_origins:
+                raise RuntimeError(
+                    "At least one exact CORS_ORIGINS entry is required when "
+                    "ENVIRONMENT=production."
+                )
+            if any(
+                origin.startswith(("http://localhost", "http://127.0.0.1"))
+                for origin in self.cors_origins
+            ):
+                raise RuntimeError(
+                    "Localhost CORS_ORIGINS are not allowed when ENVIRONMENT=production."
+                )
 
 
 @lru_cache

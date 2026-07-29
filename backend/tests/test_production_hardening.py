@@ -91,6 +91,34 @@ def test_production_requires_operator_and_auth_secrets():
         config.validate_runtime_config()
 
 
+def test_production_requires_exact_non_local_cors_origins():
+    config = Settings(
+        _env_file=None,
+        environment="production",
+        llm_provider="local",
+        web_search_provider="none",
+        api_key="x",
+        auth_secret="y",
+        cors_origins=["https://aira.example.com"],
+        cors_origin_regex=r"https://.*\.vercel\.app",
+    )
+
+    with pytest.raises(RuntimeError, match="CORS_ORIGIN_REGEX"):
+        config.validate_runtime_config()
+
+    config.cors_origin_regex = None
+    config.cors_origins = []
+    with pytest.raises(RuntimeError, match="exact CORS_ORIGINS"):
+        config.validate_runtime_config()
+
+    config.cors_origins = ["http://localhost:3000"]
+    with pytest.raises(RuntimeError, match="Localhost CORS_ORIGINS"):
+        config.validate_runtime_config()
+
+    config.cors_origins = ["https://aira.example.com"]
+    config.validate_runtime_config()
+
+
 # ── API-key auth ──────────────────────────────────────────────────────────────
 
 def test_no_auth_required_when_key_unset(client):

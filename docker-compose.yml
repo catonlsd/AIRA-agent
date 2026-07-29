@@ -13,7 +13,7 @@ services:
       context: ./backend
     image: aira-x-backend
     env_file:
-      - ./backend/.env
+      - ${AIRA_BACKEND_ENV_FILE:-./backend/.env}
     environment:
       # Keep persistent data on the mounted volume.
       CHROMA_DIR: /app/storage/chroma
@@ -23,7 +23,7 @@ services:
       DATABASE_URL: sqlite:///./storage/research_assistant.db
       AIRA_TRACE_LOG: /app/storage/traces.jsonl
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - aira_storage:/app/storage
     healthcheck:
@@ -42,7 +42,7 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     image: aira-x-frontend
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       backend:
         condition: service_healthy

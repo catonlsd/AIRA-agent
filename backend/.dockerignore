@@ -20,6 +20,5 @@ storage/vector_index/*
 tmp/
 .env
 .env.*
-!.env.example
 *.md
 tests/
