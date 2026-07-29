@@ -104,11 +104,10 @@
   --pre-bg: #212121;
 
   /* ── Frozen radius API (Phase 1) ──────────────────────────────────
-     Named in px for precision. Phase 3 will migrate the 14 border-radius:
-     var(--radius-*) consumer rules in this file to the new names. Until then,
-     the old rem-based names alias to the nearest new token so nothing breaks.
-     Minor dimensional shift accepted for the Phase 1→3 window (~2–6px on
-     internal globals.css rules only; no component files are affected). */
+     Named in px for precision. Remaining legacy consumers are tracked by
+     TD-016 for migration and verification in Phase 6A. The old rem-based names
+     continue to alias to the nearest new token until that sweep is complete.
+     Existing dimensional shifts remain frozen pending that review. */
   --radius-sm:   6px;    /* badges, tags, small chips */
   --radius-md:   10px;   /* inputs, buttons, small cards */
   --radius-lg:   14px;   /* standard cards, panels */
@@ -289,7 +288,7 @@
   --surface-active:     #f0e8ff;                   /* = --surface-strong */
   --surface-border:     rgba(139, 92, 246, 0.18);  /* = --border */
   --surface-highlight:  rgba(0, 0, 0, 0.04);       /* light theme: dark rim */
-  /* DEPRECATED aliases — remove in Phase 3 */
+  /* DEPRECATED aliases — migrate and remove under TD-016 in Phase 6A */
   --surface:        var(--surface-primary);
   --surface-soft:   var(--surface-secondary);
   --surface-muted:  var(--surface-secondary);
@@ -344,7 +343,7 @@
   --surface-active:     #fff3d6;                   /* = --surface-strong */
   --surface-border:     rgba(233, 30, 140, 0.18);  /* = --border */
   --surface-highlight:  rgba(0, 0, 0, 0.04);       /* light theme: dark rim */
-  /* DEPRECATED aliases — remove in Phase 3 */
+  /* DEPRECATED aliases — migrate and remove under TD-016 in Phase 6A */
   --surface:        var(--surface-primary);
   --surface-soft:   var(--surface-secondary);
   --surface-muted:  var(--surface-secondary);
@@ -397,7 +396,7 @@
   --surface-active:     #ffffff;                   /* = --surface-strong */
   --surface-border:     rgba(21, 101, 192, 0.15);  /* = --border */
   --surface-highlight:  rgba(0, 0, 0, 0.04);       /* light theme: dark rim */
-  /* DEPRECATED aliases — remove in Phase 3 */
+  /* DEPRECATED aliases — migrate and remove under TD-016 in Phase 6A */
   --surface:        var(--surface-primary);
   --surface-soft:   var(--surface-secondary);
   --surface-muted:  var(--surface-secondary);
@@ -450,7 +449,7 @@
   --surface-active:     #eaf4ff;                   /* = --surface-strong */
   --surface-border:     rgba(21, 101, 192, 0.15);  /* = --border */
   --surface-highlight:  rgba(0, 0, 0, 0.04);       /* light theme: dark rim */
-  /* DEPRECATED aliases — remove in Phase 3 */
+  /* DEPRECATED aliases — migrate and remove under TD-016 in Phase 6A */
   --surface:        var(--surface-primary);
   --surface-soft:   var(--surface-secondary);
   --surface-muted:  var(--surface-secondary);
@@ -503,7 +502,7 @@
   --surface-active:     #f7e9fa;                   /* = --surface-strong */
   --surface-border:     rgba(224, 64, 251, 0.18);  /* = --border */
   --surface-highlight:  rgba(0, 0, 0, 0.04);       /* light theme: dark rim */
-  /* DEPRECATED aliases — remove in Phase 3 */
+  /* DEPRECATED aliases — migrate and remove under TD-016 in Phase 6A */
   --surface:        var(--surface-primary);
   --surface-soft:   var(--surface-secondary);
   --surface-muted:  var(--surface-secondary);
@@ -558,7 +557,7 @@
   --surface-active:     #323070;                   /* = --surface-strong */
   --surface-border:     rgba(255, 255, 255, 0.1);  /* = --border */
   --surface-highlight:  rgba(255, 255, 255, 0.03); /* dark theme: white rim */
-  /* DEPRECATED aliases — remove in Phase 3 */
+  /* DEPRECATED aliases — migrate and remove under TD-016 in Phase 6A */
   --surface:        var(--surface-primary);
   --surface-soft:   var(--surface-secondary);
   --surface-muted:  var(--surface-secondary);
@@ -720,6 +719,40 @@ body::before {
 
 body::after {
   display: none;
+}
+
+/* Mobile keeps navigation available as an icon rail instead of allowing the
+   expanded desktop sidebar to consume almost the entire viewport. */
+@media (max-width: 767px) {
+  .aira-nav-shell {
+    width: var(--sidebar-width-collapsed) !important;
+    padding: var(--space-2) var(--space-1-5) !important;
+  }
+
+  .aira-nav-toggle,
+  .aira-nav-brand-copy,
+  .aira-nav-brand-description,
+  .aira-nav-link-copy,
+  .aira-nav-link-chevron,
+  .aira-nav-section-label {
+    display: none !important;
+  }
+
+  .aira-nav-brand {
+    padding: var(--space-1) !important;
+    border-radius: var(--radius-lg) !important;
+  }
+
+  .aira-nav-brand-row,
+  .aira-nav-link {
+    justify-content: center !important;
+  }
+
+  .aira-nav-link {
+    height: 3rem !important;
+    gap: 0 !important;
+    padding: 0 !important;
+  }
 }
 
 /* Smooth crossfade on every theme switch (the gradient itself swaps — v1). */
@@ -2608,7 +2641,8 @@ html[data-theme="phantom"] aside {
 
 /* Focus ring — calm, accessible (offset from the surface, accent halo) */
 :where(a, button, [role="button"], [role="tab"], input, select, textarea, [tabindex]):focus-visible {
-  outline: none;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
   box-shadow:
     0 0 0 2px var(--bg),
     0 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent);

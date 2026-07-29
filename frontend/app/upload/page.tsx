@@ -60,7 +60,7 @@ export default function UploadPage() {
         onSubmit={onSubmit}
         className="sarvam-card fade-up rounded-[2rem] p-6"
       >
-        <label className="block text-sm font-semibold text-slate-800">
+        <label htmlFor="document-files" className="block text-sm font-semibold text-slate-800">
           Documents
         </label>
 
@@ -78,6 +78,7 @@ export default function UploadPage() {
           </p>
 
           <input
+            id="document-files"
             name="files"
             type="file"
             multiple
@@ -95,7 +96,11 @@ export default function UploadPage() {
         </button>
 
         {status && (
-          <div className="fade-up mt-5 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-medium text-slate-700">
+          <div
+            role="status"
+            aria-live="polite"
+            className="fade-up mt-5 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-medium text-slate-700"
+          >
             {status}
           </div>
         )}

@@ -1128,10 +1128,10 @@ function AiraHomeStage({
 
         <p className="aira-kicker mb-3">AIRA-X Assistant</p>
 
-        <h2 className="type-display text-[var(--text-strong)] md:text-[2.6rem] md:leading-[1.1]">
+        <h1 className="type-display text-[var(--text-strong)] md:text-[2.6rem] md:leading-[1.1]">
           How can I help<br />
           <span className="aira-gradient-text">you today?</span>
-        </h2>
+        </h1>
 
         <p className="mx-auto mt-3 max-w-lg type-body text-[var(--text-muted)]">
           Ask anything, analyze documents, plan projects, or run a workflow.
@@ -1382,7 +1382,7 @@ function AttachButton({ onClick, uploading, disabled }: {
 
 function FocusComposerOverlay({
   question, setQuestion, busy, loading, airaXLoading, onSubmit, onClose,
-  onAttach, uploading, uploadedDocs, onRemoveDoc,
+  onAttach, uploading, uploadedDocs, onRemoveDoc, returnFocusTo,
 }: {
   question: string;
   setQuestion: (v: string) => void;
@@ -1395,18 +1395,78 @@ function FocusComposerOverlay({
   uploading: boolean;
   uploadedDocs: string[];
   onRemoveDoc: (index: number) => void;
+  returnFocusTo: HTMLElement | null;
 }) {
+  const dialogRef = useRef<HTMLFormElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const activeDialog = dialog;
+
+    const focusableSelector =
+      'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
+
+    function handleDialogKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+
+      const focusable = Array.from(
+        activeDialog.querySelectorAll<HTMLElement>(focusableSelector)
+      ).filter((element) => !element.hasAttribute("disabled"));
+
+      if (focusable.length === 0) {
+        event.preventDefault();
+        activeDialog.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    activeDialog.addEventListener("keydown", handleDialogKeyDown);
+    textareaRef.current?.focus();
+
+    return () => {
+      activeDialog.removeEventListener("keydown", handleDialogKeyDown);
+      returnFocusTo?.focus();
+    };
+  }, [onClose, returnFocusTo]);
+
   return (
     <>
-      <button type="button" aria-label="Close focus composer" onClick={onClose}
+      <button type="button" tabIndex={-1} aria-hidden="true" onClick={onClose}
         className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm" />
 
-      <form onSubmit={onSubmit}
+      <form
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="focus-composer-title"
+        tabIndex={-1}
+        onSubmit={onSubmit}
         className="fixed left-1/2 top-1/2 z-50 w-[min(780px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 aira-focus-form research-composer chatgpt-composer">
         <div className="mb-3 flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
             <AiraLogo size="sm" />
-            <span className="text-xs font-bold text-[var(--text-muted)]">Focused prompt</span>
+            <h2 id="focus-composer-title" className="text-xs font-bold text-[var(--text-muted)]">
+              Focused prompt
+            </h2>
           </div>
           <button type="button" onClick={onClose}
             className="aira-icon-btn" aria-label="Close">
@@ -1417,9 +1477,11 @@ function FocusComposerOverlay({
         <DocChips docs={uploadedDocs} onRemove={onRemoveDoc} />
 
         <textarea
+          ref={textareaRef}
           autoFocus
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
+          aria-label="Focused prompt"
           placeholder="Message AIRA-X…"
           className="aira-focus-textarea"
         />
@@ -2599,6 +2661,8 @@ function AiraStyles() {
 export default function ChatPage() {
   const [question, setQuestion]             = useState("");
   const [composerFocused, setComposerFocused] = useState(false);
+  const suppressComposerFocusRef = useRef(false);
+  const [composerReturnFocus, setComposerReturnFocus] = useState<HTMLElement | null>(null);
   const [loading, setLoading]               = useState(false);
   const [airaXLoading, setAiraXLoading]     = useState(false);
   const [approvalLoading, setApprovalLoading] = useState(false);
@@ -2636,6 +2700,22 @@ export default function ChatPage() {
   const [lastRunId, setLastRunId] = useState<string | null>(null);
   const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
   const turnStartRef = useRef<number | null>(null);
+
+  const openFocusComposer = useCallback(() => {
+    if (suppressComposerFocusRef.current) {
+      suppressComposerFocusRef.current = false;
+      return;
+    }
+    setComposerReturnFocus(
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    );
+    setComposerFocused(true);
+  }, []);
+
+  const closeFocusComposer = useCallback(() => {
+    suppressComposerFocusRef.current = true;
+    setComposerFocused(false);
+  }, []);
 
   // Flash a brief Supervisor event message through Octa, then clear it.
   const flashOcta = (msg: string) => {
@@ -2678,14 +2758,6 @@ export default function ChatPage() {
     sessionId,
     lastLatencyMs,
   };
-
-  // Escape to close focus overlay
-  useEffect(() => {
-    if (!composerFocused) return;
-    const handleKeyDown = (e: KeyboardEvent) => { if (e.key === "Escape") setComposerFocused(false); };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [composerFocused]);
 
   // Scroll to bottom after new turn
   useEffect(() => {
@@ -2781,7 +2853,7 @@ export default function ChatPage() {
     const trimmed = (overrideText ?? question).trim();
     if (!trimmed) return;
 
-    setComposerFocused(false);
+    closeFocusComposer();
     if (!overrideText) setQuestion("");
     // Attached context is single-use for this message (the server consumes it),
     // so the pills clear as the turn is sent — never lingering, never hidden.
@@ -3077,7 +3149,7 @@ export default function ChatPage() {
                 octaProgress={octaProgress}
                 octaInspector={octaInspector}
                 onSubmit={handleSubmit}
-                onComposerFocus={() => setComposerFocused(true)}
+                onComposerFocus={openFocusComposer}
                 attachedItems={attachedItems}
                 onRemoveItem={onRemoveItem}
                 onClearContext={onClearContext}
@@ -3139,7 +3211,7 @@ export default function ChatPage() {
               <textarea
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
-                onFocus={() => setComposerFocused(true)}
+                onFocus={openFocusComposer}
                 placeholder="Message AIRA-X…"
                 className="aira-home-textarea"
                 style={{ minHeight: "5rem" }}
@@ -3184,11 +3256,12 @@ export default function ChatPage() {
             loading={loading}
             airaXLoading={airaXLoading}
             onSubmit={handleSubmit}
-            onClose={() => setComposerFocused(false)}
+            onClose={closeFocusComposer}
             onAttach={() => uploadInputRef.current?.click()}
             uploading={uploadLoading}
             uploadedDocs={uploadedDocs}
             onRemoveDoc={removeUploadedDocChip}
+            returnFocusTo={composerReturnFocus}
           />
         )}
       </div>

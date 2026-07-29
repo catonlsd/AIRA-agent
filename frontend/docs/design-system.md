@@ -29,7 +29,10 @@ All component backgrounds must reference these tokens. Direct use of `--bg`, `--
 | `--surface-border` | `rgba(255, 255, 255, 0.1)` | Border on surface elements |
 | `--surface-highlight` | `rgba(255, 255, 255, 0.03)` | Subtle inner rim highlight (dark themes) |
 
-Each theme block (`[data-theme="*"]`) overrides all 8 tokens. Back-compat aliases (`--surface`, `--surface-soft`, `--surface-muted`, `--surface-strong`) point to nearest new tokens and will be removed in Phase 3.
+Each theme block (`[data-theme="*"]`) overrides all 8 tokens. Back-compat aliases
+(`--surface`, `--surface-soft`, `--surface-muted`, `--surface-strong`) still point
+to the nearest new tokens because active consumers remain. Their migration and
+removal are tracked by TD-016 for Phase 6A.
 
 ### Radius Scale
 
@@ -48,7 +51,8 @@ Back-compat aliases (do not use in new code):
 - `--radius` → `var(--radius-md)` (was `0.75rem`)
 - `--radius-pill` → `var(--radius-full)` (was `999px`)
 
-Phase 3 will migrate the 14 `border-radius: var(--radius-*)` consumer rules in `globals.css` to the new names.
+Legacy radius aliases still have active consumers. Their migration and removal are
+tracked together with the surface aliases in TD-016 for Phase 6A.
 
 ---
 
@@ -94,7 +98,7 @@ All derived from the Step 0 audit of the production codebase. Zero visual change
 | `--weight-metric` | `900` | `font-black` | All KPI / stat numbers |
 | `--weight-mono` | `400` | `normal` | IDs, code |
 
-**Gap (TD-004):** `font-bold` (700) has no canonical token. Affects `aira-chip` text, nav link labels, operator section headers (post-redesign), error/flash feedback text. Target: Phase 3.
+**Gap (TD-004):** `font-bold` (700) has no canonical token. Affects `aira-chip` text, nav link labels, operator section headers (post-redesign), error/flash feedback text. Target: Phase 6A.
 
 ### Line-Height Tokens
 
@@ -252,7 +256,7 @@ Use exactly one `.type-*` class per text element. Never compose two. Text color 
 
 1. **Single responsibility** — only `padding`, `margin`, `gap`, and `space-between` values are in scope. Width, height, and layout sizing are separate.
 2. **No new tokens without approval** — the 10-token scale below is frozen. Half-steps beyond `--space-1-5` and `--space-2-5` require explicit sign-off.
-3. **Peripheral exclusions** — `48px` (`py-12`) and `80px` (`mt-20`) are intentionally not tokenized. They remain as Tailwind utilities. See TD-009 and TD-010 in `docs/technical-debt.md`.
+3. **Peripheral exclusions** — `48px` (`py-12`) and `80px` (`mt-20`) are intentionally not tokenized. They remain as Tailwind utilities. See TD-009 and TD-010 in `frontend/docs/technical-debt.md`.
 4. **Fractional harmonization** — globals.css component values that fall between token steps (e.g., 6.4px, 7.2px) are mapped to the nearest token by visual judgment, not arithmetic rounding alone.
 
 ### Token Scale
@@ -294,8 +298,8 @@ globals.css component rules that used raw rem values — resolved to nearest tok
 
 ### Not Tokenized (TD)
 
-- `48px` (`py-12`) — upload drop zone only. TD-009, target Phase 4.
-- `80px` (`mt-20`) — single page-level offset. TD-010, target Phase 4.
+- `48px` (`py-12`) — upload drop zone only. TD-009, target Phase 6A.
+- `80px` (`mt-20`) — single page-level offset. TD-010, target Phase 6A.
 
 ### Delivery Record
 

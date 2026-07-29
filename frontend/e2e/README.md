@@ -7,11 +7,13 @@ third-party calls** — fast, deterministic, and CI-friendly. This is the layer 
 backend wall (`backend/tests`, 900+ tests) and the pure frontend unit tests
 (`lib/operator.test.mts`) cannot cover: the actual browser wiring.
 
-## What it covers (6 tests, ~11s)
+## What it covers (8 tests, ~20s)
 
 | Spec | Flow | Proves |
 |---|---|---|
 | `product-chat.spec.ts` | Ask a question → streamed answer resolves | Core product path (real SSE render) |
+| `product-chat.spec.ts` | 390px mobile app shell | Navigation rail and composer remain usable |
+| `product-chat.spec.ts` | Focused composer dialog | Modal semantics, focus containment, dismissal, and focus return |
 | `chat-artifact.spec.ts` | Build request → artifact card + download link | Artifact generation/delivery render |
 | `execution-approval.spec.ts` | Plan-ready → **Approve** → resolves | Execution/approval round-trip |
 | `operator-readiness.spec.ts` | Connect → **Validate** → Ready → **Test** | Operator target readiness (top commercial signal) |

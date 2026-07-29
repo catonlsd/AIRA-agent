@@ -25,8 +25,8 @@ that **external systems never silently become the source of truth.**
 
 | | |
 |---|---|
-| **Backend tests** | **931** passing (70 files), deterministic (`pytest -p no:randomly`) |
-| **Frontend** | **104** pure-logic lib tests + **6** deterministic Playwright E2E |
+| **Backend tests** | **951** passing, deterministic (`pytest -p no:randomly`) |
+| **Frontend** | **109** pure-logic lib tests + **8** deterministic Playwright E2E |
 | **Incident adapters** | 4 (generic, PagerDuty, Opsgenie, Jira) · 5 onboarding profiles |
 | **Readiness model** | 8 computed states, never stored stale |
 | **Operator surface** | 68 gated endpoints; zero operator capability leaks into the user product |
@@ -296,9 +296,9 @@ backups, and the pre-deploy checklist: **[docs/PRODUCTION_READINESS.md](docs/PRO
 
 | Layer | Command | Count |
 |---|---|---|
-| Backend (deterministic) | `pytest -q -p no:randomly` | **931** |
-| Frontend pure logic | `node --test lib/*.test.mts` | **104** |
-| Browser E2E (hermetic) | `npm run e2e` | **6** |
+| Backend (deterministic) | `pytest -q -p no:randomly` | **951** |
+| Frontend pure logic | `node --test lib/*.test.mts` | **109** |
+| Browser E2E (hermetic) | `npm run e2e` | **8** |
 | Type / lint / build | `tsc --noEmit` · `eslint` · `next build` | clean / 0 errors / compiles |
 
 The suite is the proof, not the promise: readiness, drift, recovery, policy precedence,
