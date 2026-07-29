@@ -1,9 +1,9 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -53,9 +53,14 @@ class Settings(BaseSettings):
     memory_limit: int = 10
 
     max_upload_size_mb: int = 10
-    allowed_file_extensions: list[str] = ["pdf", "txt", "docx", "md"]
+    allowed_file_extensions: Annotated[list[str], NoDecode] = [
+        "pdf",
+        "txt",
+        "docx",
+        "md",
+    ]
 
-    cors_origins: list[str] = [
+    cors_origins: Annotated[list[str], NoDecode] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]

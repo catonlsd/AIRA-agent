@@ -119,6 +119,26 @@ def test_production_requires_exact_non_local_cors_origins():
     config.validate_runtime_config()
 
 
+def test_csv_list_environment_settings_parse_before_startup(monkeypatch):
+    monkeypatch.setenv(
+        "CORS_ORIGINS",
+        "https://aira.example.com,https://admin.aira.example.com",
+    )
+    monkeypatch.setenv("ALLOWED_FILE_EXTENSIONS", "pdf,txt,docx,md")
+
+    config = Settings(
+        _env_file=None,
+        llm_provider="local",
+        web_search_provider="none",
+    )
+
+    assert config.cors_origins == [
+        "https://aira.example.com",
+        "https://admin.aira.example.com",
+    ]
+    assert config.allowed_file_extensions == ["pdf", "txt", "docx", "md"]
+
+
 # ── API-key auth ──────────────────────────────────────────────────────────────
 
 def test_no_auth_required_when_key_unset(client):
