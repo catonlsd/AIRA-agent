@@ -1779,10 +1779,10 @@ plus a guided walkthrough that tells the viewer exactly what to look at.
 
 **Instant demo (operator):**
 ```bash
-# with the operator service key configured (AIRA_API_KEY)
-curl -s -X POST localhost:8000/operator/demo/seed   -H "X-API-Key: $AIRA_API_KEY"
-curl -s     localhost:8000/operator/demo/status -H "X-API-Key: $AIRA_API_KEY"   # tour + counts
-curl -s -X POST localhost:8000/operator/demo/reset  -H "X-API-Key: $AIRA_API_KEY"
+# with the operator service key configured (API_KEY)
+curl -s -X POST localhost:8000/operator/demo/seed   -H "X-API-Key: $API_KEY"
+curl -s     localhost:8000/operator/demo/status -H "X-API-Key: $API_KEY"   # tour + counts
+curl -s -X POST localhost:8000/operator/demo/reset  -H "X-API-Key: $API_KEY"
 ```
 …or, in the operator console → **Incidents** tab → **Demo data** card → **Seed demo
 data** (one click), which then renders the walkthrough inline.

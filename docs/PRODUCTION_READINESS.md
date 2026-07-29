@@ -30,11 +30,11 @@ separate web and worker deployments behind the same DB.
 
 ## 2. Persistence posture (per durable store)
 
-`settings.database_url` defaults to **SQLite** (`storage/research_assistant.db`). The
-engine already branches on the URL scheme (`check_same_thread` only for SQLite), so
-**pointing at Postgres is a single env var** — no code change. All models are plain
-SQLAlchemy `Base` tables created via `create_all` + self-healing
-`ensure_runtime_columns` ALTERs.
+`settings.database_url` defaults to **SQLite** (`storage/research_assistant.db`).
+The engine branches on the URL scheme, but PostgreSQL is not yet deployable by
+configuration alone: a driver and versioned migration path are missing. All
+models are currently plain SQLAlchemy `Base` tables created via `create_all` plus
+self-healing `ensure_runtime_columns` ALTERs.
 
 | Durable store | Backed by | Status | Notes |
 |---|---|---|---|
@@ -47,12 +47,12 @@ SQLAlchemy `Base` tables created via `create_all` + self-healing
 | Vector store (Chroma) | local dir (`AIRA_CHROMA_DIR`) | **acceptable-for-now** | Persisted dir; for multi-instance use a hosted vector DB or shared volume. |
 | Turn traces | JSONL file (`AIRA_TRACE_LOG`) | **acceptable-for-now** | Debug stream; ship to a log aggregator in production. |
 
-### The one real migration (SQLite → Postgres)
-```bash
-export AIRA_DATABASE_URL="postgresql+psycopg://user:pass@host:5432/aira"
-# First boot creates tables (create_all) and applies additive ensure_runtime_columns().
-```
-Web/worker split, operator tooling, and incident workflows are unchanged.
+### SQLite to PostgreSQL is a planned migration, not an environment-only switch
+
+Although SQLAlchemy accepts a PostgreSQL URL, the repository does not currently
+ship a PostgreSQL driver or versioned schema migrations. Local file APIs and both
+vector indexes also remain single-host. See `PERSISTENCE_AND_RECOVERY.md` for the
+supported internal-preview topology and the work required before scaling out.
 
 ---
 
@@ -78,7 +78,7 @@ trusted on "save config and hope."
   target reads `unverified` until revalidated) and records the change in durable target
   check history.
 - **Production hardening:** encrypt the secret column at rest (DB TDE or app-level
-  envelope encryption); inject `AIRA_API_KEY` and `AIRA_DATABASE_URL` via the platform
+  envelope encryption); inject `API_KEY` and `DATABASE_URL` via the platform
   secret manager. Operator routes are globally gated by `APIKeyMiddleware` when
   `api_key` is set.
 
@@ -88,8 +88,8 @@ trusted on "save config and hope."
 
 | Asset | Backup | Recovery |
 |---|---|---|
-| DB (Postgres) | Managed snapshots + PITR | Restore; `create_all` + `ensure_runtime_columns` are idempotent on boot. |
-| Artifacts (object storage) | Bucket versioning + lifecycle | Re-point store; references are DB rows, not inline blobs. |
+| DB (initial preview: SQLite) | Coordinated encrypted volume backup | Restore the matching storage generation; run integrity and smoke checks. |
+| Artifacts (initial preview: persistent volume) | Back up with DB/uploads/indexes | Restore the matching storage generation. |
 | Incident target config | In DB | Restored with the DB; re-inject/rotate secrets if excluded from backup scope. |
 | Vector store | Periodic volume snapshot | Re-index from source documents (documents are the source of truth). |
 
@@ -100,10 +100,10 @@ blob-store restore is independent.
 
 ## 6. Pre-deploy environment checklist
 
-- [ ] `AIRA_DATABASE_URL` → managed Postgres (not the SQLite default).
-- [ ] `AIRA_API_KEY` set → operator routes gated (unset only for trusted local dev).
-- [ ] Artifact storage → durable object storage (not ephemeral local disk).
-- [ ] Web and worker deployed as **separate** units against the same DB.
+- [ ] `DATABASE_URL` points to SQLite on the persistent preview volume.
+- [ ] `API_KEY` and a distinct `AUTH_SECRET` are set.
+- [ ] Uploads, artifacts, traces, and both indexes use the same persistent volume.
+- [ ] Initial preview uses one web process and `QUEUE_ARTIFACTS=false`.
 - [ ] Liveness → `/health`, readiness → `/ready` wired to the platform.
 - [ ] LLM provider key + model configured; `/ready` passes.
 - [ ] Secrets injected via the platform secret manager, not committed.
