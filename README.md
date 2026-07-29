@@ -212,8 +212,8 @@ One operator-gated call populates a **deterministic, namespaced** showcase that 
 every capability at once:
 
 ```bash
-# operator key configured as AIRA_API_KEY
-curl -s -X POST localhost:8000/operator/demo/seed  -H "X-API-Key: $AIRA_API_KEY"
+# operator key configured as API_KEY
+curl -s -X POST localhost:8000/operator/demo/seed  -H "X-API-Key: $API_KEY"
 ```
 …or click **Seed demo data** in the operator console's Incidents tab, which renders a
 guided tour inline. It seeds 6 targets across every readiness state, 5 incidents spanning
@@ -278,10 +278,14 @@ Environment reference: **[backend/.env.example](backend/.env.example)**. Key var
 
 ## Production deployment
 
-- **Topology:** stateless **web** + thin **worker** against one shared DB; SQLite for
-  local, **Postgres via a single env var** for production (schema self-heals on boot with
-  idempotent `create_all` + additive column migrations).
+- **Topology:** one API process with SQLite on a persistent volume and
+  `QUEUE_ARTIFACTS=false` for the internal preview. PostgreSQL plus separate
+  workers is a future scale migration, not an environment-only switch.
 - **Health:** `/health` (liveness), `/ready` (DB + LLM config readiness gate).
+- **Default Groq model:** `openai/gpt-oss-120b` (production-listed). The former
+  `llama-3.3-70b-versatile` default is scheduled for Groq free/developer-tier
+  shutdown on 2026-08-16; `qwen/qwen3.6-27b` is available only as an opt-in
+  Preview model.
 - **Operator gating:** set `API_KEY` to enforce the service-key boundary globally.
 - **Hardening:** rate limiting, security headers, CORS, global JSON error handler (no
   stack-trace leaks), per-turn JSONL tracing.
@@ -344,6 +348,9 @@ notification channel layered *on top of* (never inside) the candidate-alert obse
 | **[docs/ENGINEERING_DECISIONS.md](docs/ENGINEERING_DECISIONS.md)** | Why the key choices were made |
 | **[docs/DEMO_WALKTHROUGH.md](docs/DEMO_WALKTHROUGH.md)** | 5–10 min guided evaluation path |
 | **[docs/PLATFORM_SUMMARY.md](docs/PLATFORM_SUMMARY.md)** | Resume-ready metrics + highlights |
+| **[docs/BACKEND_ENVIRONMENT.md](docs/BACKEND_ENVIRONMENT.md)** | Authoritative backend environment inventory |
+| **[docs/PERSISTENCE_AND_RECOVERY.md](docs/PERSISTENCE_AND_RECOVERY.md)** | Persistence decision, backup, and restore drill |
+| **[docs/ORACLE_DEPLOYMENT_RUNBOOK.md](docs/ORACLE_DEPLOYMENT_RUNBOOK.md)** | Prepared Oracle deployment and rollback runbook |
 | **[docs/OPERATIONS.md](docs/OPERATIONS.md)** | Full operational guide (every milestone) |
 | **[docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md)** | Persistence, runbooks, SLIs, troubleshooting |
 | **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** | Hosting recipes |

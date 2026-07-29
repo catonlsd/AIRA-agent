@@ -21,6 +21,9 @@ frontend/.cache/
 
 # Backend local storage & runtime data
 backend/storage/*.db
+backend/storage/*.db-journal
+backend/storage/*.db-shm
+backend/storage/*.db-wal
 backend/storage/*.log
 backend/storage/uvicorn*.log
 backend/storage/workflow_runs.json

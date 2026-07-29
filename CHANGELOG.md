@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — Phase 3 backend deployment preparation
+
+- Replaced the deprecated Groq default with the production-listed
+  `openai/gpt-oss-120b`; no live provider request was made.
+- Strengthened `/ready` so unconfigured LLM credentials or unavailable writable
+  storage return 503 instead of a false-ready response.
+- Made document ingestion/deletion update both retrieval indexes, with
+  compensating cleanup on interrupted ingestion.
+- Added authoritative environment, persistence/recovery, Oracle/Nginx,
+  monitoring, rollback, and go/no-go preparation artifacts.
+
 All notable changes to AIRA-X are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).

@@ -37,14 +37,14 @@ Backend (`backend/.env.example`):
 | Variable | Purpose | Required? | Default | Example |
 |---|---|---|---|---|
 | `LLM_PROVIDER` | LLM backend | yes | `groq` | `groq` |
-| `GROQ_API_KEY` | Groq key | yes if provider=groq | — | `gsk_...` |
+| `GROQ_API_KEY` | Groq key | yes if provider=groq | — | `<groq-api-key>` |
 | `OPENAI_API_KEY` / `GEMINI_API_KEY` | alt providers | if selected | — | — |
-| `*_MODEL` | model name per provider | no | sensible | `llama-3.3-70b-versatile` |
+| `*_MODEL` | model name per provider | no | sensible | `openai/gpt-oss-120b` |
 | `EMBEDDING_PROVIDER` | `sentence_transformers`/`hashing` | no | `sentence_transformers` | `hashing` |
 | `EMBEDDING_MODEL` | local model | no | `all-MiniLM-L6-v2` | — |
 | `VECTOR_STORE` / `CHROMA_DIR` | vector backend + dir | no | `chroma` / `./storage/chroma` | — |
 | `DATABASE_URL` | SQLAlchemy URL | no | sqlite path | `postgresql://...` |
-| `WEB_SEARCH_PROVIDER` / `TAVILY_API_KEY` | web search | no | `tavily` / — | — |
+| `WEB_SEARCH_PROVIDER` / `TAVILY_API_KEY` | web search | no | `none` / — | — |
 | `CHUNK_SIZE`/`CHUNK_OVERLAP`/`RETRIEVAL_K`/`MEMORY_LIMIT` | RAG/memory tuning | no | 1000/150/6/10 | — |
 | `MAX_UPLOAD_SIZE_MB` / `ALLOWED_FILE_EXTENSIONS` | upload limits | no | 10 / pdf,txt,docx,md | — |
 | `CORS_ORIGINS` / `CORS_ORIGIN_REGEX` | allowed origins | no | localhost / `*.vercel.app` | — |
@@ -55,7 +55,8 @@ Backend (`backend/.env.example`):
 
 Frontend: `NEXT_PUBLIC_API_URL` (browser→backend, build-time).
 
-No unused/missing variables found after the update.
+The current authoritative inventory, including direct environment lookups and
+newer runtime controls, is `BACKEND_ENVIRONMENT.md`.
 
 ## 3. Docker Readiness (Phase C)
 

@@ -23,7 +23,7 @@ COPY . .
 
 # Non-root user + writable storage dirs (mount a volume here in production).
 RUN useradd --create-home --uid 10001 appuser \
-    && mkdir -p storage/chroma storage/uploads storage/vector_index \
+    && mkdir -p storage/artifacts storage/chroma storage/uploads storage/vector_index \
     && chown -R appuser:appuser /app
 USER appuser
 

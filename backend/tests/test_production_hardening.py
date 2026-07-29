@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.middleware as mw
-from app.core.config import settings
+from app.core.config import Settings, settings
 from app.main import app, unhandled_exception_handler
 
 
@@ -39,6 +39,104 @@ def test_liveness_and_readiness(client):
     assert "ready" in body
     assert "database" in body["checks"]
     assert "llm" in body["checks"]
+    assert "storage" in body["checks"]
+
+
+def test_readiness_fails_when_llm_is_unconfigured(client, monkeypatch):
+    monkeypatch.setattr(settings, "llm_provider", "groq")
+    monkeypatch.setattr(settings, "groq_api_key", None)
+
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    assert response.json()["ready"] is False
+    assert response.json()["checks"]["llm"] == "unconfigured"
+
+
+def test_readiness_fails_when_storage_is_unwritable(client, monkeypatch, tmp_path):
+    missing = tmp_path / "missing"
+    monkeypatch.setattr(settings, "upload_dir", str(missing))
+
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    assert response.json()["checks"]["storage"] == "error"
+
+
+def test_supported_groq_model_is_the_default():
+    config = Settings(
+        _env_file=None,
+        llm_provider="local",
+        web_search_provider="none",
+    )
+
+    assert config.groq_model == "openai/gpt-oss-120b"
+
+
+def test_production_requires_operator_and_auth_secrets():
+    config = Settings(
+        _env_file=None,
+        environment="production",
+        llm_provider="local",
+        web_search_provider="none",
+        api_key=None,
+        auth_secret=None,
+    )
+
+    with pytest.raises(RuntimeError, match="API_KEY"):
+        config.validate_runtime_config()
+
+    config.api_key = "operator-key"
+    with pytest.raises(RuntimeError, match="AUTH_SECRET"):
+        config.validate_runtime_config()
+
+
+def test_production_requires_exact_non_local_cors_origins():
+    config = Settings(
+        _env_file=None,
+        environment="production",
+        llm_provider="local",
+        web_search_provider="none",
+        api_key="x",
+        auth_secret="y",
+        cors_origins=["https://aira.example.com"],
+        cors_origin_regex=r"https://.*\.vercel\.app",
+    )
+
+    with pytest.raises(RuntimeError, match="CORS_ORIGIN_REGEX"):
+        config.validate_runtime_config()
+
+    config.cors_origin_regex = None
+    config.cors_origins = []
+    with pytest.raises(RuntimeError, match="exact CORS_ORIGINS"):
+        config.validate_runtime_config()
+
+    config.cors_origins = ["http://localhost:3000"]
+    with pytest.raises(RuntimeError, match="Localhost CORS_ORIGINS"):
+        config.validate_runtime_config()
+
+    config.cors_origins = ["https://aira.example.com"]
+    config.validate_runtime_config()
+
+
+def test_csv_list_environment_settings_parse_before_startup(monkeypatch):
+    monkeypatch.setenv(
+        "CORS_ORIGINS",
+        "https://aira.example.com,https://admin.aira.example.com",
+    )
+    monkeypatch.setenv("ALLOWED_FILE_EXTENSIONS", "pdf,txt,docx,md")
+
+    config = Settings(
+        _env_file=None,
+        llm_provider="local",
+        web_search_provider="none",
+    )
+
+    assert config.cors_origins == [
+        "https://aira.example.com",
+        "https://admin.aira.example.com",
+    ]
+    assert config.allowed_file_extensions == ["pdf", "txt", "docx", "md"]
 
 
 # ── API-key auth ──────────────────────────────────────────────────────────────

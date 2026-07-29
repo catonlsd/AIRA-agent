@@ -7,6 +7,9 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 storage/*.db
+storage/*.db-journal
+storage/*.db-shm
+storage/*.db-wal
 storage/*.log
 storage/uvicorn*.log
 storage/workflow_runs.json
@@ -17,6 +20,5 @@ storage/vector_index/*
 tmp/
 .env
 .env.*
-!.env.example
 *.md
 tests/

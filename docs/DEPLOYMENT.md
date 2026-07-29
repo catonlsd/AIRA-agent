@@ -2,6 +2,11 @@
 
 Covers Render, Railway, VPS (Ubuntu), Docker, and Kubernetes-readiness.
 
+> Phase 3 note: the authoritative initial-preview target is the prepared Oracle
+> single-VM topology in `ORACLE_DEPLOYMENT_RUNBOOK.md`, with persistence and
+> recovery requirements in `PERSISTENCE_AND_RECOVERY.md`. The platform material
+> below is retained as reference and is not the current execution plan.
+
 > The backend depends on `torch`/`sentence-transformers`/`chromadb`, so the image
 > and memory footprint are non-trivial (~2–4 GB image, ~1–2 GB RAM). To run lean,
 > set `EMBEDDING_PROVIDER=hashing` (keyword embeddings, no model download) at the

@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -192,7 +193,11 @@ def health() -> dict:
 
 @app.get("/ready")
 def ready() -> JSONResponse:
-    """Readiness: dependencies (DB, LLM config) are usable."""
+    """Readiness: local dependencies and required provider config are usable.
+
+    This deliberately does not make a paid/provider network call. Deployment
+    smoke tests must verify upstream connectivity separately.
+    """
     checks: dict[str, str] = {}
 
     try:
@@ -209,9 +214,25 @@ def ready() -> JSONResponse:
 
     provider = settings.llm_provider
     key = getattr(settings, f"{provider}_api_key", None) if provider != "local" else None
-    checks["llm"] = "ok" if (provider == "local" or key) else "unconfigured"
+    checks["llm"] = "configured" if (provider == "local" or key) else "unconfigured"
 
-    is_ready = checks["database"] == "ok"
+    storage_paths = (
+        settings.vector_db_dir,
+        settings.upload_dir,
+        settings.chroma_dir,
+        settings.artifacts_dir,
+    )
+    checks["storage"] = (
+        "ok"
+        if all(Path(path).is_dir() and os.access(path, os.W_OK) for path in storage_paths)
+        else "error"
+    )
+
+    is_ready = (
+        checks["database"] == "ok"
+        and checks["llm"] == "configured"
+        and checks["storage"] == "ok"
+    )
     return JSONResponse(
         status_code=200 if is_ready else 503,
         content={"ready": is_ready, "checks": checks},

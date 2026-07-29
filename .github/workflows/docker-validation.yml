@@ -1,0 +1,174 @@
+name: Docker validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  docker-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AIRA_BACKEND_ENV_FILE: ${{ github.workspace }}/.ci/backend.env
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Create non-secret validation environment
+        shell: bash
+        run: |
+          mkdir -p .ci
+          printf '%s\n' \
+            'ENVIRONMENT=development' \
+            'LLM_PROVIDER=local' \
+            'WEB_SEARCH_PROVIDER=none' \
+            'EMBEDDING_PROVIDER=hashing' \
+            'VECTOR_STORE=chroma' \
+            'CORS_ORIGINS=http://127.0.0.1:3000' \
+            'CORS_ORIGIN_REGEX=' \
+            > .ci/backend.env
+
+      - name: Validate base and Oracle Compose rendering
+        shell: bash
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose \
+            -f docker-compose.yml \
+            -f deploy/oracle/docker-compose.oracle.yml \
+            config --quiet
+          docker compose -f docker-compose.yml config --format json > "$RUNNER_TEMP/compose.json"
+          docker compose \
+            -f docker-compose.yml \
+            -f deploy/oracle/docker-compose.oracle.yml \
+            config --format json > "$RUNNER_TEMP/oracle-compose.json"
+          python - "$RUNNER_TEMP/compose.json" "$RUNNER_TEMP/oracle-compose.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              config = json.load(handle)
+
+          services = config["services"]
+          for name, expected_port in (("backend", 8000), ("frontend", 3000)):
+              ports = services[name].get("ports", [])
+              assert len(ports) == 1, (name, ports)
+              port = ports[0]
+              assert port["host_ip"] == "127.0.0.1", (name, port)
+              assert int(port["published"]) == expected_port, (name, port)
+              assert int(port["target"]) == expected_port, (name, port)
+
+          assert services["backend"]["restart"] == "unless-stopped"
+          assert services["frontend"]["restart"] == "unless-stopped"
+          assert services["backend"]["healthcheck"]["test"]
+          assert services["frontend"]["depends_on"]["backend"]["condition"] == "service_healthy"
+
+          with open(sys.argv[2], encoding="utf-8") as handle:
+              oracle = json.load(handle)
+          oracle_backend = oracle["services"]["backend"]
+          assert oracle_backend["stop_grace_period"] in ("45s", 45_000_000_000)
+          mounts = oracle_backend.get("volumes", [])
+          assert any(
+              item["source"] == "/srv/aira-x/storage"
+              and item["target"] == "/app/storage"
+              for item in mounts
+          )
+          PY
+
+      - name: Build images without publishing
+        shell: bash
+        run: |
+          started_at=$(date +%s)
+          docker compose -f docker-compose.yml build
+          duration=$(( $(date +%s) - started_at ))
+          echo "Docker Compose build duration: ${duration}s" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Inspect backend image
+        shell: bash
+        run: |
+          runtime_user=$(docker image inspect aira-x-backend --format '{{.Config.User}}')
+          entrypoint=$(docker image inspect aira-x-backend --format '{{json .Config.Cmd}}')
+          exposed_ports=$(docker image inspect aira-x-backend --format '{{json .Config.ExposedPorts}}')
+          image_bytes=$(docker image inspect aira-x-backend --format '{{.Size}}')
+          architecture=$(docker image inspect aira-x-backend --format '{{.Architecture}}')
+
+          test "$runtime_user" = "appuser"
+          test "$exposed_ports" = '{"8000/tcp":{}}'
+          docker run --rm --entrypoint sh aira-x-backend -c '
+            test "$(id -u)" = "10001"
+            test -w /app/storage
+            test -z "$(find /app -type f \( -name ".env" -o -name ".env.*" -o -name "*.db" -o -name "*.db-journal" -o -name "*.db-shm" -o -name "*.db-wal" -o -name "traces.jsonl*" \) -print -quit)"
+            test -z "$(find /app/storage/uploads /app/storage/vector_index /app/storage/chroma -type f -print -quit)"
+          '
+
+          {
+            echo "Backend runtime user: ${runtime_user}"
+            echo "Backend command: ${entrypoint}"
+            echo "Backend exposed ports: ${exposed_ports}"
+            echo "Backend architecture: ${architecture}"
+            echo "Backend image size: ${image_bytes} bytes"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Start stack and verify health
+        shell: bash
+        run: |
+          docker compose -f docker-compose.yml up -d backend
+          for attempt in $(seq 1 90); do
+            if curl --fail --silent http://127.0.0.1:8000/health >/dev/null \
+              && curl --fail --silent http://127.0.0.1:8000/ready >/dev/null; then
+              break
+            fi
+            if ! docker compose -f docker-compose.yml ps --status running --services \
+              | grep --quiet '^backend$'; then
+              docker compose -f docker-compose.yml ps --all
+              docker compose -f docker-compose.yml logs --no-color backend
+              exit 1
+            fi
+            if [ "$attempt" -eq 90 ]; then
+              docker compose -f docker-compose.yml ps --all
+              docker compose -f docker-compose.yml logs --no-color backend
+              exit 1
+            fi
+            sleep 2
+          done
+
+          docker compose -f docker-compose.yml up -d frontend
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3000/ >/dev/null; then
+              break
+            fi
+            if ! docker compose -f docker-compose.yml ps --status running --services \
+              | grep --quiet '^frontend$'; then
+              docker compose -f docker-compose.yml ps --all
+              docker compose -f docker-compose.yml logs --no-color frontend
+              exit 1
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              docker compose -f docker-compose.yml ps --all
+              docker compose -f docker-compose.yml logs --no-color frontend
+              exit 1
+            fi
+            sleep 2
+          done
+          docker compose -f docker-compose.yml ps
+
+      - name: Verify graceful shutdown
+        shell: bash
+        run: |
+          started_at=$(date +%s)
+          docker compose -f docker-compose.yml stop -t 45
+          duration=$(( $(date +%s) - started_at ))
+          docker compose -f docker-compose.yml ps --all
+          test "$duration" -le 50
+          echo "Compose graceful stop duration: ${duration}s" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean validation stack
+        if: always()
+        shell: bash
+        run: docker compose -f docker-compose.yml down --volumes --remove-orphans
