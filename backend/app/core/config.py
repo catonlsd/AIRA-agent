@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
@@ -8,7 +9,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "AI Research Assistant"
-    environment: Literal["development", "production"] = "development"
+    environment: Literal["development", "preview", "production"] = "development"
 
     database_url: str = "sqlite:///./storage/research_assistant.db"
     vector_db_dir: str = "./storage/vector_index"
@@ -67,15 +68,26 @@ class Settings(BaseSettings):
     cors_origin_regex: str | None = r"https://.*\.vercel\.app"
 
     # ── Production hardening ──────────────────────────────────────────────────
-    # When api_key is set, requests must send it in the api_key_header. Left
-    # unset for local development (auth disabled).
+    # Privileged service/operator authentication. This credential is accepted
+    # only by explicitly privileged routes and must never be sent to a browser.
     api_key: str | None = None
     api_key_header: str = "X-API-Key"
+    # Trap unsafe frontend-prefixed credential variables during validation.
+    # These are never consumed by the application.
+    next_public_api_key: str | None = None
+    next_public_service_key: str | None = None
+    next_public_auth_secret: str | None = None
     # Account auth: signs the stateless session token that resolves a request to
     # a durable account principal. Set a strong secret in production; a stable
     # local default keeps dev working. TTL bounds how long a login stays valid.
     auth_secret: str | None = None
     auth_token_ttl_seconds: int = 60 * 60 * 24 * 14  # 14 days
+    user_auth_enabled: bool = True
+    # Anonymous protected-resource access is a local-development compatibility
+    # mode only. Both switches must be set explicitly; preview/production reject
+    # either switch so a missing variable can never enable a bypass.
+    allow_anonymous_protected_access: bool = False
+    development_auth_bypass: bool = False
     # Paths that never require auth or rate limiting. Account auth endpoints are
     # public (you can't send an account token before you have one).
     public_paths: list[str] = [
@@ -85,6 +97,8 @@ class Settings(BaseSettings):
 
     rate_limit_enabled: bool = True
     rate_limit_per_minute: int = 60
+    login_failure_limit: int = 5
+    login_failure_window_seconds: int = 300
 
     security_headers_enabled: bool = True
     request_logging_enabled: bool = True
@@ -363,27 +377,78 @@ class Settings(BaseSettings):
         if self.web_search_provider == "brave" and not self.brave_api_key:
             raise RuntimeError("BRAVE_API_KEY is required when WEB_SEARCH_PROVIDER=brave.")
 
-        if self.environment == "production":
+        if self.environment in {"preview", "production"}:
+            public_secret_fields = (
+                ("NEXT_PUBLIC_API_KEY", self.next_public_api_key),
+                ("NEXT_PUBLIC_SERVICE_KEY", self.next_public_service_key),
+                ("NEXT_PUBLIC_AUTH_SECRET", self.next_public_auth_secret),
+            )
+            configured_public_secret = next(
+                (
+                    name
+                    for name, value in public_secret_fields
+                    if value or os.getenv(name)
+                ),
+                None,
+            )
+            if configured_public_secret:
+                raise RuntimeError(
+                    f"{configured_public_secret} must not be configured; "
+                    "privileged credentials are server-side only."
+                )
+            if not self.user_auth_enabled:
+                raise RuntimeError(
+                    f"USER_AUTH_ENABLED must be true when ENVIRONMENT={self.environment}."
+                )
+            if self.allow_anonymous_protected_access:
+                raise RuntimeError(
+                    "ALLOW_ANONYMOUS_PROTECTED_ACCESS must be false when "
+                    f"ENVIRONMENT={self.environment}."
+                )
+            if self.development_auth_bypass:
+                raise RuntimeError(
+                    "DEVELOPMENT_AUTH_BYPASS must be false when "
+                    f"ENVIRONMENT={self.environment}."
+                )
             if not self.api_key:
-                raise RuntimeError("API_KEY is required when ENVIRONMENT=production.")
+                raise RuntimeError(
+                    f"API_KEY is required when ENVIRONMENT={self.environment}."
+                )
             if not self.auth_secret:
-                raise RuntimeError("AUTH_SECRET is required when ENVIRONMENT=production.")
+                raise RuntimeError(
+                    f"AUTH_SECRET is required when ENVIRONMENT={self.environment}."
+                )
+            placeholders = {
+                "change-me", "changeme", "default", "example", "placeholder",
+                "secret", "test", "your-secret-here",
+            }
+            for name, value in (
+                ("API_KEY", self.api_key),
+                ("AUTH_SECRET", self.auth_secret),
+            ):
+                normalized = (value or "").strip().lower()
+                if len(normalized) < 24 or normalized in placeholders:
+                    raise RuntimeError(
+                        f"{name} must be a strong non-placeholder secret when "
+                        f"ENVIRONMENT={self.environment}."
+                    )
             if self.cors_origin_regex:
                 raise RuntimeError(
-                    "CORS_ORIGIN_REGEX must be empty when ENVIRONMENT=production; "
+                    f"CORS_ORIGIN_REGEX must be empty when ENVIRONMENT={self.environment}; "
                     "configure exact CORS_ORIGINS instead."
                 )
             if not self.cors_origins:
                 raise RuntimeError(
                     "At least one exact CORS_ORIGINS entry is required when "
-                    "ENVIRONMENT=production."
+                    f"ENVIRONMENT={self.environment}."
                 )
             if any(
                 origin.startswith(("http://localhost", "http://127.0.0.1"))
                 for origin in self.cors_origins
             ):
                 raise RuntimeError(
-                    "Localhost CORS_ORIGINS are not allowed when ENVIRONMENT=production."
+                    "Localhost CORS_ORIGINS are not allowed when "
+                    f"ENVIRONMENT={self.environment}."
                 )
 
 

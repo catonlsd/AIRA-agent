@@ -4,7 +4,7 @@ Production-hardening HTTP middleware.
 
 All middleware read `settings` live at request time so configuration (and tests)
 can toggle behavior without rebuilding the app. Order of registration in
-main.py: logging (outermost) -> security headers -> rate limit -> api key.
+main.py: logging (outermost) -> security headers -> user authentication -> rate limit.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import logging
 import threading
 import time
 
+from fastapi import HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -25,6 +26,8 @@ logger = logging.getLogger("aira_x.request")
 _RATE_LIMIT_STATE: dict[str, list] = {}
 _RATE_LIMIT_LOCK = threading.Lock()
 _RATE_LIMIT_WINDOW_SECONDS = 60
+_LOGIN_FAILURE_STATE: dict[str, list] = {}
+_LOGIN_FAILURE_LOCK = threading.Lock()
 
 
 def reset_rate_limit() -> None:
@@ -33,8 +36,53 @@ def reset_rate_limit() -> None:
         _RATE_LIMIT_STATE.clear()
 
 
+def reset_login_rate_limit() -> None:
+    """Clear login-failure counters (used by deterministic tests)."""
+    with _LOGIN_FAILURE_LOCK:
+        _LOGIN_FAILURE_STATE.clear()
+
+
 def _is_public(path: str) -> bool:
     return any(path == p or path.startswith(p + "/") for p in settings.public_paths)
+
+
+def _client_address(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def enforce_login_failure_limit(request: Request) -> None:
+    """Reject a client whose failed-login window is already exhausted."""
+    key = _client_address(request)
+    now = time.time()
+    window = settings.login_failure_window_seconds
+    with _LOGIN_FAILURE_LOCK:
+        bucket = _LOGIN_FAILURE_STATE.get(key)
+        if bucket is None or now - bucket[0] >= window:
+            return
+        if bucket[1] >= settings.login_failure_limit:
+            retry_after = max(1, int(window - (now - bucket[0])))
+            raise HTTPException(
+                status_code=429,
+                detail="Too many failed login attempts. Please try again later.",
+                headers={"Retry-After": str(retry_after)},
+            )
+
+
+def record_login_failure(request: Request) -> None:
+    key = _client_address(request)
+    now = time.time()
+    window = settings.login_failure_window_seconds
+    with _LOGIN_FAILURE_LOCK:
+        bucket = _LOGIN_FAILURE_STATE.get(key)
+        if bucket is None or now - bucket[0] >= window:
+            _LOGIN_FAILURE_STATE[key] = [now, 1]
+        else:
+            bucket[1] += 1
+
+
+def clear_login_failures(request: Request) -> None:
+    with _LOGIN_FAILURE_LOCK:
+        _LOGIN_FAILURE_STATE.pop(_client_address(request), None)
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
@@ -84,8 +132,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Principal-aware: an authenticated key gets its own bucket; otherwise
         # fall back to the client IP. (Keying on the body's session id would
         # require reading the request body, which breaks streaming.)
-        api_key = request.headers.get(settings.api_key_header) if settings.api_key else None
-        client = f"key:{api_key[:16]}" if api_key else (request.client.host if request.client else "unknown")
+        principal = getattr(request.state, "principal", None)
+        if principal is not None and getattr(principal, "is_account", False):
+            client = f"account:{principal.account_id}"
+        else:
+            client = _client_address(request)
         limit = settings.rate_limit_per_minute
         now = time.time()
 
@@ -117,14 +168,67 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-class APIKeyMiddleware(BaseHTTPMiddleware):
+class UserAuthenticationMiddleware(BaseHTTPMiddleware):
+    """Default-deny user gate; privileged routes authenticate themselves.
+
+    A service key is deliberately not a user credential. Caller-supplied
+    session/workspace fields are never considered authenticated identity here.
+    """
+
     async def dispatch(self, request: Request, call_next):
-        api_key = settings.api_key
-        # Auth disabled when no key configured (local development).
-        if not api_key or request.method == "OPTIONS" or _is_public(request.url.path):
+        from app.auth import (
+            Principal,
+            development_bypass_principal,
+            resolve_account_principal,
+        )
+
+        path = request.url.path
+        if request.method == "OPTIONS" or _is_public(path):
+            request.state.principal = Principal(
+                kind="anonymous",
+                subject="",
+                authenticated=False,
+                authentication_method="public",
+            )
             return await call_next(request)
 
-        provided = request.headers.get(settings.api_key_header)
-        if not provided or provided != api_key:
-            return JSONResponse({"error": "Unauthorized: invalid or missing API key."}, status_code=401)
-        return await call_next(request)
+        # Every operator route performs an explicit, constant-time service-key
+        # check. Do not run the user gate first: a user token is not operator auth.
+        if path == "/operator" or path.startswith("/operator/"):
+            return await call_next(request)
+
+        account = resolve_account_principal(request) if settings.user_auth_enabled else None
+        if account is not None:
+            request.state.principal = account
+            return await call_next(request)
+
+        # An invalid Authorization header never falls back to development mode.
+        if request.headers.get("Authorization"):
+            return JSONResponse(
+                {"error": "User authentication required."},
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # A privileged credential can never impersonate an ordinary user.
+        if request.headers.get(settings.api_key_header):
+            return JSONResponse(
+                {"error": "User authentication required."},
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        explicit_local_bypass = (
+            settings.environment == "development"
+            and settings.allow_anonymous_protected_access
+            and settings.development_auth_bypass
+        )
+        if explicit_local_bypass:
+            request.state.principal = development_bypass_principal()
+            return await call_next(request)
+
+        return JSONResponse(
+            {"error": "User authentication required."},
+            status_code=401,
+            headers={"WWW-Authenticate": "Bearer"},
+        )

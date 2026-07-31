@@ -130,15 +130,23 @@ def test_path_traversal_is_blocked(client):
     assert c.get(f"/artifacts/{token}/..%2f..%2fsecret.pptx").status_code in (404, 400)
 
 
-def test_authenticated_caller_cannot_reach_another_owner(client, monkeypatch):
-    from app.core.config import settings
+def test_authenticated_caller_cannot_reach_another_owner(client):
+    from uuid import uuid4
 
-    monkeypatch.setattr(settings, "api_key", "k")
+    from app.accounts import account_service
+    from app.auth import make_account_token
+
+    account = account_service.register(
+        f"artifact-boundary-{uuid4().hex}@example.com", "password123"
+    )
     c, root = client
     other = owner_token_for("session:other")
     _write_artifact(root, other, "theirs.pptx")
     # Authenticated as a different principal -> 404 for another owner's artifact.
-    resp = c.get(f"/artifacts/{other}/theirs.pptx", headers={"X-API-Key": "k"})
+    resp = c.get(
+        f"/artifacts/{other}/theirs.pptx",
+        headers={"Authorization": f"Bearer {make_account_token(account['id'])}"},
+    )
     assert resp.status_code == 404
 
 

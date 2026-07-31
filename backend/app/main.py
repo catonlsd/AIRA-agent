@@ -16,10 +16,10 @@ from app.api.routes import router
 from app.core.config import settings
 from app.db.database import init_db
 from app.middleware import (
-    APIKeyMiddleware,
     RateLimitMiddleware,
     RequestLoggingMiddleware,
     SecurityHeadersMiddleware,
+    UserAuthenticationMiddleware,
 )
 from app.routes.aira_x import router as aira_x_router
 from app.routes.assistant import router as assistant_router
@@ -63,8 +63,15 @@ async def lifespan(_app: FastAPI):
     except Exception:
         pass
     logger.info(
-        "AIRA-X API started (auth=%s, rate_limit=%s/min)",
-        "on" if settings.api_key else "off",
+        "AIRA-X API started (user_auth=%s, local_bypass=%s, rate_limit=%s/min)",
+        "on" if settings.user_auth_enabled else "off",
+        (
+            "on"
+            if settings.environment == "development"
+            and settings.allow_anonymous_protected_access
+            and settings.development_auth_bypass
+            else "off"
+        ),
         settings.rate_limit_per_minute if settings.rate_limit_enabled else "off",
     )
     yield
@@ -97,9 +104,10 @@ app.include_router(preferences_router)
 app.include_router(router)
 
 # Middleware is added inner-first; the last added is outermost. Desired request
-# flow: CORS -> logging -> security headers -> rate limit -> API key -> route.
-app.add_middleware(APIKeyMiddleware)
+# flow: CORS -> logging -> security headers -> user auth -> rate limit -> route.
+# Privileged/operator authentication is explicit inside the operator router.
 app.add_middleware(RateLimitMiddleware)
+app.add_middleware(UserAuthenticationMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 

@@ -55,7 +55,7 @@ def stub_llm(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _isolate_guided_flows():
+def _isolate_guided_flows(monkeypatch):
     """Guided-flow state, usage quotas, and memory are durable / process-local —
     wipe them between tests so pending approvals, quota counters, and saved
     preferences never leak across tests or owners."""
@@ -67,7 +67,7 @@ def _isolate_guided_flows():
     from app.guided_flow_store import guided_flow_store
     from app.memory.preference_memory import preference_memory
     from app.memory.session_memory import session_memory
-    from app.middleware import reset_rate_limit
+    from app.middleware import reset_login_rate_limit, reset_rate_limit
     from app.observability import observability
     from app.pins import pin_service
     from app.usage_limits import usage_limiter
@@ -78,11 +78,19 @@ def _isolate_guided_flows():
     # Keep tests hermetic: no live web grounding, no network image sourcing.
     settings.artifact_research_grounding = False
     settings.enable_artifact_images = False
+    # Existing deterministic tests exercise the historical anonymous/session
+    # behavior. Keep that compatibility explicitly local rather than relying on
+    # a missing authentication setting.
+    monkeypatch.setattr(settings, "environment", "development")
+    monkeypatch.setattr(settings, "user_auth_enabled", True)
+    monkeypatch.setattr(settings, "allow_anonymous_protected_access", True)
+    monkeypatch.setattr(settings, "development_auth_bypass", True)
     set_image_provider(None)
 
     guided_flow_store.clear_all()
     usage_limiter.reset()
     reset_rate_limit()  # fresh per-minute window per test (shared unauth bucket)
+    reset_login_rate_limit()
     preference_memory.clear_all()
     session_memory.clear_all()
     activity_service.clear_all()
@@ -97,6 +105,7 @@ def _isolate_guided_flows():
     guided_flow_store.clear_all()
     usage_limiter.reset()
     reset_rate_limit()
+    reset_login_rate_limit()
     preference_memory.clear_all()
     session_memory.clear_all()
     activity_service.clear_all()

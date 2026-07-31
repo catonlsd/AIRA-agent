@@ -86,7 +86,7 @@ def test_production_requires_operator_and_auth_secrets():
     with pytest.raises(RuntimeError, match="API_KEY"):
         config.validate_runtime_config()
 
-    config.api_key = "operator-key"
+    config.api_key = "operator-key-with-at-least-24-characters"
     with pytest.raises(RuntimeError, match="AUTH_SECRET"):
         config.validate_runtime_config()
 
@@ -97,8 +97,8 @@ def test_production_requires_exact_non_local_cors_origins():
         environment="production",
         llm_provider="local",
         web_search_provider="none",
-        api_key="x",
-        auth_secret="y",
+        api_key="operator-key-with-at-least-24-characters",
+        auth_secret="account-signing-secret-with-at-least-24-characters",
         cors_origins=["https://aira.example.com"],
         cors_origin_regex=r"https://.*\.vercel\.app",
     )
@@ -142,19 +142,18 @@ def test_csv_list_environment_settings_parse_before_startup(monkeypatch):
 # ── API-key auth ──────────────────────────────────────────────────────────────
 
 def test_no_auth_required_when_key_unset(client):
-    # Default: settings.api_key is None -> auth disabled (local dev).
+    # The suite enables the explicit local-development bypass.
     assert client.get("/aira-x/agents").status_code == 200
 
 
-def test_api_key_required_when_configured(client, monkeypatch):
+def test_service_key_does_not_authenticate_user_route(client, monkeypatch):
     monkeypatch.setattr(settings, "api_key", "secret-key")
 
-    # Missing/invalid key on a protected endpoint -> 401.
-    assert client.get("/aira-x/agents").status_code == 401
+    # Local bypass still permits a request with no claimed credential.
+    assert client.get("/aira-x/agents").status_code == 200
+    # Supplying a service credential on a user route disables fallback and fails.
     assert client.get("/aira-x/agents", headers={"X-API-Key": "wrong"}).status_code == 401
-
-    # Correct key -> allowed.
-    assert client.get("/aira-x/agents", headers={"X-API-Key": "secret-key"}).status_code == 200
+    assert client.get("/aira-x/agents", headers={"X-API-Key": "secret-key"}).status_code == 401
 
 
 def test_public_paths_skip_auth(client, monkeypatch):

@@ -190,7 +190,7 @@ def test_operator_overview_requires_service_key(monkeypatch):
     from app.middleware import reset_rate_limit
 
     # No api key configured -> no operator exists; the path is unavailable.
-    assert client.get("/operator/overview").status_code == 403
+    assert client.get("/operator/overview").status_code == 401
 
     monkeypatch.setattr(settings, "api_key", "service-secret")
     reset_rate_limit()
