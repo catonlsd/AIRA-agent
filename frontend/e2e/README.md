@@ -29,8 +29,9 @@ backend wall (`backend/tests`, 900+ tests) and the pure frontend unit tests
 - **Seeded fixtures** live in `helpers.ts` (`mockOperator`, `mockStream`, `seedTarget`,
   `seedIncident`, `artifactFinal`, `planFinal`). One broad fallback (`seedFallback`)
   returns empty `200`s for any un-stubbed call so a test never fails on noise.
-- **Operator separation respected.** The operator flows go through the real
-  service-key connect screen; a rejected key never reaches the console.
+- **Operator separation respected.** Browser tests assert that the disabled
+  operator page has no credential input and writes no operator secret to browser
+  storage.
 
 ## Run it
 

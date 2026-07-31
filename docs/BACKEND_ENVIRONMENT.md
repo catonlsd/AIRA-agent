@@ -22,7 +22,7 @@ worker: yes**. This convention is part of the inventory, not an omission.
 | Variable | Consumer / purpose | Default | Required | Secret | Development | Production / missing behavior |
 |---|---|---|---|---|---|---|
 | `APP_NAME` | API display name | `AI Research Assistant` | No | No | Keep default | Optional; restart |
-| `ENVIRONMENT` | Enables production validation | `development` | Yes | No | `development` | `production`; startup fails unless `API_KEY` and `AUTH_SECRET` are set |
+| `ENVIRONMENT` | Enables release-stage validation | `development` | Yes | No | `development` | `preview` or `production`; both fail closed on unsafe auth |
 | `DATABASE_URL` | SQLAlchemy relational store | `sqlite:///./storage/research_assistant.db` | Yes | Credentials if remote | SQLite default | Initial preview: `sqlite:////app/storage/research_assistant.db`; a remote URL is unsupported until its driver and migrations are added |
 | `VECTOR_DB_DIR` | Legacy JSON vector index | `./storage/vector_index` | Yes | No | Local storage | `/app/storage/vector_index`; startup creates it |
 | `UPLOAD_DIR` | Original uploaded documents | `./storage/uploads` | Yes | User data | Local storage | `/app/storage/uploads`; startup creates it |
@@ -39,10 +39,13 @@ worker: yes**. This convention is part of the inventory, not an omission.
 | `TAVILY_API_KEY` | Tavily authentication | none | When provider is Tavily | Yes | Optional | Startup fails when selected and absent |
 | `SERPAPI_API_KEY` | SerpAPI authentication | none | When provider is SerpAPI | Yes | Optional | Startup fails when selected and absent |
 | `BRAVE_API_KEY` | Brave authentication | none | When provider is Brave | Yes | Optional | Startup fails when selected and absent |
-| `API_KEY` | Operator/service-key middleware | none | In production | Yes | Blank disables this gate | Strong random value; startup fails when absent in production |
+| `API_KEY` | Explicit operator/service routes only | none | Preview/production | Yes | Server-side only | Strong random value; never expose to browser code |
 | `API_KEY_HEADER` | Service-key header name | `X-API-Key` | Yes | No | Keep default | Coordinate any change with clients |
-| `AUTH_SECRET` | Signs account session tokens | local fallback | In production | Yes | May be omitted locally | Distinct strong random value; startup fails when absent |
+| `AUTH_SECRET` | Signs transitional account bearer tokens | local fallback | Preview/production | Yes | May be omitted locally | Distinct strong non-placeholder value |
 | `AUTH_TOKEN_TTL_SECONDS` | Account token lifetime | `1209600` (14 days) | Yes | No | Default | Choose per access policy |
+| `USER_AUTH_ENABLED` | Enables ordinary account authentication | `true` | Yes | No | Keep true | Must be true in preview/production |
+| `ALLOW_ANONYMOUS_PROTECTED_ACCESS` | Local anonymous compatibility | `false` | Yes | No | Explicit opt-in only | Must be false |
+| `DEVELOPMENT_AUTH_BYPASS` | Activates the explicit local bypass | `false` | Yes | No | Requires both local switches | Must be false |
 | `PUBLIC_PATHS` | Routes exempt from auth/rate limit | built-in list | No | No | Default | Treat changes as a security review |
 | `CORS_ORIGINS` | Exact browser origins, CSV | localhost origins | Yes | No | Localhost | Exact production frontend origin only |
 | `CORS_ORIGIN_REGEX` | Additional browser-origin regex | all Vercel preview domains | No | No | Convenient locally | Set blank unless preview origins are intentionally allowed |
@@ -50,6 +53,8 @@ worker: yes**. This convention is part of the inventory, not an omission.
 | `ALLOWED_FILE_EXTENSIONS` | Accepted suffixes, CSV | `pdf,txt,docx,md` | Yes | No | Default | Restrict to parser-supported formats |
 | `RATE_LIMIT_ENABLED` | In-process request limiter | `true` | Yes | No | `true` | Keep enabled; state is not shared across replicas |
 | `RATE_LIMIT_PER_MINUTE` | Per-client fixed-window limit | `60` | Yes | No | Default | Tune after observing internal preview |
+| `LOGIN_FAILURE_LIMIT` | Failed logins allowed per local window | `5` | Yes | No | Default | Process-local; replace with shared limiter for external beta |
+| `LOGIN_FAILURE_WINDOW_SECONDS` | Failed-login window | `300` | Yes | No | Default | Process-local |
 | `SECURITY_HEADERS_ENABLED` | Response hardening headers | `true` | Yes | No | `true` | Must remain true |
 | `REQUEST_LOGGING_ENABLED` | Structured request log | `true` | Yes | No | `true` | Must remain true; stdout is collected by Docker/systemd |
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.auth import resolve_operator_principal
+from app.auth import require_operator_principal
 from app.db.database import SessionLocal
 from app.db.models import Account, Workspace
 
@@ -23,8 +23,7 @@ router = APIRouter(prefix="/operator", tags=["AIRA-X Operator"])
 
 
 def _require_operator(request: Request) -> None:
-    if resolve_operator_principal(request) is None:
-        raise HTTPException(status_code=403, detail="Operator access required.")
+    require_operator_principal(request)
 
 
 @router.get("/overview")

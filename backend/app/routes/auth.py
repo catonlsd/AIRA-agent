@@ -20,6 +20,11 @@ from pydantic import BaseModel
 
 from app.accounts import AccountError, account_service
 from app.auth import make_account_token, resolve_account_principal
+from app.middleware import (
+    clear_login_failures,
+    enforce_login_failure_limit,
+    record_login_failure,
+)
 
 router = APIRouter(prefix="/auth", tags=["AIRA-X Auth"])
 
@@ -50,10 +55,13 @@ def register(body: RegisterRequest) -> dict:
 
 
 @router.post("/login")
-def login(body: LoginRequest) -> dict:
+def login(body: LoginRequest, request: Request) -> dict:
+    enforce_login_failure_limit(request)
     account = account_service.authenticate(body.email, body.password)
     if account is None:
+        record_login_failure(request)
         raise HTTPException(status_code=401, detail="Invalid email or password.")
+    clear_login_failures(request)
     return _session(account)
 
 

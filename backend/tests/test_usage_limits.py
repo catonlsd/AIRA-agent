@@ -3,6 +3,8 @@
 limits, pending-flow caps, honest limit-hit behaviour, principal-aware request
 rate limiting, and config validation."""
 
+from uuid import uuid4
+
 import pytest
 
 from app.assistant_supervisor import AssistantSupervisor
@@ -188,18 +190,22 @@ async def test_artifact_generation_quota_enforced(monkeypatch):
 
 
 def test_request_rate_limit_is_principal_aware(monkeypatch):
+    from app.accounts import account_service
+    from app.auth import make_account_token
     from app.core.config import settings
     from app.middleware import reset_rate_limit
 
     monkeypatch.setattr(settings, "rate_limit_enabled", True)
     monkeypatch.setattr(settings, "rate_limit_per_minute", 2)
-    monkeypatch.setattr(settings, "api_key", "k1")
     reset_rate_limit()
 
     from fastapi.testclient import TestClient
 
     client = TestClient(__import__("app.main", fromlist=["app"]).app)
-    headers = {"X-API-Key": "k1"}
+    account = account_service.register(
+        f"rate_{uuid4().hex[:10]}@example.com", "password123", "Rate Test"
+    )
+    headers = {"Authorization": f"Bearer {make_account_token(account['id'])}"}
     # Two allowed, third blocked for this principal.
     assert client.get("/aira-x/overview", headers=headers).status_code in (200, 500)
     assert client.get("/aira-x/overview", headers=headers).status_code in (200, 500)

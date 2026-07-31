@@ -3,9 +3,9 @@
 Identity / ownership layer for AIRA-X.
 
 A single, swappable place to answer "who is the current principal, and what do
-they own?" Today the product has no login, so a principal is derived from the
-request: an authenticated API key when one is configured, otherwise the
-client's session id. Every owned resource — runs, guided-flow pending state,
+they own?" Account bearer authentication and privileged service authentication
+are deliberately separate. Local session identity exists only for the explicit
+development bypass. Every owned resource — runs, guided-flow pending state,
 artifacts, uploaded documents — is scoped to a stable `owner_key`.
 
 This keeps cross-user access from being ambiguous now, and makes adding real
@@ -23,6 +23,8 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
+from fastapi import HTTPException
+
 from app.core.config import settings
 
 # Owner directories / capability tokens are HMACs of the owner key with this
@@ -33,7 +35,9 @@ ANONYMOUS_OWNER = "anonymous"
 
 
 def _auth_secret() -> bytes:
-    return (settings.auth_secret or settings.api_key or "aira-x-local-auth-secret").encode("utf-8")
+    # Never fall back to the operator service key: possession of a service
+    # credential must not grant the ability to mint arbitrary user tokens.
+    return (settings.auth_secret or "aira-x-local-auth-secret").encode("utf-8")
 
 
 @dataclass(frozen=True)
@@ -55,6 +59,9 @@ class Principal:
     subject: str        # account id | key fingerprint | session id
     authenticated: bool
     account_id: Optional[str] = None  # set only for authenticated accounts
+    authentication_method: str = "none"
+    account_status: Optional[str] = None
+    roles: tuple[str, ...] = ()
 
     @property
     def is_account(self) -> bool:
@@ -99,9 +106,20 @@ def resolve_principal(
     """
     configured = settings.api_key
     if configured and api_key and hmac.compare_digest(api_key, configured):
-        return Principal(kind="api_key", subject=_key_fingerprint(api_key), authenticated=True)
+        return Principal(
+            kind="api_key",
+            subject=_key_fingerprint(api_key),
+            authenticated=True,
+            authentication_method="service_key",
+            roles=("operator",),
+        )
     if session_id and session_id.strip():
-        return Principal(kind="session", subject=session_id.strip(), authenticated=False)
+        return Principal(
+            kind="session",
+            subject=session_id.strip(),
+            authenticated=False,
+            authentication_method="caller_session_unverified",
+        )
     return Principal(kind="anonymous", subject="", authenticated=False)
 
 
@@ -180,7 +198,22 @@ def resolve_account_principal(request) -> Optional[Principal]:
     account_id = verify_account_token(_bearer_token(request))
     if not account_id:
         return None
-    return Principal(kind="account", subject=account_id, authenticated=True, account_id=account_id)
+    # A valid signature establishes token integrity, not account existence or
+    # status. Resolve the durable account before constructing the principal.
+    from app.accounts import account_service
+
+    account = account_service.get(account_id)
+    if account is None:
+        return None
+    return Principal(
+        kind="account",
+        subject=account["id"],
+        authenticated=True,
+        account_id=account["id"],
+        authentication_method="account_bearer",
+        account_status="active",
+        roles=("user",),
+    )
 
 
 def resolve_operator_principal(request) -> Optional[Principal]:
@@ -196,6 +229,30 @@ def resolve_operator_principal(request) -> Optional[Principal]:
         principal = resolve_principal(api_key=api_key)
         return principal if principal.is_operator else None
     return None
+
+
+def require_operator_principal(request) -> Principal:
+    """Require the explicit service/operator credential for a privileged route."""
+    principal = resolve_operator_principal(request)
+    if principal is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Service authentication required.",
+            headers={"WWW-Authenticate": "ServiceKey"},
+        )
+    request.state.principal = principal
+    return principal
+
+
+def development_bypass_principal() -> Principal:
+    """Canonical non-authenticated principal for the explicit local bypass."""
+    return Principal(
+        kind="anonymous",
+        subject="",
+        authenticated=False,
+        authentication_method="development_bypass",
+        roles=("local_development",),
+    )
 
 
 # ── Resource scope (session / account / workspace) ───────────────────────────

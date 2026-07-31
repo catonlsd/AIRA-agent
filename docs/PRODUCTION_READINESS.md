@@ -79,8 +79,8 @@ trusted on "save config and hope."
   check history.
 - **Production hardening:** encrypt the secret column at rest (DB TDE or app-level
   envelope encryption); inject `API_KEY` and `DATABASE_URL` via the platform
-  secret manager. Operator routes are globally gated by `APIKeyMiddleware` when
-  `api_key` is set.
+  secret manager. Operator routes explicitly require the server-side service
+  credential; ordinary user routes do not accept it as user identity.
 
 ---
 

@@ -5,8 +5,8 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * The suite is intentionally small and HERMETIC: every test stubs the backend at the
  * network layer (`page.route`), so there is no real API, no LLM, no database, and no
- * third-party calls. We exercise the REAL Next.js app (routing, components, operator
- * key flow, readiness rendering, streaming render) against seeded API responses — the
+ * third-party calls. We exercise the REAL Next.js app (routing, components,
+ * authentication boundaries, streaming render) against seeded API responses — the
  * gap the backend wall can't cover. Chromium only, to stay fast and CI-friendly.
  */
 export default defineConfig({

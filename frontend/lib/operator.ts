@@ -1,12 +1,10 @@
-// Operator delivery-console client — OPERATOR-ONLY, never used by the normal
-// product. Every call is gated by the service api-key (X-API-Key), entered by an
-// operator and kept in sessionStorage (a secret, cleared when the tab closes —
-// never localStorage, never mixed with the user's account token). Talks only to
-// the existing, already-gated /operator/* APIs; returns their curated payloads
-// (no secrets, no raw internals). Dependency-free so the pure helpers unit-test.
+// Curated operator payload types and presentation helpers.
+//
+// The browser operator console is disabled until a server-side administrative
+// boundary exists. This module deliberately contains no privileged credential
+// storage or privileged request header. Its pure helpers remain unit-testable.
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-const KEY_STORAGE = "aira_operator_key";
 
 // ── types (mirror the curated operator API payloads) ────────────────────────
 
@@ -802,40 +800,6 @@ export function incidentTone(state: IncidentState): Tone {
   return _INCIDENT_TONE[state] ?? "muted";
 }
 
-export function hasOperatorKey(): boolean {
-  return Boolean(getOperatorKey());
-}
-
-// ── operator-key management (sessionStorage; never localStorage) ─────────────
-
-export function getOperatorKey(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.sessionStorage.getItem(KEY_STORAGE);
-  } catch {
-    return null;
-  }
-}
-
-export function setOperatorKey(key: string): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.sessionStorage.setItem(KEY_STORAGE, key.trim());
-  } catch {
-    /* best-effort */
-  }
-}
-
-export function clearOperatorKey(): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.sessionStorage.removeItem(KEY_STORAGE);
-    window.sessionStorage.removeItem(NAME_STORAGE);
-  } catch {
-    /* best-effort */
-  }
-}
-
 // ── operator handle (self-declared; recorded as the actor on incident actions) ─
 
 const NAME_STORAGE = "aira_operator_name";
@@ -860,25 +824,18 @@ export function setOperatorName(name: string): void {
   }
 }
 
-// ── API client (every request carries the operator key) ──────────────────────
+// ── Disabled browser API client ──────────────────────────────────────────────
 
 function opHeaders(json = false): Record<string, string> {
   const headers: Record<string, string> = json ? { "Content-Type": "application/json" } : {};
-  const key = getOperatorKey();
-  if (key) headers["X-API-Key"] = key;
   const name = getOperatorName();
   if (name) headers["X-Operator-Name"] = name;
   return headers;
 }
 
-/** Validate the entered key by hitting a gated, side-effect-free endpoint. */
+/** Browser-side operator authentication is intentionally unavailable. */
 export async function verifyOperator(): Promise<boolean> {
-  try {
-    const res = await fetch(`${API_URL}/operator/overview`, { cache: "no-store", headers: opHeaders() });
-    return res.ok;
-  } catch {
-    return false;
-  }
+  return false;
 }
 
 export async function fetchAnalytics(sinceMinutes = 60): Promise<DeliveryAnalytics | null> {
