@@ -172,16 +172,6 @@ export async function mockOperator(page: Page, opts: {
   await page.route(`${API}/operator/incident-targets/attention`, (r) => json(r, { targets: [] }));
 }
 
-/** Connect the operator console with a seeded key (overview must already be stubbed). */
-export async function connectOperator(page: Page) {
-  await page.goto("/operator");
-  const connect = page.getByRole("button", { name: "Connect" });
-  await fillInteractiveForm(page.getByPlaceholder("Service key"), "seed-operator-key", connect);
-  await connect.click();
-  // Console header appears once verifyOperator() succeeds.
-  await expect(page.getByRole("heading", { name: "Delivery console" })).toBeVisible();
-}
-
 // ── streaming chat stub ──────────────────────────────────────────────────────
 
 /** Build an SSE body the frontend's parser (event:/data:, blank-line separated) reads. */

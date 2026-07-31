@@ -455,8 +455,17 @@ async function parseApiResponse<T>(
   return data as T;
 }
 
+async function userFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  const identityHeaders = { ...currentAuthHeaders(), ...currentScopeHeaders() };
+  for (const [name, value] of Object.entries(identityHeaders)) {
+    if (!headers.has(name)) headers.set(name, value);
+  }
+  return fetch(input, { ...init, headers });
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await userFetch(`${API_URL}${path}`, {
     cache: "no-store",
   });
 
@@ -464,7 +473,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 }
 
 export async function apiDelete<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await userFetch(`${API_URL}${path}`, {
     method: "DELETE",
   });
 
@@ -477,7 +486,7 @@ export async function runAssistant(
   message: string,
   useWeb?: boolean
 ): Promise<AssistantRunResponse> {
-  const response = await fetch(`${API_URL}/assistant/run`, {
+  const response = await userFetch(`${API_URL}/assistant/run`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -499,7 +508,7 @@ export async function sendChat(
   question: string,
   useWeb?: boolean
 ): Promise<ChatResponse> {
-  const response = await fetch(`${API_URL}/chat`, {
+  const response = await userFetch(`${API_URL}/chat`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -527,7 +536,7 @@ export async function uploadDocuments(
   // the uploader's own files.
   if (sessionId) body.append("session_id", sessionId);
 
-  const response = await fetch(`${API_URL}/upload`, {
+  const response = await userFetch(`${API_URL}/upload`, {
     method: "POST",
     headers: { ...currentAuthHeaders(), ...currentScopeHeaders() },
     body,
@@ -542,7 +551,7 @@ export async function uploadDocuments(
 export async function summarizeDocument(
   documentId: number
 ): Promise<{ summary: string; citations: Citation[] }> {
-  const response = await fetch(`${API_URL}/summarize`, {
+  const response = await userFetch(`${API_URL}/summarize`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -559,7 +568,7 @@ export async function summarizeDocument(
 }
 
 export async function runAiraX(goal: string): Promise<AiraXRunResponse> {
-  const response = await fetch(`${API_URL}/aira-x/run`, {
+  const response = await userFetch(`${API_URL}/aira-x/run`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -599,7 +608,7 @@ export async function streamAiraX(
     signal?: AbortSignal;
   }
 ): Promise<void> {
-  const response = await fetch(`${API_URL}/aira-x/stream`, {
+  const response = await userFetch(`${API_URL}/aira-x/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...currentAuthHeaders(), ...currentScopeHeaders() },
     body: JSON.stringify({
@@ -658,7 +667,7 @@ export async function streamAiraX(
 }
 
 export async function approveAiraX(runId: string): Promise<AiraXRunResponse> {
-  const response = await fetch(`${API_URL}/aira-x/approve`, {
+  const response = await userFetch(`${API_URL}/aira-x/approve`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -673,7 +682,7 @@ export async function approveAiraX(runId: string): Promise<AiraXRunResponse> {
 }
 
 export async function rejectAiraX(runId: string): Promise<AiraXRunResponse> {
-  const response = await fetch(`${API_URL}/aira-x/reject`, {
+  const response = await userFetch(`${API_URL}/aira-x/reject`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -688,7 +697,7 @@ export async function rejectAiraX(runId: string): Promise<AiraXRunResponse> {
 }
 
 export async function getAiraXTools(): Promise<AiraXToolsResponse> {
-  const response = await fetch(`${API_URL}/aira-x/tools`, {
+  const response = await userFetch(`${API_URL}/aira-x/tools`, {
     cache: "no-store",
   });
 
@@ -699,7 +708,7 @@ export async function getAiraXTools(): Promise<AiraXToolsResponse> {
 }
 
 export async function getAiraXAgents(): Promise<AiraXAgentsResponse> {
-  const response = await fetch(`${API_URL}/aira-x/agents`, {
+  const response = await userFetch(`${API_URL}/aira-x/agents`, {
     cache: "no-store",
   });
 
@@ -712,7 +721,7 @@ export async function getAiraXAgents(): Promise<AiraXAgentsResponse> {
 export async function getAiraXAgent(
   agentName: string
 ): Promise<AiraXAgentResponse> {
-  const response = await fetch(`${API_URL}/aira-x/agents/${agentName}`, {
+  const response = await userFetch(`${API_URL}/aira-x/agents/${agentName}`, {
     cache: "no-store",
   });
 
@@ -723,7 +732,7 @@ export async function getAiraXAgent(
 }
 
 export async function getAiraXRuns(): Promise<AiraXRunsResponse> {
-  const response = await fetch(`${API_URL}/aira-x/runs`, {
+  const response = await userFetch(`${API_URL}/aira-x/runs`, {
     cache: "no-store",
   });
 
@@ -736,7 +745,7 @@ export async function getAiraXRuns(): Promise<AiraXRunsResponse> {
 export async function getAiraXRun(
   runId: string
 ): Promise<AiraXRunDetailResponse> {
-  const response = await fetch(
+  const response = await userFetch(
     `${API_URL}/aira-x/runs/${encodeURIComponent(runId)}`,
     {
       cache: "no-store",
@@ -762,7 +771,7 @@ export async function deleteSafeAiraXRuns(): Promise<AiraXSafeCleanupResponse> {
 }
 
 export async function getAiraXOverview(): Promise<AiraXOverviewResponse> {
-  const response = await fetch(`${API_URL}/aira-x/overview`, {
+  const response = await userFetch(`${API_URL}/aira-x/overview`, {
     cache: "no-store",
   });
 
