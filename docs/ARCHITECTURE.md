@@ -40,10 +40,11 @@ flowchart LR
     OPS -->|outbound only| EXT
 ```
 
-**The boundary that matters:** the operator product is reachable only with the configured
-service key (`APIKeyMiddleware` when `API_KEY` is set). Operator state — readiness facts,
-audit trails, metrics — is *never* serialized into a user-facing response. This is
-enforced by tests (e.g. "no readiness/lifecycle fields leak into `/jobs/{id}`").
+**The boundary that matters:** ordinary routes use account authentication while
+operator routes explicitly require the server-side service credential. The
+service credential is not accepted as user identity and is never placed in the
+browser. Operator state — readiness facts, audit trails, metrics — is *never*
+serialized into a user-facing response.
 
 ---
 
@@ -196,7 +197,7 @@ flowchart TD
 
 | Boundary | Enforced by | Guarantee |
 |---|---|---|
-| User ↔ Operator | `API_KEY` + `APIKeyMiddleware`; `resolve_operator_principal` | operator endpoints 403 without the service key; operator data never in user responses |
+| User ↔ Operator | user-principal gate + explicit `require_operator_principal` | user bearer does not grant operator access; service key does not grant user identity |
 | Account ↔ Account | owner-scoped readers everywhere | no cross-owner resource leakage (cross-scope → 404, not 403, to avoid existence leaks) |
 | AIRA-X ↔ External tool | outbound-primary sync; inbound observe-only | external state never silently overwrites local truth |
 | Demo ↔ Real data | `demo.aira-x.local` / `demo:` namespaces | seed/reset touch only demo rows; real data survives |
@@ -205,9 +206,9 @@ flowchart TD
 
 ## 9. Security model
 
-- **AuthN:** account JWT for the user product; a single service key (`X-API-Key`) for the
-  operator product. When no key is configured (local dev), the operator surface is simply
-  unavailable.
+- **AuthN:** transitional account bearer for the user product; a separate,
+  server-side service key for operator routes. The browser operator console is
+  disabled until a server-managed administrative boundary exists.
 - **Secrets:** incident-target signing secrets are stored for HMAC (`X-AIRA-Signature`)
   but **never returned** by any read API (`has_secret` only). Rotation invalidates
   readiness. Production hardening: encrypt the column at rest; inject via the platform

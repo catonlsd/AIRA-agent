@@ -25,7 +25,7 @@ docs/screenshots/
 |---|---|---|
 | `chat/streamed-answer.png` | Chat: a streamed answer resolves | `/chat`, ask any question |
 | `chat/artifact-card.png` | Chat: artifact card + download | `/chat`, request "build a deck" |
-| `operator/console-overview.png` | The gated operator console | `/operator`, connect with the service key |
+| `operator/console-overview.png` | Legacy operator-console reference | Deferred pending server-side operator authentication |
 | `operator/readiness-states.png` | 6 targets across every readiness state | Incidents tab → External sync, after seeding |
 | `observability/slo-panel.png` | SLO tiles, trends, drift backlog, alert | top of the Incidents tab, after seeding |
 | `operator/drift-recovery.png` | A drifted incident's Refresh + Apply | expand the "ingest-worker" incident → History |

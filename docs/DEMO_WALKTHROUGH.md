@@ -25,20 +25,19 @@ cd frontend && npm install && npm run dev
 ```
 
 - User product: `http://localhost:3000`
-- Operator console: `http://localhost:3000/operator`
+- Operator route: `http://localhost:3000/operator` (restricted notice only)
 - The `API_KEY` you set is the **operator service key**.
 
-> No API key handy? The backend still runs; the operator console just needs the service
-> key you set in `.env` to connect.
+> The operator service key is server-side only. The browser operator console is disabled
+> until a server-side operator-auth boundary is designed and implemented.
 
 ---
 
 ## 1. Seed the demo (30 sec)
 
-Open `http://localhost:3000/operator`, paste the service key, and connect. Go to the
-**Incidents** tab → **Demo data** card → **Seed demo data**.
+Use a trusted server-side client:
 
-(Equivalently: `curl -s -X POST localhost:8000/operator/demo/seed -H "X-API-Key: $API_KEY"`.)
+`curl -s -X POST localhost:8000/operator/demo/seed -H "X-API-Key: $API_KEY"`
 
 You'll immediately see a **guided tour** render inline, plus the console populate. What was
 created — deterministically, in the `demo.aira-x.local` namespace:
@@ -46,8 +45,8 @@ created — deterministically, in the `demo.aira-x.local` namespace:
 - **5 incidents** spanning healthy / drifted / missing / stale
 - **audit history** dated across 24h / 7d / 30d
 
-✅ *What to notice:* the platform went from empty to fully populated with one click, and
-the tour tells you exactly where to look next.
+The legacy browser walkthrough below is retained as historical design context only; its
+interactive operator steps are unavailable in this phase.
 
 ---
 

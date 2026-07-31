@@ -242,10 +242,12 @@ python -m uvicorn app.main:app --reload --port 8000   # http://localhost:8000  (
 # 2) Frontend (new terminal)
 cd frontend
 npm install
-npm run dev                   # http://localhost:3000   (operator console at /operator)
+npm run dev                   # http://localhost:3000
 ```
 
-Then open `/operator`, enter the service key, and **Seed demo data**.
+`/operator` is intentionally a restricted notice in this phase. Privileged API
+operations require a server-side service client; the service key must not be entered
+into or persisted by the browser.
 
 Or with Docker:
 ```bash
@@ -269,7 +271,9 @@ Environment reference: **[backend/.env.example](backend/.env.example)**. Key var
 |---|---|---|
 | `LLM_PROVIDER` / `GROQ_API_KEY` | LLM backend + key | `groq` / — |
 | `DATABASE_URL` | SQLAlchemy URL (SQLite → Postgres is one env var) | local SQLite |
-| `API_KEY` / `API_KEY_HEADER` | enable the operator surface (service-key auth) | unset (operator off) |
+| `API_KEY` / `API_KEY_HEADER` | explicit server-side operator/service authentication | unset |
+| `USER_AUTH_ENABLED` | require account authentication for ordinary protected routes | `true` |
+| `ALLOW_ANONYMOUS_PROTECTED_ACCESS` / `DEVELOPMENT_AUTH_BYPASS` | explicit local-only compatibility bypass | `false` / `false` |
 | `DEMO_SEED_ENABLED` | allow the operator demo seed | `true` |
 | `RATE_LIMIT_PER_MINUTE` | per-client limit | `60` |
 | `NEXT_PUBLIC_API_URL` (frontend) | backend URL for the browser | `http://localhost:8000` |
@@ -286,7 +290,10 @@ Environment reference: **[backend/.env.example](backend/.env.example)**. Key var
   `llama-3.3-70b-versatile` default is scheduled for Groq free/developer-tier
   shutdown on 2026-08-16; `qwen/qwen3.6-27b` is available only as an opt-in
   Preview model.
-- **Operator gating:** set `API_KEY` to enforce the service-key boundary globally.
+- **Authentication boundary:** ordinary protected routes use account bearer
+  authentication; `/operator/*` uses a distinct server-side service credential.
+  The browser operator console is disabled until a server-managed administrative
+  boundary exists. See **[docs/AUTHENTICATION_BOUNDARY.md](docs/AUTHENTICATION_BOUNDARY.md)**.
 - **Hardening:** rate limiting, security headers, CORS, global JSON error handler (no
   stack-trace leaks), per-turn JSONL tracing.
 
